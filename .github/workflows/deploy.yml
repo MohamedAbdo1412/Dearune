@@ -1,0 +1,71 @@
+name: Deploy Supabase
+
+# Deploys database migrations and Edge Functions to the linked Supabase
+# project whenever the backend layer changes or on manual dispatch.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN     — personal access token (https://supabase.com/dashboard/account/tokens)
+#   SUPABASE_PROJECT_ID       — project reference (from the project dashboard URL)
+#   SUPABASE_DB_PASSWORD      — database password for `supabase db push`
+#   DESIGNER_JWT_SECRET       — HS256 signing secret for designer JWTs (>= 32 random chars)
+#   GOOGLE_CLIENT_ID          — Drive OAuth 2.0 client id
+#   GOOGLE_CLIENT_SECRET      — Drive OAuth 2.0 client secret
+#   GOOGLE_REFRESH_TOKEN      — Drive OAuth 2.0 refresh token
+#   GOOGLE_DRIVE_MEDIA_FOLDER_ID
+#
+# The Supabase_* variables the functions use (SUPABASE_URL,
+# SUPABASE_PUBLISHABLE_KEYS, SUPABASE_SECRET_KEYS) are injected by Supabase
+# and cannot be set here — a secret name must not start with `SUPABASE_`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/**"
+  workflow_dispatch:
+
+concurrency:
+  group: supabase-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+  SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+  SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link project
+        run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
+
+      - name: Apply database migrations
+        run: supabase db push
+
+      - name: Set edge function secrets
+        run: |
+          supabase secrets set \
+            DESIGNER_JWT_SECRET="${{ secrets.DESIGNER_JWT_SECRET }}" \
+            GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
+            GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            GOOGLE_REFRESH_TOKEN="${{ secrets.GOOGLE_REFRESH_TOKEN }}" \
+            GOOGLE_DRIVE_MEDIA_FOLDER_ID="${{ secrets.GOOGLE_DRIVE_MEDIA_FOLDER_ID }}"
+
+      - name: Deploy edge functions
+        run: supabase functions deploy --project-ref "$SUPABASE_PROJECT_ID"
+
+      - name: Verify deployments
+        run: |
+          supabase functions list
+          echo "Migrations and edge functions deployed to $SUPABASE_PROJECT_ID"

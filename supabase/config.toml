@@ -1,0 +1,32 @@
+# Supabase configuration for Dearune.
+# https://supabase.com/docs/guides/local-development/overview
+
+project_id = "dearune"
+
+# All edge functions perform their own authorization (see _shared/auth.ts),
+# so JWT pre-validation is disabled at the platform layer. Without this,
+# `drive-media` (public token reads) and `designer-login` (no auth) would be
+# rejected with 401 before reaching the function.
+[functions.designer-login]
+verify_jwt = false
+
+[functions.designer-messages]
+verify_jwt = false
+
+[functions.designer-message]
+verify_jwt = false
+
+[functions.create-sale]
+verify_jwt = false
+
+[functions.admin-designers]
+verify_jwt = false
+
+[functions.drive-create-upload]
+verify_jwt = false
+
+[functions.drive-media]
+verify_jwt = false
+
+[functions.drive-delete-media]
+verify_jwt = false

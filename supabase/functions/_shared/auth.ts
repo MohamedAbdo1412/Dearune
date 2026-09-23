@@ -4,7 +4,7 @@ import { adminClient } from './supabase.ts'
 import { requireEnv } from './env.ts'
 
 function jwtSecret(): Uint8Array {
-  return new TextEncoder().encode(requireEnv('SUPABASE_JWT_SECRET'))
+  return new TextEncoder().encode(requireEnv('DESIGNER_JWT_SECRET'))
 }
 
 function bearerToken(req: Request): string {
@@ -43,12 +43,24 @@ export async function requireDesigner(req: Request): Promise<{ designerId: strin
   return designer
 }
 
+function publishableKey(): string {
+  const raw = Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')
+  if (raw) {
+    try {
+      const keys = JSON.parse(raw) as Record<string, unknown>
+      if (typeof keys['default'] === 'string' && keys['default']) return keys['default']
+    } catch {
+      // fall through to the legacy variable
+    }
+  }
+  return requireEnv('SUPABASE_ANON_KEY')
+}
+
 export async function requireAdmin(req: Request): Promise<{ id: string } | null> {
   const token = bearerToken(req)
   if (!token) return null
   const url = requireEnv('SUPABASE_URL')
-  const anon = requireEnv('SUPABASE_ANON_KEY')
-  const client = createClient(url, anon, {
+  const client = createClient(url, publishableKey(), {
     global: { headers: { authorization: `Bearer ${token}` } },
     auth: { autoRefreshToken: false, persistSession: false },
   })

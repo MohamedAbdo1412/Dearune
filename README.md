@@ -50,7 +50,7 @@ There is no custom HTTP server: the app talks to Supabase (REST + the
 
 ```sh
 cp .env.example .env
-# fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+# fill in VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY
 ```
 
 `VITE_PUBLIC_SITE_URL` sets the origin baked into printed QR links when the
@@ -81,22 +81,33 @@ values ('REPLACE_WITH_AUTH_USER_ID', 'you@example.com', 'You');
 
 ### 4. Edge functions and secrets
 
+`supabase/config.toml` declares all Edge Functions with `verify_jwt = false` —
+the functions authorize themselves in `_shared/auth.ts`, so `drive-media`
+(public token reads) and `designer-login` (no auth) work without a bearer JWT.
+
+Supabase injects `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEYS` and
+`SUPABASE_SECRET_KEYS` into every function by default, so only the custom
+secrets need setting (secret names must not start with `SUPABASE_`):
+
 ```bash
 supabase functions deploy
 supabase secrets set \
-  SUPABASE_URL="$VITE_SUPABASE_URL" \
-  SUPABASE_SERVICE_ROLE_KEY=... \
-  SUPABASE_JWT_SECRET=... \
+  DESIGNER_JWT_SECRET=... \
   GOOGLE_CLIENT_ID=... \
   GOOGLE_CLIENT_SECRET=... \
   GOOGLE_REFRESH_TOKEN=... \
   GOOGLE_DRIVE_MEDIA_FOLDER_ID=...
 ```
 
-`GOOGLE_DRIVE_MEDIA_FOLDER_ID` is the Drive folder where `MessageMedia/` and
-`ShippingLabels/` trees are created. Media uploads go through a resumable
-upload session obtainable only by admins or designers; reads use short-lived
-signed GETs.
+`DESIGNER_JWT_SECRET` is a random string (≥ 32 chars) used to sign and verify
+the designer JWTs. `GOOGLE_DRIVE_MEDIA_FOLDER_ID` is the Drive folder where
+`MessageMedia/` and `ShippingLabels/` trees are created. Media uploads go
+through a resumable upload session obtainable only by admins or designers;
+reads use short-lived signed GETs.
+
+A ready-made pipeline (migrations + functions + secrets) lives in
+`.github/workflows/deploy.yml` and runs on pushes to `main` touching
+`supabase/`.
 
 ### 5. Run
 

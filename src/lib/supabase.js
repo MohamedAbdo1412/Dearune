@@ -1,16 +1,16 @@
 import { createClient } from '@supabase/supabase-js'
 
 const url = import.meta.env.VITE_SUPABASE_URL
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 
-if (!url || !anonKey) {
-  const missing = [url ? null : 'VITE_SUPABASE_URL', anonKey ? null : 'VITE_SUPABASE_ANON_KEY'].filter(Boolean)
+if (!url || !publishableKey) {
+  const missing = [url ? null : 'VITE_SUPABASE_URL', publishableKey ? null : 'VITE_SUPABASE_PUBLISHABLE_KEY'].filter(Boolean)
   console.warn(`Missing env: ${missing.join(', ')}. Supabase features will not work in dev. Create .env from .env.example.`)
 }
 
-export const supabase = url && anonKey ? createClient(url, anonKey) : null
+export const supabase = url && publishableKey ? createClient(url, publishableKey) : null
 export const supabaseUrl = url ?? ''
-export const anonKeyValue = anonKey ?? ''
+export const publishableKeyValue = publishableKey ?? ''
 
 export async function currentAccessToken() {
   if (!supabase) return null
@@ -24,7 +24,7 @@ export async function invokeFunction(name, { method = 'GET', token = null, admin
   if (body !== undefined) headers['content-type'] = 'application/json'
   if (token) headers.authorization = `Bearer ${token}`
   if (adminToken) headers.authorization = `Bearer ${adminToken}`
-  if (anonKey) headers.apikey = anonKey
+  if (publishableKey) headers.apikey = publishableKey
   headers['x-client-info'] = 'supabase-js-web/2'
 
   let response
