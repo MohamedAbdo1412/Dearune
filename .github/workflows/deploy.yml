@@ -42,30 +42,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate required secrets
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          DESIGNER_JWT_SECRET: ${{ secrets.DESIGNER_JWT_SECRET }}
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
-          GOOGLE_DRIVE_MEDIA_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_MEDIA_FOLDER_ID }}
-        run: |
-          missing=""
-          for name in SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_ID SUPABASE_DB_PASSWORD \
-                      DESIGNER_JWT_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
-                      GOOGLE_REFRESH_TOKEN GOOGLE_DRIVE_MEDIA_FOLDER_ID; do
-            if [ -z "${!name}" ]; then
-              missing="$missing $name"
-            fi
-          done
-          if [ -n "$missing" ]; then
-            echo "::error::Missing GitHub secrets:$missing — add them under Settings → Secrets and variables → Actions"
-            exit 1
-          fi
-
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
         with:
