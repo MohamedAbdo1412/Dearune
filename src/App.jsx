@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { getDesignerToken } from '@/services/designer'
@@ -16,6 +16,8 @@ import { Designers } from '@/pages/admin/Designers'
 import { Templates } from '@/pages/admin/Templates'
 import { Settings } from '@/pages/admin/Settings'
 import { NotFound } from '@/pages/NotFound'
+
+const CreateBook = lazy(() => import('@/pages/create/CreateBook'))
 
 function RequireAdmin({ children }) {
   const location = useLocation()
@@ -86,6 +88,20 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/message/:publicId" element={<PublicMessage />} />
+      <Route
+        path="/create"
+        element={
+          <Suspense
+            fallback={
+              <div className="flex min-h-screen items-center justify-center text-sm tracking-[0.3em] uppercase text-muted-foreground">
+                fetching the book…
+              </div>
+            }
+          >
+            <CreateBook />
+          </Suspense>
+        }
+      />
       <Route path="/designer/login" element={<DesignerLogin />} />
       <Route
         path="/designer"

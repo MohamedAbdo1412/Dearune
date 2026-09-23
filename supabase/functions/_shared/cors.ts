@@ -16,8 +16,8 @@ export function jsonResponse(data: unknown, status = 200): Response {
   })
 }
 
-export function errorResponse(message: string, status = 400): Response {
-  return jsonResponse({ error: message }, status)
+export function errorResponse(message: string, status = 400, extra: Record<string, unknown> = {}): Response {
+  return jsonResponse({ error: message, ...extra }, status)
 }
 
 export async function readJson(req: Request): Promise<Record<string, unknown>> {

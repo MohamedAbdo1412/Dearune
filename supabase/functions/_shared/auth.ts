@@ -1,4 +1,3 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
 import { jwtVerify, SignJWT } from 'npm:jose@^6'
 import { adminClient } from './supabase.ts'
 import { requireEnv } from './env.ts'
@@ -43,32 +42,27 @@ export async function requireDesigner(req: Request): Promise<{ designerId: strin
   return designer
 }
 
-function publishableKey(): string {
-  const raw = Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')
-  if (raw) {
-    try {
-      const keys = JSON.parse(raw) as Record<string, unknown>
-      if (typeof keys['default'] === 'string' && keys['default']) return keys['default']
-    } catch {
-      // fall through to the legacy variable
-    }
-  }
-  return requireEnv('SUPABASE_ANON_KEY')
-}
-
 export async function requireAdmin(req: Request): Promise<{ id: string } | null> {
   const token = bearerToken(req)
   if (!token) return null
   const url = requireEnv('SUPABASE_URL')
-  const client = createClient(url, publishableKey(), {
-    global: { headers: { authorization: `Bearer ${token}` } },
-    auth: { autoRefreshToken: false, persistSession: false },
+  // Verify the session by calling the Auth service directly. supabase-js's
+  // getUser() fails inside the edge runtime (the response is not JSON), so we
+  // use a raw fetch against /auth/v1/user with the injected anon key.
+  const res = await fetch(`${url}/auth/v1/user`, {
+    headers: { apikey: requireEnv('SUPABASE_ANON_KEY'), authorization: `Bearer ${token}` },
   })
-  const { data, error } = await client.auth.getUser()
-  if (error || !data.user) return null
-  const { data: adminRow } = await adminClient().from('admin_users').select('id').eq('id', data.user.id).maybeSingle()
+  if (!res.ok) return null
+  let payload: { id?: string } | null
+  try {
+    payload = (await res.json()) as { id?: string } | null
+  } catch {
+    return null
+  }
+  if (!payload?.id) return null
+  const { data: adminRow } = await adminClient().from('admin_users').select('id').eq('id', payload.id).maybeSingle()
   if (!adminRow) return null
-  return { id: data.user.id }
+  return { id: payload.id }
 }
 
 export async function requireAdminOrDesigner(req: Request): Promise<{ role: 'admin'; adminId: string } | { role: 'designer'; designerId: string; code: string } | null> {

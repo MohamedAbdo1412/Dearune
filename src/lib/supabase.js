@@ -39,14 +39,17 @@ export async function invokeFunction(name, { method = 'GET', token = null, admin
   }
 
   if (!response.ok) {
-    let message = `Request failed (${response.status})`
+    const message = `Request failed (${response.status})`
+    const error = new Error(message)
+    error.status = response.status
     try {
       const payload = await response.json()
-      if (payload && payload.error) message = payload.error
+      if (payload && payload.error) error.message = payload.error
+      if (payload && typeof payload === 'object') error.payload = payload
     } catch {
       // ignore
     }
-    throw new Error(message)
+    throw error
   }
 
   const text = await response.text()

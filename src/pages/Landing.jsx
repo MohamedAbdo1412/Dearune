@@ -33,12 +33,12 @@ export function Landing() {
             recipient will hold long after the words are spoken.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-            <a href="#how">
+            <Link to="/create">
               <Button size="lg">
                 Start a message
                 <ArrowRight className="size-4" />
               </Button>
-            </a>
+            </Link>
             <a href="#why">
               <Button size="lg" variant="outline">
                 Our story

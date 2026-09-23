@@ -15,12 +15,24 @@ export function clearDesignerToken() {
 }
 
 export async function designerLogin(code, passcode) {
-  const session = await invokeFunction('designer-login', {
-    method: 'POST',
-    body: { code, passcode },
-  })
-  setDesignerToken(session.token)
-  return session
+  try {
+    const session = await invokeFunction('designer-login', {
+      method: 'POST',
+      body: { code, passcode },
+    })
+    setDesignerToken(session.token)
+    return session
+  } catch (error) {
+    const payload = error.payload ?? {}
+    error.cooldown = Boolean(payload.retryAfterSeconds)
+    error.retryAfterSeconds = payload.retryAfterSeconds
+    error.lockedUntil = payload.lockedUntil
+    throw error
+  }
+}
+
+export function fetchDesignerTemplates(token) {
+  return invokeFunction('designer-templates', { token })
 }
 
 export function fetchDesignerOrders(token) {
