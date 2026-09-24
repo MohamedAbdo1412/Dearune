@@ -32,6 +32,14 @@ import { randomSecret, requireDesigner } from '../_shared/auth.ts'
 const POLICY_VERSION = '2026-09-24-v1'
 const AVAILABILITY_YEARS = 2
 
+// The paper version each template is drawn at. Evolving a template later never
+// rewrites what an earlier submission snapshotted: the project stores the
+// version it was closed under, so its layout can pin down "the letters as they
+// were then" instead of silently inheriting a redesigned default.
+const TEMPLATE_VERSIONS: Record<string, number> = {
+  'memorial-message': 1,
+}
+
 const MAX_LENGTHS: Record<string, number> = {
   greeting: 120,
   closing: 120,
@@ -43,7 +51,7 @@ const MAX_PHOTOS = 3
 const MAX_MEDIA_BYTES = 64 * 1024 * 1024
 const PROJECT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-const METADATA_COLUMNS = 'id, template_slug, title, status, public_id, submitted_at, created_at, updated_at, first_activated_at, message_active, policy_version, policies_accepted_at'
+const METADATA_COLUMNS = 'id, template_slug, template_version, title, status, public_id, submitted_at, created_at, updated_at, first_activated_at, message_active, policy_version, policies_accepted_at'
 
 // Two years measured from first activation, derived here so it can never be
 // drifted by re-activation. A stored `first_activated_at` is returned verbatim
@@ -117,6 +125,26 @@ function sanitizePayload(raw: unknown, designerId: string) {
   }
 }
 
+// A project's payload is a JSONB object. Early builds persisted it through
+// JSON.stringify, which PostgREST stores as a JSON string scalar rather than an
+// object; a read of those rows comes back as a string. Normalize either form
+// here so the client always receives an object — and a row with no readable
+// letter at all becomes explicit `null` (the frontend shows a real error
+// instead of pretending the sample is the design).
+function parsePayload(raw: unknown): Record<string, unknown> | null {
+  if (raw === null || raw === undefined) return null
+  let payload: unknown = raw
+  if (typeof payload === 'string') {
+    try {
+      payload = JSON.parse(payload)
+    } catch {
+      return null
+    }
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
+  return payload as Record<string, unknown>
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions()
 
@@ -162,9 +190,10 @@ Deno.serve(async (req) => {
     const insert: Record<string, unknown> = {
       designer_id: designer.designerId,
       template_slug: templateSlug,
+      template_version: TEMPLATE_VERSIONS[templateSlug] ?? 1,
       title: receiverName || payload.senderName,
       status: 'submitted',
-      payload: JSON.stringify(payload),
+      payload,
       policy_version: POLICY_VERSION,
       policies_accepted_at: acceptedAt.toISOString(),
     }
@@ -203,7 +232,8 @@ Deno.serve(async (req) => {
       .eq('designer_id', designer.designerId)
       .maybeSingle()
     if (!project) return errorResponse('Not your book', 404)
-    return jsonResponse({ project: withExpiry(project) })
+    const read = { ...project, payload: parsePayload(project.payload) }
+    return jsonResponse({ project: withExpiry(read) })
   }
 
   return errorResponse('Method not allowed', 405)

@@ -4,7 +4,7 @@ import { Fleuron } from '@/components/book/ornaments'
 // drawn into the book yet. The designer's place is still kept; the studio is
 // quietly binding the chapters that follow.
 
-export default function UnwrittenStage({ template, onBack }) {
+export default function UnwrittenStage({ template }) {
   return (
     <div className="settle stage-root">
       <div className="page-script">pages under the press</div>
@@ -24,12 +24,6 @@ export default function UnwrittenStage({ template, onBack }) {
           In the meantime nothing is lost: the choice is kept for you, and your drafts wait exactly where you left
           them.
         </p>
-      </div>
-
-      <div className="stage-actions">
-        <button type="button" className="d-btn d-btn--thread" onClick={onBack}>
-          ← choose another paper
-        </button>
       </div>
     </div>
   )

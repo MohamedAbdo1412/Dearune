@@ -8,20 +8,23 @@ import {
   loadDraft,
   saveDraft,
   saveTemplateDraft,
+  loadTemplateDraft,
   clearDraft,
   templateStagesFor,
   createLocalProject,
   getActiveProjectId,
+  REVIEW_STAGE,
   POLICIES_STAGE,
   SUBMITTED_STAGE,
 } from '@/services/draft'
 import { lockDraftKey, unlockDraftKey, decryptBytes } from '@/services/draftCrypto'
 import { deleteProjectMedia, getEncryptedMedia, mediaStorageKey } from '@/services/draftMediaStore'
 import { designerLogin, fetchDesignerTemplates, getDesignerToken, clearDesignerToken } from '@/services/designer'
-import { fetchProjects, createProject, fetchDraftUnlock } from '@/services/projects'
+import { fetchProjects, fetchProject, createProject, fetchDraftUnlock } from '@/services/projects'
 import { uploadDesignerMedia } from '@/services/media'
 import { DEARUNE_POLICY_VERSION } from '@/policies/dearunePolicy'
-import { memorialDefaults } from '@/templates/memorial-message/MemorialLetter'
+import { blankPageDraft } from '@/templates/memorial-message/memorialSampleData'
+import BookStageNavigation from '@/components/book/BookStageNavigation'
 import {
   playPageLift,
   playPageSettle,
@@ -75,7 +78,7 @@ function initialBook() {
 }
 
 function freshMemorial() {
-  return { ...memorialDefaults('en'), photos: [null, null, null], audio: null, passwordSet: false }
+  return blankPageDraft()
 }
 
 export default function CreateBook() {
@@ -99,12 +102,13 @@ export default function CreateBook() {
   const [projects, setProjects] = useState(null)
   const [projectsError, setProjectsError] = useState('')
   const [activeProject, setActiveProject] = useState(null)
+  const [openingId, setOpeningId] = useState(null)
+  const [openingAlert, setOpeningAlert] = useState('')
 
   const reduced = useReducedMotion()
   const mobile = useIsMobile()
   const fetchingRef = useRef(false)
   const passwordRef = useRef('')
-  const justLoggedInRef = useRef(false)
   const memorialPendingRef = useRef(null)
   const memorialTimerRef = useRef(null)
 
@@ -147,6 +151,33 @@ export default function CreateBook() {
     let alive = true
     const token = getDesignerToken()
     setBooting(true)
+
+    const showShelf = (projects) => {
+      if (!alive) return
+      setProjectId(null)
+      setChosenSlug(null)
+      setReceiverName('')
+      setMemorial(freshMemorial())
+      setProjects(projects)
+      setProjectsError('')
+      setClosed(true)
+      setCoverOpen(true)
+      setStage('status')
+    }
+    const resumeLetter = (nextDraft, nextPid, prevRows) => {
+      if (!alive) return
+      setProjectId(nextPid)
+      setChosenSlug(nextDraft.templateSlug)
+      setReceiverName(nextDraft.receiverName ?? '')
+      const slug = nextDraft.templateSlug
+      setMemorial(slug && nextDraft.templateDrafts?.[slug] ? nextDraft.templateDrafts[slug] : freshMemorial())
+      setProjects(prevRows)
+      setProjectsError('')
+      setClosed(false)
+      setCoverOpen(true)
+      setStage(nextDraft.currentStage)
+    }
+
     Promise.all([fetchDraftUnlock(token), fetchProjects(token)])
       .then(async ([unlock, proj]) => {
         if (!alive) return
@@ -158,58 +189,39 @@ export default function CreateBook() {
         if (draft?.submittedAt && rows.some((r) => r.id === pid)) {
           // This book was closed (possibly in another tab); the server owns it
           // now, so its local draft and media are swept rather than resumed.
-          if (alive) {
-            await clearDraftBody(designer.id, pid)
-            setProjectId(null)
-            setChosenSlug(null)
-            setReceiverName('')
-            setMemorial(freshMemorial())
-            setProjects(rows)
-            setProjectsError('')
-            setStage('status')
-            setClosed(true)
-            setCoverOpen(true)
-          }
-        } else if (draft) {
-          if (alive) {
-            setProjectId(pid)
-            setChosenSlug(draft.templateSlug)
-            setReceiverName(draft.receiverName ?? '')
-            const slug = draft.templateSlug
-            const memorialNext = slug && draft.templateDrafts?.[slug] ? draft.templateDrafts[slug] : freshMemorial()
-            setMemorial(memorialNext)
-            setProjects(rows)
-            setProjectsError('')
-            setClosed(false)
-            setCoverOpen(true)
-            setStage(draft.currentStage)
-          }
-        } else if (alive) {
-          // No local draft: show the shelf of past books for a returning
-          // designer, otherwise open a brand-new page.
-          if (rows.length > 0 && justLoggedInRef.current) {
-            setStage('status')
-            setClosed(true)
-            setCoverOpen(true)
-          } else {
-            setProjectId(createLocalProject(designer.id))
-            setCoverOpen(true)
-          }
-          setProjects(rows)
-          setProjectsError('')
+          await clearDraftBody(designer.id, pid)
+          showShelf(rows)
+        } else if (draft && !draft.submittedAt && rows.length === 0) {
+          // No previous messages and a letter mid-pen on the desk: go straight
+          // back into it. A returning designer with a shelf lands there first,
+          // never on a half-written page.
+          resumeLetter(draft, pid, rows)
+        } else {
+          // The shelf of previous messages always comes first; a fresh page
+          // ("For whom") is reached by choosing a new message.
+          showShelf(rows)
         }
-        justLoggedInRef.current = false
       })
       .catch(() => {
-        // The token is dead or the unlock failed (a different machine, an
-        // unknown device). Step back to the door; nothing was lost.
+        // The session is still authentic — the designer just proved their pins.
+        // A failure here means the unlock or shelf fetch fell over (a transient
+        // network hiccup, or this project's functions/migration not yet
+        // deployed). We do NOT throw a valid session back to the door: the shelf
+        // is shown (possibly empty) and their encrypted drafts stay safely in
+        // storage for the moment the fetch succeeds. If a letter was plainly
+        // mid-pen locally, it is resumed instead. The template fetch (below)
+        // remains the authoritative 401 check — a genuinely expired token is
+        // the one thing that returns you to the door.
         if (!alive) return
-        clearDesignerToken()
-        lockDraftKey()
-        setDesigner({ id: '', name: '' })
-        setStage('access')
-        setClosed(false)
-        setCoverOpen(false)
+        const pid = getActiveProjectId(designer.id)
+        loadDraft(designer.id, pid)
+          .then((localDraft) => {
+            if (pid && localDraft && !localDraft.submittedAt) resumeLetter(localDraft, pid, [])
+            else showShelf([])
+          })
+          .catch(() => {
+            showShelf([])
+          })
       })
       .finally(() => {
         if (alive) setBooting(false)
@@ -323,14 +335,21 @@ export default function CreateBook() {
         const id = payload?.sub || session.designer?.id || ''
         if (!id) throw new Error("We couldn't verify those details.")
         await unlockDraftKey(id, session.draftSecret)
-        justLoggedInRef.current = true
         setDesigner({ id, name: session.designer?.name || '' })
-        setReceiverName('')
-        setChosenSlug(null)
+
+        // With the pins accepted the cover opens at once — nothing
+        // network-bound may keep the book shut. The landing is always the
+        // shelf of previous messages; a fresh page ("For whom") is reached by
+        // choosing a new message. The hydration effect, the one place identity
+        // is resolved, refines this landing (shelf reconciliation) the instant
+        // it resolves.
         setProjectId(null)
+        setChosenSlug(null)
+        setReceiverName('')
         setMemorial(freshMemorial())
-        setClosed(false)
-        setCoverOpen(false)
+        setClosed(true)
+        setCoverOpen(true)
+        setStage('status')
         setLogin({ status: 'idle' })
         playPin()
       } catch (error) {
@@ -369,7 +388,39 @@ export default function CreateBook() {
     [designer.id, projectId, goTo]
   )
 
-  const backTo = useCallback((target) => () => goTo(target, 'back'), [goTo])
+  // The one Back control of the pipeline. Every stage that has a previous page
+  // hands it a destination through the same masthead leaf, so the way back never
+  // relocates from spread to spread and each previous page arrives with the
+  // reverse turn the book has always done.
+  const previousStageOf = {
+    'receiver': 'shelf',
+    'templates': 'receiver',
+    'unwritten': 'templates',
+    'memorial.language': 'templates',
+    'memorial.editor': 'memorial.language',
+    'memorial.password': 'memorial.editor',
+    [REVIEW_STAGE]: 'memorial.password',
+    [POLICIES_STAGE]: REVIEW_STAGE,
+  }
+
+  // The receiver is the first spread of the book: its previous page is not one
+  // of the chapters but the shelf itself, so going back closes the view (the
+  // in-progress draft stays where it is, untouched) instead of turning to a
+  // spread that does not exist.
+  const returnToShelf = useCallback(() => {
+    if (flip) return
+    playPageLift()
+    setFlip(null)
+    setActiveProject(null)
+    setProjectId(null)
+    setChosenSlug(null)
+    setReceiverName('')
+    setMemorial(freshMemorial())
+    setCoverOpen(true)
+    setClosed(true)
+    setStage('status')
+    playPageSettle()
+  }, [flip])
 
   // Template field changes are debounced (~⅓ s) so a hurried pen stays calm;
   // the pending patch is flushed whenever a page turns or the seal is pressed,
@@ -420,20 +471,22 @@ export default function CreateBook() {
   )
 
   // Submission. The letter is still LOCAL — its photos and sound live encrypted
-  // in IndexedDB, untouched by the network. Submission uploads them (with
-  // stable names: a retried submit overwrites rather than duplicates), then
-  // creates the server project carrying the EXACT policy version accepted just
-  // now. Only a server-confirmed project causes the local work to be marked
+  // in IndexedDB, untouched by the network. The seal submits the WHOLE message
+  // read straight back out of the encrypted local draft (the desk is the source
+  // of truth, never the volatile in-memory state), uploading the media in it,
+  // then creates the server project carrying the EXACT policy version accepted
+  // just now. Only a server-confirmed project causes the local work to be marked
   // submitted; the sweep itself happens on Close the Book.
   const handleSubmit = useCallback(async () => {
     if (!designer.id || !projectId || !chosenSlug) return
-    const lang = memorial.language === 'ar' ? 'ar' : 'en'
-    const problems = validateMemorial(memorial, lang)
-    if (problems.length) throw new Error(problems[0])
     flushMemorialNow()
+    const stored = await loadTemplateDraft(designer.id, chosenSlug, projectId)
+    const atSubmit = stored ?? memorial
+    const lang = atSubmit.language === 'ar' ? 'ar' : 'en'
+    const problems = validateMemorial(atSubmit, lang)
+    if (problems.length) throw new Error(problems[0])
     const token = getDesignerToken()
     const now = new Date().toISOString()
-    const atSubmit = { ...memorial }
 
     const ledger = (await loadDraft(designer.id, projectId))?.submitLedger ?? {}
     const serverRefFor = async (localRef, kind) => {
@@ -510,6 +563,27 @@ export default function CreateBook() {
     playPageSettle()
   }, [designer.id, projectId])
 
+  // A shelf row is metadata only; the letter itself lives on the server. Each
+  // open fetches the project's full payload so the book shows what was actually
+  // handed over — never the blank sample.
+  const handleOpenProject = useCallback(
+    async (project) => {
+      if (openingId) return
+      setOpeningAlert('')
+      setOpeningId(project.id)
+      try {
+        const token = getDesignerToken()
+        const { project: full } = await fetchProject(token, project.id)
+        setActiveProject(full)
+      } catch (cause) {
+        setOpeningAlert(cause?.message || 'The book could not be opened.')
+      } finally {
+        setOpeningId(null)
+      }
+    },
+    [openingId]
+  )
+
   // A new dearune opens a brand-new project page; previous books and their
   // drafts are left exactly where they are.
   const handleNewDearune = useCallback(() => {
@@ -527,6 +601,8 @@ export default function CreateBook() {
     setFlip(null)
     setLogin({ status: 'idle' })
     passwordRef.current = ''
+    setOpeningId(null)
+    setOpeningAlert('')
   }, [designer.id])
 
   const handleLeave = useCallback(() => {
@@ -547,8 +623,9 @@ export default function CreateBook() {
     setProjects(null)
     setProjectsError('')
     setActiveProject(null)
+    setOpeningId(null)
+    setOpeningAlert('')
     setBooting(false)
-    justLoggedInRef.current = false
     passwordRef.current = ''
   }, [])
 
@@ -563,6 +640,39 @@ export default function CreateBook() {
     () => (templates ?? []).find((t) => t.slug === chosenSlug) ?? { slug: chosenSlug, name: chosenSlug, description: '' },
     [templates, chosenSlug]
   )
+
+  // ---------------------------------------------------------------------------
+  // The Back control. One leaf in the masthead, same place on every spread;
+  // its label names the page it returns to.
+  // ---------------------------------------------------------------------------
+
+  const nestLabels = memorial.language === 'ar'
+  const PREVIOUS_WORDS = {
+    shelf: nestLabels ? 'الرف' : 'the shelf',
+    receiver: nestLabels ? 'لمن' : 'for whom',
+    templates: nestLabels ? 'الأوراق' : 'the papers',
+    unwritten: nestLabels ? 'الأوراق' : 'the papers',
+    'memorial.language': nestLabels ? 'الأوراق' : 'the papers',
+    'memorial.editor': nestLabels ? 'اللغة' : 'the tongue',
+    'memorial.password': nestLabels ? 'صفحة الكلام' : 'the speaking page',
+    [REVIEW_STAGE]: nestLabels ? 'القفل' : 'the lock',
+    [POLICIES_STAGE]: nestLabels ? 'الخاتمة' : 'the close',
+  }
+
+  const previousStage = previousStageOf[stage]
+  const navBack = closed
+    ? activeProject
+      ? () => {
+          playClick()
+          setActiveProject(null)
+        }
+      : null
+    : designer.id && previousStage
+      ? previousStage === 'shelf'
+        ? returnToShelf
+        : () => goTo(previousStage, 'back')
+      : null
+  const navWord = navBack ? (previousStage ? PREVIOUS_WORDS[previousStage] : PREVIOUS_WORDS.shelf) : null
 
   // ---------------------------------------------------------------------------
   // Rendering the spread: one left leaf + one right leaf per stage.
@@ -588,7 +698,7 @@ export default function CreateBook() {
         case 'receiver':
           return (
             <Folio folio={folio}>
-              <ReceiverStage initial={receiverName} onNext={handleReceiver} onBack={backTo('access')} />
+              <ReceiverStage initial={receiverName} onNext={handleReceiver} />
             </Folio>
           )
         case 'templates':
@@ -610,31 +720,31 @@ export default function CreateBook() {
         case 'unwritten':
           return (
             <Folio folio={folio}>
-              <UnwrittenStage template={chosenTemplate} onBack={backTo('templates')} />
+              <UnwrittenStage template={chosenTemplate} />
             </Folio>
           )
         case 'memorial.language':
           return (
             <Folio folio={folio}>
-              <MemorialLanguageStage value={memorial.language} onSelect={handleLanguage} onBack={backTo('templates')} />
+              <MemorialLanguageStage value={memorial.language} onSelect={handleLanguage} />
             </Folio>
           )
         case 'memorial.editor':
           return (
             <Folio folio={folio}>
-              <MemorialEditorStage draft={memorial} projectId={projectId} onChange={handleMemorialField} onNext={backTo('memorial.password')} onBack={backTo('memorial.language')} />
+              <MemorialEditorStage draft={memorial} projectId={projectId} onChange={handleMemorialField} onNext={() => goTo('memorial.password')} />
             </Folio>
           )
         case 'memorial.password':
           return (
             <Folio folio={folio}>
-              <MemorialPasswordStage draft={memorial} onSet={handleSetPassword} onNext={backTo('review')} onBack={backTo('memorial.editor')} />
+              <MemorialPasswordStage draft={memorial} onSet={handleSetPassword} onNext={() => goTo('review')} />
             </Folio>
           )
         case 'review':
           return (
             <Folio folio={folio}>
-              <ReviewStage draft={memorial} token={memorialToken} templateName={chosenTemplate.name} onBack={backTo('memorial.password')} onNext={backTo(POLICIES_STAGE)} />
+              <ReviewStage draft={memorial} token={memorialToken} templateName={chosenTemplate.name} onNext={() => goTo(POLICIES_STAGE)} />
             </Folio>
           )
         case POLICIES_STAGE:
@@ -644,7 +754,6 @@ export default function CreateBook() {
                 draft={memorial}
                 templateName={chosenTemplate.name}
                 receiverName={receiverName}
-                onBack={backTo('review')}
                 onSubmit={handleSubmit}
               />
             </Folio>
@@ -665,7 +774,7 @@ export default function CreateBook() {
           return null
       }
     },
-    [sequence, login, templates, templatesError, chosenSlug, chosenTemplate, designer, memorial, memorialToken, receiverName, projectId, activeProject, handleAccess, handleCooldownEnd, handleReceiver, handlePickTemplate, handleLanguage, handleMemorialField, handleSetPassword, handleSubmit, handleCloseBook, backTo]
+    [sequence, login, templates, templatesError, chosenSlug, chosenTemplate, designer, memorial, memorialToken, receiverName, projectId, activeProject, handleAccess, handleCooldownEnd, handleReceiver, handlePickTemplate, handleLanguage, handleMemorialField, handleSetPassword, handleSubmit, handleCloseBook, goTo]
   )
 
   const leftFor = useCallback(
@@ -719,6 +828,7 @@ export default function CreateBook() {
     return (
       <div className="book-root">
         <Masthead
+          left={navBack ? <BookStageNavigation onBack={navBack} label={navWord} /> : null}
           insonicated={insonicated}
           onToggleSound={toggleSound}
           right={designer.id ? <Mast leave onLeave={handleLeave} /> : null}
@@ -735,7 +845,9 @@ export default function CreateBook() {
                   loading={projects === null && !projectsError}
                   error={projectsError}
                   templates={templates}
-                  onOpen={setActiveProject}
+                  onOpen={handleOpenProject}
+                  openingId={openingId}
+                  openingAlert={openingAlert}
                   onNewDearune={handleNewDearune}
                   onRetry={() => {
                     setProjectsError('')
@@ -780,6 +892,7 @@ export default function CreateBook() {
   return (
     <div className="book-root">
       <Masthead
+        left={navBack ? <BookStageNavigation onBack={navBack} label={navWord} /> : null}
         insonicated={insonicated}
         onToggleSound={toggleSound}
         right={designer.id ? <Mast leave onLeave={handleLeave} /> : null}
@@ -808,11 +921,14 @@ export default function CreateBook() {
   )
 }
 
-function Masthead({ insonicated, onToggleSound, right }) {
+function Masthead({ insonicated, onToggleSound, right, left }) {
   return (
     <header className="book-masthead">
-      <span className="mono">
-        D<em>earune</em>
+      <span className="masthead-left">
+        {left}
+        <span className="mono">
+          D<em>earune</em>
+        </span>
       </span>
       <span className="tagline">a single message · a single book</span>
       <span className="masthead-actions">

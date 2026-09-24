@@ -33,6 +33,7 @@ import {
   encryptBytes,
   decryptBytes,
 } from '../src/services/draftCrypto'
+import { parseProjectPayload } from '../src/services/projectPayload'
 
 // Web Crypto is required by the draft encryption core. Node exposes it as
 // globalThis.crypto from v20 on; under older runtimes it is filled from
@@ -353,5 +354,55 @@ describe('template stages', () => {
     expect(templateStagesFor('classic-letter')).toEqual(['unwritten'])
     expect(templateStagesFor(null)).toEqual([])
     expect(templateStagesFor('')).toEqual([])
+  })
+})
+
+describe('project payload read', () => {
+  const valid = {
+    language: 'ar',
+    greeting: 'أبي الحبيب',
+    closing: 'بكل الحب،',
+    senderName: 'قلم الحبر',
+    body: 'لا يوم يمر دونك.',
+    photos: [{ store: 'supabase', path: 'd-1/memorial-message/photo-0.png' }, null, null],
+    audio: { store: 'supabase', path: 'd-1/memorial-message/audio-0.m4a' },
+    passwordSet: true,
+  }
+
+  it('reads an object payload into the renderer\u2019s draft shape', () => {
+    const draft = parseProjectPayload(valid)
+    expect(draft).toMatchObject({
+      language: 'ar',
+      greeting: 'أبي الحبيب',
+      closing: 'بكل الحب،',
+      senderName: 'قلم الحبر',
+      body: 'لا يوم يمر دونك.',
+      audio: valid.audio,
+      passwordSet: true,
+    })
+    expect(draft.photos).toEqual([valid.photos[0], null, null])
+  })
+
+  it('recovers an older row whose payload was stored as a JSON string', () => {
+    const draft = parseProjectPayload(JSON.stringify(valid))
+    expect(draft).toMatchObject({ language: 'ar', body: 'لا يوم يمر دونك.', passwordSet: true })
+  })
+
+  it('refuses empty, stubbed or malformed payloads instead of sampling a design', () => {
+    expect(parseProjectPayload(null)).toBeNull()
+    expect(parseProjectPayload(undefined)).toBeNull()
+    expect(parseProjectPayload({})).toBeNull()
+    expect(parseProjectPayload([])).toBeNull()
+    expect(parseProjectPayload({ body: 42 })).toBeNull()
+    expect(parseProjectPayload('{oops')).toBeNull()
+  })
+
+  it('never substitutes defaults for stored words on the read path', () => {
+    const stored = { ...valid, greeting: '', closing: '', senderName: '' }
+    const draft = parseProjectPayload(stored)
+    expect(draft.greeting).toBe('')
+    expect(draft.closing).toBe('')
+    expect(draft.senderName).toBe('')
+    expect(draft.body).toBe('لا يوم يمر دونك.')
   })
 })

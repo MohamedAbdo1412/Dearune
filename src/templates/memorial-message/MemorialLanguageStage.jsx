@@ -7,7 +7,7 @@ const OPTIONS = [
   { code: 'ar', name: 'العربية', script: 'تفتح الرسالة من اليمين', sample: 'أ ب ت ث' },
 ]
 
-export default function MemorialLanguageStage({ value, onSelect, onBack }) {
+export default function MemorialLanguageStage({ value, onSelect }) {
   return (
     <div className="settle stage-root">
       <div className="page-script">a first choice</div>
@@ -34,10 +34,6 @@ export default function MemorialLanguageStage({ value, onSelect, onBack }) {
             </button>
           )
         })}
-      </div>
-
-      <div className="stage-actions">
-        <button type="button" className="d-btn d-btn--thread" onClick={onBack}>← to the papers</button>
       </div>
     </div>
   )

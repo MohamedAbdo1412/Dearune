@@ -21,7 +21,7 @@ function validateMemorial(draft, lang) {
 // proof, fed through useMemorialMedia so local (IndexedDB) media is decrypted
 // and shown just as it is — never re-uploaded, never touched by the network.
 
-export default function ReviewStage({ draft, token, templateName, onBack, onNext }) {
+export default function ReviewStage({ draft, token, templateName, onNext }) {
   const lang = draft.language === 'ar' ? 'ar' : 'en'
   const t = (en, ar) => (lang === 'ar' ? ar : en)
   const { photoUrls, audioUrl } = useMemorialMedia(draft, token)
@@ -58,9 +58,6 @@ export default function ReviewStage({ draft, token, templateName, onBack, onNext
       ) : null}
 
       <div className="stage-actions">
-        <button type="button" className="d-btn d-btn--thread" onClick={onBack}>
-          ← {t('one more look', 'نظرة أخيرة')}
-        </button>
         <button type="button" id="mm-to-terms" className="d-btn d-btn--ink" onClick={onNext}>
           {t('to the terms', 'إلى الشروط')} →
         </button>

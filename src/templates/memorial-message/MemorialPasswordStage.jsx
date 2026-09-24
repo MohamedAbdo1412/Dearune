@@ -35,7 +35,7 @@ function Key({ turning, set }) {
   )
 }
 
-export default function MemorialPasswordStage({ draft, onSet, onNext, onBack }) {
+export default function MemorialPasswordStage({ draft, onSet, onNext }) {
   const lang = draft.language === 'ar' ? 'ar' : 'en'
   const t = (en, ar) => (lang === 'ar' ? ar : en)
   const [first, setFirst] = useState('')
@@ -128,9 +128,6 @@ export default function MemorialPasswordStage({ draft, onSet, onNext, onBack }) 
       </div>
 
       <div className="stage-actions">
-        <button type="button" className="d-btn d-btn--thread" onClick={onBack} disabled={turning}>
-          ← {t('back to the page', 'العودة للصفحة')}
-        </button>
         <button type="button" className="d-btn d-btn--ink" onClick={seal} disabled={turning}>
           {t('seal the letter', 'أقفل الرسالة')} →
         </button>

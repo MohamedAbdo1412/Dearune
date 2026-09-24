@@ -101,7 +101,7 @@ function PhotoCropDialog({ open, src, hasExisting, onCancel, onPin, onLift, subm
   )
 }
 
-export default function MemorialEditorStage({ draft, onChange, onNext, onBack, projectId }) {
+export default function MemorialEditorStage({ draft, onChange, onNext, projectId }) {
   const lang = draft.language === 'ar' ? 'ar' : 'en'
   const t = (en, ar) => (lang === 'ar' ? ar : en)
   const token = getDesignerToken()
@@ -328,9 +328,6 @@ export default function MemorialEditorStage({ draft, onChange, onNext, onBack, p
       </div>
 
       <div className="stage-actions">
-        <button type="button" className="d-btn d-btn--thread" onClick={onBack}>
-          ← {t('back to languages', 'العودة للغة')}
-        </button>
         <button type="button" id="mm-seal" className="d-btn d-btn--ink" onClick={goNext}>
           {t('seal the letter', 'مضيّ هذا الكتاب')} →
         </button>

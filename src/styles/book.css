@@ -171,6 +171,53 @@
   color: var(--paper-2);
 }
 
+.masthead-left {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+/* The one Back control of the pipeline: a quiet leaf beside the wordmark, in
+   the same physical corner on every spread. It holds only the journey back —
+   a single small button, nothing between the reader and the page. */
+.book-nav {
+  display: inline-flex;
+}
+
+.book-nav__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 6px;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  background: none;
+  border: 1px solid rgba(160, 128, 66, 0.35);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: color 0.25s ease, border-color 0.25s ease;
+}
+
+.book-nav__back:hover:not(:disabled),
+.book-nav__back:focus-visible:not(:disabled) {
+  color: var(--brass);
+  border-color: var(--brass);
+}
+
+.book-nav__back:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.book-nav__caret {
+  font-size: 1.05rem;
+  line-height: 1;
+  color: var(--brass);
+}
+
 .book-footer {
   width: min(1180px, 94vw);
   margin: 18px auto 0;
@@ -189,6 +236,16 @@
   .book-masthead .tagline,
   .book-footer span:last-child {
     display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .book-nav__word {
+    display: none;
+  }
+  .book-nav__back {
+    border: none;
+    padding: 6px 8px 6px 4px;
   }
 }
 
@@ -1457,10 +1514,16 @@
   z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   margin-top: auto;
   padding-top: 12px;
+}
+
+/* A stage whose only former action was the Back leaf carries nothing now: Back
+   lives in the masthead. An empty action strip must not leave a gap. */
+.stage-actions:empty {
+  display: none;
 }
 
 .stage-actions .d-btn {
@@ -2522,6 +2585,17 @@
   font-weight: 560;
   font-size: 1rem;
   letter-spacing: 0.04em;
+}
+
+.project-row:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.project-opening {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
 }
 
 .project-meta {

@@ -28,13 +28,14 @@ function shelfStatus(project) {
   return project.policy_version ? 'sealed, not yet opened' : 'waiting'
 }
 
-export default function ProjectsBook({ projects, loading, error, templates, onOpen, onNewDearune, onRetry }) {
+export default function ProjectsBook({ projects, loading, error, templates, onOpen, openingId, openingAlert, onNewDearune, onRetry }) {
   const date = (iso) => {
     if (!iso || Number.isNaN(Date.parse(iso))) return ''
     return new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium' }).format(new Date(iso))
   }
 
   const rows = Array.isArray(projects) ? projects : []
+  const busy = Boolean(openingId)
 
   return (
     <div className="settle stage-root">
@@ -64,6 +65,11 @@ export default function ProjectsBook({ projects, loading, error, templates, onOp
         </div>
       ) : rows.length ? (
         <>
+          {openingAlert ? (
+            <div className="field-note--warn" role="alert" style={{ textAlign: 'center', margin: '0 0 10px' }}>
+              {openingAlert}
+            </div>
+          ) : null}
           <div className="project-list" role="list" aria-label="Your books">
             {rows.map((project) => (
               <button
@@ -72,6 +78,7 @@ export default function ProjectsBook({ projects, loading, error, templates, onOp
                 className="project-row"
                 role="listitem"
                 onClick={() => onOpen(project)}
+                disabled={busy}
               >
                 <span className="project-title">{project.title || 'an unnamed book'}</span>
                 <span className="project-meta">
@@ -81,6 +88,11 @@ export default function ProjectsBook({ projects, loading, error, templates, onOp
                     {shelfStatus(project)}
                   </span>
                 </span>
+                {openingId === project.id ? (
+                  <span className="project-opening">
+                    <DearuneLoader small label="opening…" />
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function ReceiverStage({ initial, onNext, onBack }) {
+export default function ReceiverStage({ initial, onNext }) {
   const [name, setName] = useState(initial ?? '')
   const [alert, setAlert] = useState('')
   const trimmed = name.trim()
@@ -46,9 +46,6 @@ export default function ReceiverStage({ initial, onNext, onBack }) {
       </div>
 
       <div className="stage-actions">
-        <button type="button" className="d-btn d-btn--thread" onClick={onBack}>
-          ← back
-        </button>
         <button type="submit" className="d-btn d-btn--ink">
           it is settled →
         </button>

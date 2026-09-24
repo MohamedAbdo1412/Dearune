@@ -15,7 +15,7 @@ import { validateMemorial } from '@/templates/memorial-message/MemorialEditorSta
 // mid-way; it is designed to be retried without duplicating anything, and this
 // page owns the busy/error states around it.
 
-export default function PoliciesStage({ draft, templateName, receiverName, onBack, onSubmit }) {
+export default function PoliciesStage({ draft, templateName, receiverName, onSubmit }) {
   const lang = draft.language === 'ar' ? 'ar' : 'en'
   const t = (en, ar) => (lang === 'ar' ? ar : en)
   const [accepted, setAccepted] = useState(false)
@@ -35,7 +35,7 @@ export default function PoliciesStage({ draft, templateName, receiverName, onBac
     try {
       await onSubmit()
     } catch (cause) {
-      setError(cause?.message || t('The book could not be closed', 'تعذّر إغلاق الكتاب'))
+      setError(cause?.message || t('The book could not be submitted', 'تعذّر إرسال الكتاب'))
     } finally {
       setSubmitting(false)
     }
@@ -93,11 +93,8 @@ export default function PoliciesStage({ draft, templateName, receiverName, onBac
       ) : null}
 
       <div className="stage-actions">
-        <button type="button" className="d-btn d-btn--thread" onClick={onBack} disabled={submitting}>
-          ← {t('back to the close', 'العودة للخاتمة')}
-        </button>
         <button type="button" id="mm-submit" className="d-btn d-btn--ink" onClick={handleSubmit} disabled={!accepted || problems.length > 0 || submitting}>
-          {submitting ? <DearuneLoader small label={t('closing', 'يُغلق')} /> : t('close the book', 'أغلق الكتاب')}
+          {submitting ? <DearuneLoader small label={t('submitting', 'يُرسل')} /> : t('submit book', 'أرسل الكتاب')}
         </button>
       </div>
       {!accepted ? (
