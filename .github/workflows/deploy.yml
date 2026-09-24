@@ -55,12 +55,22 @@ jobs:
 
       - name: Set edge function secrets
         run: |
-          supabase secrets set \
-            DESIGNER_JWT_SECRET="${{ secrets.DESIGNER_JWT_SECRET }}" \
-            GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
-            GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
-            GOOGLE_REFRESH_TOKEN="${{ secrets.GOOGLE_REFRESH_TOKEN }}" \
-            GOOGLE_DRIVE_MEDIA_FOLDER_ID="${{ secrets.GOOGLE_DRIVE_MEDIA_FOLDER_ID }}"
+          # Only set a secret when the repository secret actually has a value.
+          # An empty value here would clobber a working project secret (e.g.
+          # DESIGNER_JWT_SECRET set via the CLI) and break logins on every push.
+          set_secret() {
+            local name="$1" value="$2"
+            if [ -n "$value" ]; then
+              supabase secrets set "${name}=${value}"
+            else
+              echo "::warning::Skipping ${name}: repository secret not set — leaving the existing project value untouched"
+            fi
+          }
+          set_secret DESIGNER_JWT_SECRET "${{ secrets.DESIGNER_JWT_SECRET }}"
+          set_secret GOOGLE_CLIENT_ID "${{ secrets.GOOGLE_CLIENT_ID }}"
+          set_secret GOOGLE_CLIENT_SECRET "${{ secrets.GOOGLE_CLIENT_SECRET }}"
+          set_secret GOOGLE_REFRESH_TOKEN "${{ secrets.GOOGLE_REFRESH_TOKEN }}"
+          set_secret GOOGLE_DRIVE_MEDIA_FOLDER_ID "${{ secrets.GOOGLE_DRIVE_MEDIA_FOLDER_ID }}"
 
       - name: Deploy edge functions
         run: supabase functions deploy --project-ref "$SUPABASE_PROJECT_ID"
