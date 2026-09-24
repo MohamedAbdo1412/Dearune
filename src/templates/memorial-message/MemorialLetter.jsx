@@ -21,10 +21,14 @@ const DEFAULT_EN = {
   closing: 'Sincerely,',
 }
 
+// Three pinned prints on the rail, each hung at its own height so the line
+// reads like a wall of keepsakes rather than a row of ID cards: the middle
+// pin hangs a little higher, the flanking two a touch lower, with their
+// rotations off the grid.
 const PHOTO_PLACEMENT = [
-  { rotate: -4, cls: 'pos-a' },
-  { rotate: 3, cls: 'pos-b' },
-  { rotate: -2, cls: 'pos-c' },
+  { rotate: -4, y: 3, cls: 'pos-a' },
+  { rotate: 3, y: -8, cls: 'pos-b' },
+  { rotate: -2, y: 5, cls: 'pos-c' },
 ]
 
 // Enter-advance between the single-line entries of the letter.
@@ -34,13 +38,13 @@ export function memorialDefaults(language) {
   return language === 'ar' ? { ...DEFAULT_AR, body: '', senderName: '' } : { ...DEFAULT_EN, body: '', senderName: '' }
 }
 
-function PhotoPrint({ media, src, rotate, cls, editable, onTap, pin }) {
+function PhotoPrint({ media, src, rotate, drop, cls, editable, onTap, pin }) {
   const live = editable && onTap
   return (
     <button
       type="button"
       className={`m-print ${cls}${live ? ' is-editable' : ''}${media ? ' is-set' : ''}`}
-      style={{ '--pt-rot': `${rotate}deg` }}
+      style={{ '--pt-rot': `${rotate}deg`, '--pt-y': `${drop}px` }}
       onClick={live ? () => onTap() : undefined}
       aria-label={editable ? (media ? 'Replace this print' : 'Add a print') : media ? 'An old photograph' : 'An empty print position'}
       tabIndex={editable ? 0 : -1}
@@ -210,6 +214,7 @@ export default function MemorialLetter({
             media={draft.photos?.[i] ?? null}
             src={photoUrls[i] ?? null}
             rotate={p.rotate}
+            drop={p.y}
             cls={p.cls}
             editable={editable}
             onTap={onPhotoTap ? () => onPhotoTap(i) : undefined}

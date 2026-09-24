@@ -11,6 +11,23 @@ function paperName(templates, slug) {
   return (templates ?? []).find((t) => t.slug === slug)?.name ?? slug
 }
 
+const DAY = 86400000
+
+// The row tells the book's real condition at a glance. A project is born
+// sealed but mute; the clock starts only when the reader first opens it, and
+// runs the agreed AVAILABILITY_YEARS from that first activation.
+function shelfStatus(project) {
+  if (!project) return 'waiting'
+  const active = Boolean(project.message_active)
+  const expires = project.expires_at && !Number.isNaN(Date.parse(project.expires_at)) ? Date.parse(project.expires_at) : null
+  if (active) {
+    if (expires && expires < Date.now() - DAY) return 'expired'
+    if (expires) return `active until ${new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium' }).format(new Date(expires))}`
+    return 'active'
+  }
+  return project.policy_version ? 'sealed, not yet opened' : 'waiting'
+}
+
 export default function ProjectsBook({ projects, loading, error, templates, onOpen, onNewDearune, onRetry }) {
   const date = (iso) => {
     if (!iso || Number.isNaN(Date.parse(iso))) return ''
@@ -60,7 +77,9 @@ export default function ProjectsBook({ projects, loading, error, templates, onOp
                 <span className="project-meta">
                   <span>{paperName(templates, project.template_slug)}</span>
                   {date(project.submitted_at) ? <span>{date(project.submitted_at)}</span> : null}
-                  <span className="project-state">{project.status === 'delivered' ? 'delivered' : 'waiting'}</span>
+                  <span className={`project-state ${shelfStatus(project) === 'expired' ? 'is-expired' : ''}`}>
+                    {shelfStatus(project)}
+                  </span>
                 </span>
               </button>
             ))}

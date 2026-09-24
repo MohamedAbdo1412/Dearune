@@ -35,6 +35,13 @@ export default function ProjectSheet({ project, token, templates }) {
     : null
   const paper = (templates ?? []).find((p) => p.slug === project?.template_slug)?.name ?? project?.template_slug ?? ''
 
+  const active = Boolean(project?.message_active)
+  const expires = project?.expires_at && !Number.isNaN(Date.parse(project.expires_at)) ? Date.parse(project.expires_at) : null
+  const gone = active && expires ? expires < Date.now() - 86400000 : false
+  const readsUntil = expires
+    ? new Intl.DateTimeFormat(lang === 'ar' ? 'ar' : 'en-GB', { dateStyle: 'medium' }).format(new Date(expires))
+    : null
+
   return (
     <div className="settle stage-root">
       <div className="page-script">{t('handed over', 'تم التسليم')}</div>
@@ -52,6 +59,16 @@ export default function ProjectSheet({ project, token, templates }) {
         <span className="draft-note">{paper || t('chosen paper', 'الورق المختار')}</span>
         {closedAt ? <span className="draft-note">{t('closed', 'أُغلق')} · {closedAt}</span> : null}
         <span className="draft-note">receipt · {project?.public_id ?? ''}</span>
+      </div>
+      <div className="review-meta" style={{ marginTop: 2 }}>
+        {active ? (
+          <span className={`project-state ${gone ? 'is-expired' : ''}`}>
+            {gone ? t('the reading has ended', 'انتهت فترة القراءة') : readsUntil ? t('reads until', 'تقرأ حتى') + ' · ' + readsUntil : t('reading now', 'تُقرأ الآن')}
+          </span>
+        ) : (
+          <span className="project-state">{t('sealed · not yet opened', 'مختومة · لم تُفتح بعد')}</span>
+        )}
+        {project?.policy_version ? <span className="draft-note">terms · {project.policy_version}</span> : null}
       </div>
     </div>
   )

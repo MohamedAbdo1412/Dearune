@@ -1,7 +1,7 @@
 import bcrypt from 'npm:bcryptjs@^3.0.2'
 import { corsHeaders, errorResponse, handleOptions, jsonResponse, readJson } from '../_shared/cors.ts'
 import { adminClient } from '../_shared/supabase.ts'
-import { signDesignerJwt } from '../_shared/auth.ts'
+import { randomSecret, signDesignerJwt } from '../_shared/auth.ts'
 
 const FAIL_LIMIT = 3
 const LOCK_SECONDS = 60
@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
 
   const { data: designer } = await sb
     .from('designers')
-    .select('id, name, code, passcode_hash, revoked_at')
+    .select('id, name, code, passcode_hash, draft_secret, revoked_at')
     .eq('code', enteredCode)
     .maybeSingle()
 
@@ -78,8 +78,20 @@ Deno.serve(async (req) => {
 
   const token = await signDesignerJwt({ id: designer.id, code: designer.code })
 
+  // Per-designer draft-unlock secret: minted once, persisted server-side, and
+  // handed back ONLY to the authenticated owner. It derives the AES-GCM key
+  // used to encrypt this designer's local drafts (see the browser's
+  // draftCrypto module); the secret is never written to the device, so a
+  // second designer on the same computer cannot decrypt the first one's work.
+  let draftSecret = designer.draft_secret ?? null
+  if (!draftSecret) {
+    draftSecret = randomSecret(256)
+    await sb.from('designers').update({ draft_secret: draftSecret }).eq('id', designer.id)
+  }
+
   return jsonResponse({
     token,
+    draftSecret,
     designer: { id: designer.id, name: designer.name, code: designer.code },
   })
 })

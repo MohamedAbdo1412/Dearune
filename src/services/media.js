@@ -184,13 +184,15 @@ async function designerMedia(method, path, { token, query, body, contentType } =
 }
 
 // Upload a raw file to this designer's private namespace. `kind` decides the
-// folder (photos / audio); the server generates the object name.
-export function uploadDesignerMedia(file, { token, kind }) {
+// kind (photos / audio); the server generates the object name. When `fixed` is
+// given, the object is stored under that stable name with upsert semantics, so
+// a retried submission overwrites the earlier object instead of duplicating it.
+export function uploadDesignerMedia(file, { token, kind, fixed }) {
   return designerMedia('POST', '', {
     token,
     body: file,
     contentType: file.type || 'application/octet-stream',
-    query: { kind, name: file.name ?? '' },
+    query: { kind, name: file.name ?? '', fixed: fixed || undefined },
   })
 }
 

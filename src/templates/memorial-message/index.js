@@ -13,7 +13,11 @@ export const MEMORIAL_TEMPLATE = {
   slug: 'memorial-message',
   subject: 'Memorial Message',
   phrase: 'one kept letter · three prints · a sound, if you like',
-  stages: ['memorial.language', 'memorial.editor', 'memorial.password', 'review'],
+  // The paper's fixed proportion as delivered (portrait 3:4). Previews wrap
+  // the composition in a sheet of exactly this ratio, so the tool-time proof
+  // always matches the real delivery regardless of the page height.
+  renderAspectRatio: 3 / 4,
+  stages: ['memorial.language', 'memorial.editor', 'memorial.password', 'review', 'policies'],
   components: {
     'memorial.language': MemorialLanguageStage,
     'memorial.editor': MemorialEditorStage,

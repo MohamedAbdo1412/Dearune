@@ -121,6 +121,42 @@ export function CloseSheet({ receiverName }) {
   )
 }
 
+export function PoliciesSheet() {
+  return (
+    <ChapterPage
+      folio={15}
+      script="chapter the eighth"
+      title="The seal"
+    >
+      <div className="seal-mark" aria-hidden="true">
+        <span className="seal-wax" />
+      </div>
+      <p className="page-lead" style={{ marginTop: 12 }}>
+        The book stays in your hands until its terms are accepted as they stand
+        today. Tick the words, and the seal is free to fall on the final page.
+      </p>
+    </ChapterPage>
+  )
+}
+
+export function SubmittedSheet() {
+  return (
+    <ChapterPage
+      folio={17}
+      script="chapter the last"
+      title="Handed over"
+    >
+      <div className="submitted-seal" aria-hidden="true">
+        <span className="seal-wax seal-wax--set" />
+      </div>
+      <p className="page-lead" style={{ marginTop: 12 }}>
+        The book has left the desk. It will wait, closed, on the shelf — its
+        words no longer spoken anywhere but its pages.
+      </p>
+    </ChapterPage>
+  )
+}
+
 export function ClosedBookSheet() {
   return (
     <ChapterPage

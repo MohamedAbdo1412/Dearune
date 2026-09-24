@@ -1,53 +1,84 @@
 // Original push-pin artwork (drawn for Dearune; no external asset used). A
-// domed head with a soft highlight, a seated shadow, and a hint of needle —
-// just enough to read as a real pin through the paper without being cartoonish.
+// press-stud head like the ones on a bulletin board: a gently domed crown, a
+// crisp circumferential seat, a luminescent specular sweep across the dome,
+// and a tapered steel needle entering the paper on a diagonal. The pin reads
+// as a small object casting a real shadow, not a cartoon icon.
 
 const PIN_COLORS = {
   burgundy: {
-    headTop: '#a4554e',
-    headBase: '#6f2f2b',
-    rim: '#4a1f1c',
-    glow: 'rgba(255, 214, 190, 0.55)',
+    crown: '#b96a60',
+    body: '#7d3b33',
+    rim: '#54261f',
+    seat: '#3f1d18',
+    glow: 'rgba(255, 226, 208, 0.85)',
+    sheen: 'rgba(255, 250, 245, 0.5)',
   },
   brass: {
-    headTop: '#d9b779',
-    headBase: '#8a6731',
-    rim: '#5d4219',
-    glow: 'rgba(255, 246, 220, 0.6)',
+    crown: '#e4c069',
+    body: '#a87f3c',
+    rim: '#71521f',
+    seat: '#55380f',
+    glow: 'rgba(255, 248, 224, 0.9)',
+    sheen: 'rgba(255, 254, 246, 0.45)',
   },
   forest: {
-    headTop: '#57704f',
-    headBase: '#35432f',
-    rim: '#1e281b',
-    glow: 'rgba(220, 240, 205, 0.5)',
+    crown: '#6d8763',
+    body: '#45593c',
+    rim: '#2b3a25',
+    seat: '#1c2717',
+    glow: 'rgba(226, 242, 214, 0.8)',
+    sheen: 'rgba(244, 250, 240, 0.4)',
   },
 }
 
 export const PIN_NAMES = ['burgundy', 'brass', 'forest']
 
-// A seated pin. `at` positions the wrapper (top-left corner of a slot); the
-// pin draws itself pointing toward the lower-right with its highlight and a
-// soft drop shadow on the paper.
+// A seated pin. `at` positions the wrapper; the pin draws itself pointing
+// toward the lower-right with its highlight, a soft cast shadow on the paper,
+// and the needle's own thin shadow along its axis.
 export default function PushPin({ color = 'brass', size = 26, style }) {
   const c = PIN_COLORS[color] ?? PIN_COLORS.brass
   return (
-    <span className="pin" style={style} aria-hidden="true">
-      <svg width={size} height={size * 1.9} viewBox="0 0 40 76">
+    <span className="pin" style={{ width: size, height: size * 1.6, ...style }} aria-hidden="true">
+      <svg viewBox="0 0 40 64" width="100%" height="100%" role="img">
         <defs>
-          <radialGradient id="head" cx="32%" cy="26%" r="90%">
-            <stop offset="0%" stopColor={c.headTop} />
-            <stop offset="55%" stopColor={c.headBase} />
-            <stop offset="100%" stopColor={c.rim} />
+          <radialGradient id={`pin-crown-${color}`} cx="33%" cy="24%" r="95%">
+            <stop offset="0%" stopColor={c.crown} />
+            <stop offset="46%" stopColor={c.body} />
+            <stop offset="88%" stopColor={c.rim} />
+            <stop offset="100%" stopColor={c.seat} />
           </radialGradient>
-          <filter id="pinShadow" x="-40%" y="-40%" width="180%" height="220%">
-            <feGaussianBlur stdDeviation="2.2" />
-          </filter>
+          <linearGradient id={`pin-base-${color}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={c.body} />
+            <stop offset="100%" stopColor={c.seat} />
+          </linearGradient>
         </defs>
-        <ellipse cx="20" cy="66" rx="15" ry="4.5" fill="rgba(30,18,8,0.4)" filter="url(#pinShadow)" />
-        <path d="M20 5 L17.5 34 Q17 38 20 40 Q23 38 22.5 34 Z" fill="url(#head)" stroke="rgba(30,16,8,0.5)" strokeWidth="1" />
-        <ellipse cx="14.5" cy="14" rx="3.2" ry="5.5" fill={c.glow} transform="rotate(-18 14.5 14)" />
-        <path d="M20 40 L20 62" stroke="rgba(38,24,14,0.85)" strokeWidth="2.6" strokeLinecap="round" />
-        <path d="M20 60 l-4.4 10 q0.6 1.6 4.4 4 M20 60 l4.4 10 q-0.6 1.6 -4.4 4" fill="#b98d52" stroke="rgba(30,16,8,0.7)" strokeWidth="1" opacity="0.92" />
+
+        {/* cast shadow on the paper */}
+        <ellipse cx="22" cy="56.5" rx="13.5" ry="3.4" fill="rgba(24,14,6,0.32)" />
+        <ellipse cx="22" cy="56.5" rx="8.5" ry="1.9" fill="rgba(24,14,6,0.28)" />
+
+        {/* the needle entering the paper, slightly off its own shadow */}
+        <path d="M20 34 L20 55" stroke="#6b625a" strokeWidth="2.6" strokeLinecap="round" />
+        <path d="M20.6 34 L20.6 54.5" stroke="#c9c2b8" strokeWidth="1.1" strokeLinecap="round" opacity="0.8" />
+
+        {/* crown: domed head with a circumferential seat */}
+        <path
+          d="M12.5 15.5 Q13 8.5 20 8 Q27 8.5 27.5 15.5 Q27.2 21.5 23.4 24 Q21.8 25 20 25 Q18.2 25 16.6 24 Q12.8 21.5 12.5 15.5 Z"
+          fill={c.crown}
+        />
+        <path
+          d="M12.5 15.5 Q13 8.5 20 8 Q27 8.5 27.5 15.5 Q27.2 21.5 23.4 24 Q21.8 25 20 25 Q18.2 25 16.6 24 Q12.8 21.5 12.5 15.5 Z"
+          fill={`url(#pin-crown-${color})`}
+        />
+        {/* seat rim */}
+        <ellipse cx="20" cy="24.6" rx="7.9" ry="1.8" fill={c.seat} />
+        <path d="M12.8 16.5 Q20 13.8 27.2 16.5" stroke={c.seat} strokeWidth="1.4" fill="none" opacity="0.55" />
+        {/* specular sweep */}
+        <path d="M15.6 11.5 Q17.6 9.3 21.4 9.4 Q17.8 10.6 16.2 13.2 Z" fill={c.glow} opacity="0.85" />
+        <ellipse cx="15.2" cy="14.4" rx="2.6" ry="4.2" fill={c.sheen} transform="rotate(-16 15.2 14.4)" opacity="0.9" />
+        {/* tiny factory knock */}
+        <circle cx="23.6" cy="12.6" r="0.8" fill={c.glow} opacity="0.6" />
       </svg>
     </span>
   )

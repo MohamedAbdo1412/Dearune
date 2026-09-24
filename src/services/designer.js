@@ -34,26 +34,3 @@ export async function designerLogin(code, passcode) {
 export function fetchDesignerTemplates(token) {
   return invokeFunction('designer-templates', { token })
 }
-
-export function fetchDesignerOrders(token) {
-  return invokeFunction('designer-messages', { token })
-}
-
-export function fetchDesignerMessage(token, orderId) {
-  return invokeFunction(`designer-message/${orderId}`, { token })
-}
-
-export function saveDesignerMessage(token, orderId, input) {
-  return invokeFunction(`designer-message/${orderId}`, {
-    method: 'PUT',
-    token,
-    body: input,
-  })
-}
-
-export function publishDesignerMessage(token, orderId) {
-  return invokeFunction(`designer-message/${orderId}`, {
-    method: 'POST',
-    token,
-  })
-}

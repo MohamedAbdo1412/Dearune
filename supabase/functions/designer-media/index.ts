@@ -104,12 +104,17 @@ async function uploadToDrive(sb: ReturnType<typeof adminClient>, designerId: str
   return String(json.id)
 }
 
-async function uploadToSupabase(sb: ReturnType<typeof adminClient>, designerId: string, bytes: Uint8Array, mimeType: string, extension: string) {
-  const objectName = `${designerId}/memorial-message/${crypto.randomUUID()}${extension}`
+async function uploadToSupabase(sb: ReturnType<typeof adminClient>, designerId: string, bytes: Uint8Array, mimeType: string, extension: string, fixed = '') {
+  // A stable `fixed` name (e.g. the project's photo slot) turns the upload
+  // into an upsert: a retried submission overwrites the earlier object instead
+  // of leaving an endless row of duplicates.
+  const objectName = fixed
+    ? `${designerId}/memorial-message/${fixed}${extension}`
+    : `${designerId}/memorial-message/${crypto.randomUUID()}${extension}`
   const { error } = await sb.storage.from(BUCKET).upload(objectName, bytes, {
     contentType: mimeType,
     cacheControl: '3600',
-    upsert: false,
+    upsert: Boolean(fixed),
   })
   if (error) throw error
   return objectName
@@ -137,6 +142,7 @@ Deno.serve(async (req) => {
     if (!mimeType.startsWith(requiredPrefix)) return errorResponse(`A ${kind} must be ${requiredPrefix}*`, 400)
 
     const originalName = sanitizeName(url.searchParams.get('name') ?? '')
+    const fixedName = sanitizeName(url.searchParams.get('fixed') ?? '').replace(/\.g$/, '')
     const bytes = new Uint8Array(await req.arrayBuffer())
     if (bytes.byteLength === 0) return errorResponse('Nothing was sent', 400)
     if (bytes.byteLength > limit) return errorResponse('That is too heavy to pin', 413)
@@ -145,7 +151,7 @@ Deno.serve(async (req) => {
       const provider = await resolveStorageProvider(sb)
       const storagePath = provider === 'google_drive'
         ? await uploadToDrive(sb, designer.designerId, bytes, mimeType, originalName)
-        : await uploadToSupabase(sb, designer.designerId, bytes, mimeType, extensionFor(mimeType, originalName))
+        : await uploadToSupabase(sb, designer.designerId, bytes, mimeType, extensionFor(mimeType, originalName), fixedName)
       return jsonResponse(mediaRef({ storageProvider: provider, path: storagePath, mimeType, sizeBytes: bytes.byteLength, originalName }), 201)
     } catch (cause) {
       return errorResponse(cause instanceof Error ? cause.message : 'Upload failed', 500)

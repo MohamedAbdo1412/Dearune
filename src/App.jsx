@@ -1,12 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { getDesignerToken } from '@/services/designer'
 import { Landing } from '@/pages/Landing'
 import { PublicMessage } from '@/pages/PublicMessage'
-import { DesignerLogin } from '@/pages/designer/DesignerLogin'
-import { DesignerStudio } from '@/pages/designer/DesignerStudio'
-import { DesignerMessageEditor } from '@/pages/designer/DesignerMessageEditor'
 import { AdminLogin } from '@/pages/admin/AdminLogin'
 import { AdminShell } from '@/pages/admin/AdminShell'
 import { Overview } from '@/pages/admin/Overview'
@@ -66,23 +62,6 @@ function RequireAdmin({ children }) {
   return children
 }
 
-function RequireDesigner({ children }) {
-  const location = useLocation()
-  const [token, setToken] = useState(() => getDesignerToken())
-  useEffect(() => {
-    const listener = (e) => {
-      if (e.key?.startsWith('dearune.designer')) setToken(getDesignerToken())
-    }
-    window.addEventListener('storage', listener)
-    return () => window.removeEventListener('storage', listener)
-  }, [])
-
-  if (!token) {
-    return <Navigate to="/designer/login" replace state={{ from: location.pathname }} />
-  }
-  return children
-}
-
 export default function App() {
   return (
     <Routes>
@@ -100,23 +79,6 @@ export default function App() {
           >
             <CreateBook />
           </Suspense>
-        }
-      />
-      <Route path="/designer/login" element={<DesignerLogin />} />
-      <Route
-        path="/designer"
-        element={
-          <RequireDesigner>
-            <DesignerStudio />
-          </RequireDesigner>
-        }
-      />
-      <Route
-        path="/designer/orders/:orderId"
-        element={
-          <RequireDesigner>
-            <DesignerMessageEditor />
-          </RequireDesigner>
         }
       />
       <Route path="/admin/login" element={<AdminLogin />} />

@@ -4,13 +4,11 @@ import MemorialLetter from './MemorialLetter'
 import MessageAudio from './MessageAudio'
 import { useIsMobile } from '@/pages/create/createHelpers'
 import { getDesignerToken } from '@/services/designer'
-import {
-  cropImageBlob,
-  uploadDesignerMedia,
-  deleteDesignerMedia,
-  resolveMediaUrl,
-  MEDIA_TYPE_LIMITS,
-} from '@/services/media'
+import { cropImageBlob, MEDIA_TYPE_LIMITS } from '@/services/media'
+import { encryptBytes } from '@/services/draftCrypto'
+import { saveEncryptedMedia, deleteMedia, mediaStorageKey } from '@/services/draftMediaStore'
+import { decodeJwtPayload } from '@/services/draft'
+import { useMemorialMedia } from './useMemorialMedia'
 import DearuneLoader from '@/components/book/DearuneLoader'
 import { Fleuron } from '@/components/book/ornaments'
 
@@ -18,6 +16,12 @@ import { Fleuron } from '@/components/book/ornaments'
 // greeting, the words, the closing, a name. Three small prints are brought in
 // from the owner's hand — each cropped on a mounter's bench, pinned, and left
 // to dry. One sound may be kept beside the letter.
+//
+// LOCAL-FIRST MEDIA: nothing is uploaded while the letter is being written.
+// Each pin/sound is cropped, encrypted with the designer's draft key, and
+// stored in IndexedDB; the draft only carries a { store:'local', … } reference.
+// The network is not touched until submission (which lives on the Policies
+// stage, not here).
 
 export function validateMemorial(draft, lang) {
   const t = (en, ar) => (lang === 'ar' ? ar : en)
@@ -97,10 +101,11 @@ function PhotoCropDialog({ open, src, hasExisting, onCancel, onPin, onLift, subm
   )
 }
 
-export default function MemorialEditorStage({ draft, onChange, onNext, onBack }) {
+export default function MemorialEditorStage({ draft, onChange, onNext, onBack, projectId }) {
   const lang = draft.language === 'ar' ? 'ar' : 'en'
   const t = (en, ar) => (lang === 'ar' ? ar : en)
   const token = getDesignerToken()
+  const designerId = decodeJwtPayload(token)?.sub ?? ''
 
   // The writer lands on the greeting, pen ready — but only on a wide screen
   // (on a phone the keyboard must not spring open on its own).
@@ -114,8 +119,7 @@ export default function MemorialEditorStage({ draft, onChange, onNext, onBack })
     return () => window.clearTimeout(timer)
   }, [mobile])
 
-  const [photoUrls, setPhotoUrls] = useState([null, null, null])
-  const [audioUrl, setAudioUrl] = useState(null)
+  const { photoUrls, audioUrl } = useMemorialMedia(draft, token)
   const [audioBusy, setAudioBusy] = useState(false)
   const [alert, setAlert] = useState({ tone: 'warn', text: '' })
   const [dialog, setDialog] = useState(null)
@@ -124,33 +128,6 @@ export default function MemorialEditorStage({ draft, onChange, onNext, onBack })
   const photos = draft.photos?.length === 3 ? draft.photos : [null, null, null]
   const pendingIndexRef = useRef(0)
   const pendingFileRef = useRef(null)
-
-  useEffect(() => {
-    let alive = true
-    photos.forEach((ref, i) => {
-      if (!ref?.path) return
-      resolveMediaUrl(ref, token).then((url) => {
-        if (!alive) return
-        setPhotoUrls((prev) => (prev[i] === url ? prev : prev.map((u, j) => (j === i ? url : u))))
-      })
-    })
-    return () => {
-      alive = false
-    }
-  }, [photos.map((p) => p?.path ?? '').join('||')]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    let alive = true
-    const ref = draft.audio
-    if (!ref?.path) {
-      setAudioUrl(null)
-      return
-    }
-    resolveMediaUrl(ref, token).then((url) => alive && setAudioUrl(url))
-    return () => {
-      alive = false
-    }
-  }, [draft.audio?.path ?? '']) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!alert.text) return
@@ -185,18 +162,40 @@ export default function MemorialEditorStage({ draft, onChange, onNext, onBack })
     setDialog({ index: pendingIndexRef.current, src: URL.createObjectURL(file) })
   }
 
+  // Encrypt the crop and keep it ONLY on this device. The draft learns the
+  // slot reference; the bytes never see the network while writing.
   const pinPrint = async (pixelArea) => {
     if (!dialog) return
+    if (!designerId || !projectId) return
     const slot = pendingIndexRef.current
-    const existing = photos[slot]
     const file = pendingFileRef.current
     setSubmitting(true)
     try {
       const cropped = await cropImageBlob(file, pixelArea)
-      const ref = await uploadDesignerMedia(cropped, { token, kind: 'photo' })
-      if (existing?.path && existing.path !== ref.path) await deleteDesignerMedia(existing, { token })
+      const plain = await cropped.arrayBuffer()
+      const { iv, ct } = await encryptBytes(plain)
+      await saveEncryptedMedia({
+        designerId,
+        projectId,
+        role: 'photo',
+        slot,
+        mimeType: cropped.type,
+        sizeBytes: plain.byteLength,
+        name: cropped.name,
+        iv,
+        data: ct,
+      })
       const next = [...photos]
-      next[slot] = ref
+      next[slot] = {
+        store: 'local',
+        projectId,
+        role: 'photo',
+        slot,
+        mimeType: cropped.type,
+        sizeBytes: plain.byteLength,
+        name: cropped.name,
+        addedAt: new Date().toISOString(),
+      }
       setPhotos(next)
       setDialog(null)
       pendingFileRef.current = null
@@ -209,11 +208,11 @@ export default function MemorialEditorStage({ draft, onChange, onNext, onBack })
 
   const liftPrint = async () => {
     if (!dialog) return
+    if (!designerId || !projectId) return
     const slot = pendingIndexRef.current
-    const existing = photos[slot]
     setSubmitting(true)
     try {
-      if (existing?.path) await deleteDesignerMedia(existing, { token })
+      await deleteMedia(mediaStorageKey(designerId, projectId, 'photo', slot))
       setPhotos(photos.map((p, i) => (i === slot ? null : p)))
       setDialog(null)
     } finally {
@@ -225,6 +224,7 @@ export default function MemorialEditorStage({ draft, onChange, onNext, onBack })
     const file = event.target.files?.[0]
     setAlert({ tone: 'warn', text: '' })
     if (!file) return
+    if (!designerId || !projectId) return
     if (!file.type || !file.type.startsWith('audio/')) {
       setAlert({ tone: 'warn', text: t('That is not a sound', 'هذا ليس صوتاً') })
       return
@@ -235,9 +235,29 @@ export default function MemorialEditorStage({ draft, onChange, onNext, onBack })
     }
     setAudioBusy(true)
     try {
-      if (draft.audio?.path) await deleteDesignerMedia(draft.audio, { token })
-      const ref = await uploadDesignerMedia(file, { token, kind: 'audio' })
-      onChange('audio', ref)
+      const plain = await file.arrayBuffer()
+      const { iv, ct } = await encryptBytes(plain)
+      await saveEncryptedMedia({
+        designerId,
+        projectId,
+        role: 'audio',
+        slot: 0,
+        mimeType: file.type,
+        sizeBytes: plain.byteLength,
+        name: file.name,
+        iv,
+        data: ct,
+      })
+      onChange('audio', {
+        store: 'local',
+        projectId,
+        role: 'audio',
+        slot: 0,
+        mimeType: file.type,
+        sizeBytes: plain.byteLength,
+        name: file.name,
+        addedAt: new Date().toISOString(),
+      })
     } catch {
       setAlert({ tone: 'warn', text: t('Could not keep the sound', 'تعذر حفظ الصوت') })
     } finally {
@@ -246,9 +266,8 @@ export default function MemorialEditorStage({ draft, onChange, onNext, onBack })
   }
 
   const removeAudio = async () => {
-    if (draft.audio?.path) await deleteDesignerMedia(draft.audio, { token })
+    if (designerId && projectId) await deleteMedia(mediaStorageKey(designerId, projectId, 'audio', 0))
     onChange('audio', null)
-    setAudioUrl(null)
   }
 
   const goNext = () => {
@@ -320,7 +339,7 @@ export default function MemorialEditorStage({ draft, onChange, onNext, onBack })
       <PhotoCropDialog
         open={dialog != null}
         src={dialog?.src}
-        hasExisting={dialog != null ? photos[dialog.index]?.path != null : false}
+        hasExisting={dialog != null ? photos[dialog.index]?.store === 'local' : false}
         onCancel={() => {
           setDialog(null)
           pendingFileRef.current = null

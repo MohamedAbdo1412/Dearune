@@ -941,6 +941,16 @@
   letter-spacing: 0.06em;
 }
 
+.mono {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.page-body .dropcap {
+  display: inline-block;
+}
+
 /* ----------------------------------------------------------- focus lock */
 .lockup {
   text-align: center;
@@ -1731,11 +1741,12 @@
   position: relative;
   z-index: 1;
   margin-top: 20px;
-  padding: 15px 6px 6px;
+  padding: 18px 6px 6px;
   border-top: 1px dashed rgba(85, 66, 44, 0.4);
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   justify-items: center;
+  align-items: flex-start;
   gap: clamp(10px, 2.4vw, 22px);
   pointer-events: none;
 }
@@ -1748,7 +1759,7 @@
   background: none;
   padding: 0;
   cursor: pointer;
-  transform: rotate(var(--pt-rot, -2deg));
+  transform: rotate(var(--pt-rot, -2deg)) translateY(var(--pt-y, 0px));
   filter: drop-shadow(0 3px 5px rgba(40, 26, 12, 0.22));
   touch-action: manipulation;
   transition: transform 0.25s var(--ease-settle), filter 0.3s ease;
@@ -1759,12 +1770,12 @@
 }
 
 .m-print.is-editable:hover {
-  transform: rotate(0deg) translateY(-2px);
+  transform: rotate(0deg) translateY(var(--pt-y, 0px)) translateY(-2px);
   filter: drop-shadow(0 5px 9px rgba(40, 26, 12, 0.3));
 }
 
 .m-print.is-editable:active {
-  transform: rotate(0deg) translateY(0);
+  transform: rotate(0deg) translateY(var(--pt-y, 0px));
 }
 
 .m-print.pos-a { --pt-rot: -4deg; }
@@ -1859,6 +1870,50 @@
   font-size: 0.86rem;
   color: var(--ink-faint);
   margin: 4px 0 10px;
+}
+
+/* The proof is the paper, not the page. The letter is composed inside a
+   fixed-proportion sheet sized to the FREE space of the folio leaf (container
+   queries), so the preview always matches the real delivery's aspect — short
+   letters leave honest margin, long letters scroll within the sheet, and the
+   page decorations can never stretch the composition. */
+.proof-frame {
+  container-type: size;
+  contain: layout style;
+  flex: 1 1 auto;
+  min-height: 140px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 4px 2px;
+}
+
+.proof-paper {
+  container-type: size;
+  width: min(100cqw, 100cqh * var(--render-ratio, 0.75));
+  aspect-ratio: var(--render-ratio, 0.75);
+  max-width: 100%;
+  background:
+    radial-gradient(120% 90% at 30% 12%, rgba(255, 252, 242, 0.9), rgba(240, 230, 208, 0.55) 70%),
+    var(--paper, #f6efdf);
+  border: 1px solid rgba(85, 66, 44, 0.4);
+  box-shadow: 0 10px 26px -16px rgba(30, 18, 8, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+}
+
+.proof-paper .memorial {
+  height: 100%;
+  overflow: hidden;
+}
+
+.proof-paper .memorial.is-compact {
+  flex: none;
+}
+
+.proof-paper .m-body.m-scripted {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .memorial.is-compact .m-greeting { font-size: 1rem; }
@@ -2105,6 +2160,32 @@
   box-shadow: 0 8px 20px -14px var(--brass-glow);
 }
 
+/* ------------------------------------------------------------ entry wells
+   The legacy legibility pass for the numeric entries (designer code/passcode
+   and the memorial lock keys): the wells sit a touch deeper so the engraved
+   digits read against the paper, the placeholder warms up, and focus lands
+   as a brass halo instead of a browser outline. Nothing here touches the
+   Memorial TEXT inputs (.m-line.m-editable), whose manuscript look stays. */
+.d-input,
+.lock-field input {
+  background: linear-gradient(180deg, rgba(250, 243, 226, 0.4), rgba(244, 232, 208, 0.12));
+  box-shadow: inset 0 2px 6px -4px rgba(60, 42, 20, 0.38), inset 0 -1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.d-input::placeholder {
+  color: rgba(122, 100, 70, 0.72);
+}
+
+.d-input:focus,
+.lock-field input:focus {
+  box-shadow: inset 0 2px 6px -4px rgba(60, 42, 20, 0.38), 0 10px 22px -16px var(--brass-glow), 0 0 0 1px rgba(199, 158, 84, 0.45);
+}
+
+.d-input--coded,
+.lock-field input {
+  font-variant-numeric: tabular-nums;
+}
+
 /* the antique key */
 .antique-key {
   position: relative;
@@ -2302,6 +2383,110 @@
   flex-wrap: wrap;
 }
 
+/* ------------------------------------------------- the terms (policies) */
+.policy-list {
+  width: 100%;
+  max-width: 54ch;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.policy-point {
+  border: 1px solid rgba(85, 66, 44, 0.26);
+  background: rgba(255, 252, 242, 0.28);
+  padding: 10px 14px;
+  transition: border-color 0.3s ease, background 0.3s ease;
+}
+
+.policy-point:hover {
+  border-color: rgba(150, 116, 56, 0.5);
+  background: rgba(255, 252, 242, 0.5);
+}
+
+.policy-title {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--brass-deep);
+  margin: 0 0 4px;
+}
+
+.policy-body {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.policy-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.policy-accept {
+  margin: 10px auto 0;
+  max-width: 46ch;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  padding: 8px 12px;
+  border: 1px solid rgba(85, 66, 44, 0.22);
+  background: rgba(255, 252, 242, 0.2);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  transition: border-color 0.25s ease, background 0.25s ease;
+}
+
+.policy-accept:hover {
+  border-color: rgba(150, 116, 56, 0.45);
+  background: rgba(255, 252, 242, 0.42);
+}
+
+.policy-accept input {
+  margin: 3px 0 0;
+  accent-color: var(--brass-deep);
+  width: 16px;
+  height: 16px;
+}
+
+/* the darkened wax seal, pressed after a successful hand-over */
+.seal-mark {
+  display: grid;
+  place-items: center;
+  color: rgba(255, 252, 242, 0.9);
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  margin: 4px auto;
+}
+
+.seal-wax {
+  display: block;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, var(--wine-soft, #a4554e), var(--wine, #6f2f2b) 62%, #3f1d1a 100%);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.18), 0 6px 14px -6px rgba(30, 16, 8, 0.5);
+}
+
+.submitted-seal {
+  display: grid;
+  place-items: center;
+  margin: 6px auto 2px;
+}
+
+.seal-wax--set {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.18), 0 6px 14px -6px rgba(30, 16, 8, 0.5), 0 0 0 7px rgba(111, 47, 43, 0.12);
+}
+
 /* --------------------------------------------------- the shelf of books */
 .project-list {
   display: flex;
@@ -2357,6 +2542,28 @@
 
 [dir='rtl'] .project-row {
   text-align: right;
+}
+
+/* the sealed book's condition, at a glance */
+.project-state.is-expired,
+.project-state.is-expired:hover {
+  color: var(--wine);
+}
+
+.note {
+  text-align: center;
+  font-style: italic;
+  color: var(--ink-faint);
+  font-size: 0.88rem;
+  margin: 10px auto 0;
+}
+
+/* full-spread loader shown while the encrypted draft hydrates */
+.book-loader-wrap {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
 }
 
 /* ------------------------------------------------------------- settle */
