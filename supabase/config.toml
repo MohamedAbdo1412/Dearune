@@ -33,3 +33,6 @@ verify_jwt = false
 
 [functions.designer-media]
 verify_jwt = false
+
+[functions.designer-projects]
+verify_jwt = false

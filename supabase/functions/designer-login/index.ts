@@ -69,6 +69,13 @@ Deno.serve(async (req) => {
   await sb.rpc('clear_designer_login_attempts', { p_identifier: enteredCode })
   await sb.from('designers').update({ last_login_at: new Date().toISOString() }).eq('id', designer.id)
 
+  // A missing secret would throw deep inside signDesignerJwt and surface as a
+  // bare 500 with no readable envelope. Check for it so the setup gap is
+  // obvious instead of a mystery failure.
+  if (!Deno.env.get('DESIGNER_JWT_SECRET')) {
+    return errorResponse('Server setup is incomplete — the designer token secret is not configured.', 500)
+  }
+
   const token = await signDesignerJwt({ id: designer.id, code: designer.code })
 
   return jsonResponse({
