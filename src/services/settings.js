@@ -7,6 +7,7 @@ const DEFAULT_SETTINGS = {
   allow_new_orders: true,
   business_name: 'Dearune',
   currency: 'GBP',
+  storage_provider: 'supabase',
 }
 
 export async function fetchSettings() {
@@ -24,6 +25,7 @@ const COLUMN_MAP = {
   allowNewOrders: 'allow_new_orders',
   businessName: 'business_name',
   currency: 'currency',
+  storageProvider: 'storage_provider',
 }
 
 export async function updateSettings(patch) {

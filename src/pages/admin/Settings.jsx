@@ -22,6 +22,7 @@ export function Settings() {
         currency: settings.currency ?? 'GBP',
         maintenanceMode: settings.maintenance_mode,
         allowNewOrders: settings.allow_new_orders,
+        storageProvider: settings.storage_provider ?? 'supabase',
       })
     }
   }, [settings, form])
@@ -49,6 +50,7 @@ export function Settings() {
         currency: form.currency,
         maintenanceMode: form.maintenanceMode,
         allowNewOrders: form.allowNewOrders,
+        storageProvider: form.storageProvider,
       })
       if (maintenanceNowToggledOn) {
         toast.info('Maintenance mode is ON — the studio is paused and irreversible actions are blocked.')
@@ -117,6 +119,34 @@ export function Settings() {
               </p>
             </div>
             <Switch id="new-orders" checked={form.allowNewOrders} onCheckedChange={(v) => setForm({ ...form, allowNewOrders: v })} />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-heading text-lg">Media storage</CardTitle>
+          <CardDescription>
+            Where designers' draft photographs and voice notes are kept until an order exists.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Label htmlFor="storage-provider">Designer draft storage</Label>
+              <p className="text-sm text-muted-foreground">
+                Supabase keeps drafts in the private <code>designer-drafts</code> bucket and hands out short-lived
+                signed URLs. Google Drive mirrors them into a per-designer folder — only choose this if the Drive
+                credentials are configured in the project.
+              </p>
+            </div>
+            <Select value={form.storageProvider} onValueChange={(v) => setForm({ ...form, storageProvider: v })}>
+              <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="supabase">Supabase</SelectItem>
+                <SelectItem value="google_drive">Google Drive</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>

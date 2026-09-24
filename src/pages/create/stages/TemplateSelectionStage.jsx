@@ -1,24 +1,19 @@
 import DearuneLoader from '@/components/book/DearuneLoader'
-import TemplateSample from '@/components/book/TemplateSample'
 import { Fleuron } from '@/components/book/ornaments'
+import { templateMiniFor, templateRegistry } from '@/templates'
 
 export default function TemplateSelectionStage({ templates, loading, error, chosenSlug, onSelect, onRetry }) {
   return (
     <div className="settle stage-root">
-      <div className="page-script">choose the paper</div>
+      <div className="page-script">choose the paper, once</div>
       <div className="page-kicker" style={{ marginTop: 6 }}>
-        chapter the second
+        chapter the third
       </div>
-      <h2 className="page-title">How shall it be sent?</h2>
-      <p className="page-lead" style={{ marginBottom: 6 }}>
-        Three papers hang in the archive. Each is set by hand, whether plain,
-        waxed, or silent. Choose the one that feels like the words inside.
-      </p>
 
       <Fleuron />
 
       {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '2em 0' }}>
+        <div style={{ padding: '2.4em 0' }}>
           <DearuneLoader label="the archive is being fetched…" />
         </div>
       ) : error ? (
@@ -31,16 +26,30 @@ export default function TemplateSelectionStage({ templates, loading, error, chos
           </div>
         </div>
       ) : (
-        <div className="archive" role="group" aria-label="Papers to choose from">
-          {templates.map((template) => (
-            <TemplateSample
-              key={template.slug}
-              template={template}
-              chosen={template.slug === chosenSlug}
-              onPick={onSelect}
-            />
-          ))}
-          <p className="note">One choice, kept for you even if you walk away.</p>
+        <div className="papers">
+          <div className="paper-grid" role="group" aria-label="Papers to choose from">
+            {(templates ?? []).map((template) => {
+              const Mini = templateMiniFor(template.slug)
+              const active = Boolean(templateRegistry(template.slug))
+              return (
+                <button
+                  key={template.slug}
+                  type="button"
+                  className={`paper-card${chosenSlug === template.slug ? ' is-chosen' : ''}${active ? '' : ' is-coming'}`}
+                  onClick={() => onSelect(template)}
+                  aria-pressed={chosenSlug === template.slug}
+                >
+                  <span className="paper-art">{Mini ? <Mini /> : <span className="paper-blank" />}</span>
+                  <span className="paper-meta">
+                    <span className="paper-name">{template.name}</span>
+                    <span className="paper-phrase">{template.description || 'plain words on fine paper'}</span>
+                  </span>
+                  <span className="paper-state">{active ? 'open' : 'being bound'}</span>
+                </button>
+              )
+            })}
+          </div>
+          <p className="note">One choice. Each paper keeps its own drafts, so changing your mind loses nothing.</p>
         </div>
       )}
     </div>

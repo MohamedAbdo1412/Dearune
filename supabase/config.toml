@@ -30,3 +30,6 @@ verify_jwt = false
 
 [functions.drive-delete-media]
 verify_jwt = false
+
+[functions.designer-media]
+verify_jwt = false

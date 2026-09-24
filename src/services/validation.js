@@ -56,4 +56,5 @@ export const settingsUpdateSchema = z.object({
   allowNewOrders: z.boolean().optional(),
   businessName: z.string().trim().max(120).optional(),
   currency: z.string().trim().max(8).optional(),
+  storageProvider: z.enum(['supabase', 'google_drive']).optional(),
 })

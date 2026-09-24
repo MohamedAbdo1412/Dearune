@@ -73,7 +73,7 @@ export default function DesignerAccessStage({ busy, error, cooldown, onAccess, o
           </label>
           <input
             id="bk-code"
-            className={`d-input${error ? ' error' : ''}`}
+            className={`d-input d-input--coded${error ? ' error' : ''}`}
             value={code}
             onChange={(e) => digits.test(e.target.value) && setCode(e.target.value)}
             inputMode="numeric"
@@ -92,7 +92,7 @@ export default function DesignerAccessStage({ busy, error, cooldown, onAccess, o
           </label>
           <input
             id="bk-pass"
-            className={`d-input${error ? ' error' : ''}`}
+            className={`d-input d-input--coded${error ? ' error' : ''}`}
             value={passcode}
             onChange={(e) => digits.test(e.target.value) && setPasscode(e.target.value)}
             inputMode="numeric"

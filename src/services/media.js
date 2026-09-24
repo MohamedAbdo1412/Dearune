@@ -22,6 +22,10 @@ export function mediaTypeForFile(file) {
   return 'file'
 }
 
+// ---------------------------------------------------------------------------
+// Google Drive (legacy studio flows)
+// ---------------------------------------------------------------------------
+
 export async function compressImage(file, maxDim = 1600) {
   const bitmap = await createImageBitmap(file)
   const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height))
@@ -146,4 +150,145 @@ export async function designerAuthedDriveBlob(fileId, token) {
   })
   if (!res.ok) throw new Error(`Could not load media (${res.status})`)
   return res.blob()
+}
+
+// ---------------------------------------------------------------------------
+// Supabase Storage (temporary private bucket) — used because Google Drive is
+// not configured yet. All media goes through the designer-media edge function
+// so the service-role key never reaches the browser and the object path is
+// always derived server-side from the designer's JWT (a designer can never
+// address another designer's namespace).
+// ---------------------------------------------------------------------------
+
+const SIGNED_URL_CACHE = new Map()
+
+async function designerMedia(method, path, { token, query, body, contentType } = {}) {
+  const url = new URL(`${supabaseUrl}/functions/v1/designer-media`)
+  if (query) {
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== null) url.searchParams.set(key, value)
+    }
+  }
+  const headers = { apikey: '', 'x-client-info': 'supabase-js-web/2' }
+  if (token) headers.authorization = `Bearer ${token}`
+  if (body !== undefined) headers['content-type'] = contentType ?? (typeof body === 'string' ? 'application/json' : 'application/octet-stream')
+  const res = await fetch(url.toString(), { method, headers, body })
+  const text = await res.text()
+  const json = text ? JSON.parse(text) : {}
+  if (!res.ok) {
+    const error = new Error(json?.error ?? `Media request failed (${res.status})`)
+    error.status = res.status
+    throw error
+  }
+  return json
+}
+
+// Upload a raw file to this designer's private namespace. `kind` decides the
+// folder (photos / audio); the server generates the object name.
+export function uploadDesignerMedia(file, { token, kind }) {
+  return designerMedia('POST', '', {
+    token,
+    body: file,
+    contentType: file.type || 'application/octet-stream',
+    query: { kind, name: file.name ?? '' },
+  })
+}
+
+export async function deleteDesignerMedia(ref, { token }) {
+  if (!ref?.path) return
+  try {
+    const query = { path: ref.path }
+    if (ref.storageProvider) query.storageProvider = ref.storageProvider
+    await designerMedia('DELETE', '', { token, query })
+  } catch {
+    // best-effort cleanup; a missing object is not an error for the flow
+  }
+}
+
+export function getSignedDesignerMediaUrl(ref, token) {
+  const query = { path: ref.path }
+  if (ref.storageProvider) query.storageProvider = ref.storageProvider
+  return designerMedia('GET', '', { token, query }).then((r) => r.url)
+}
+
+// Drive-backed drafts cannot be loaded by <img>/<audio> straight from the URL
+// (the designer JWT must be attached), so the bytes are fetched here and kept
+// as an object URL for the life of the session.
+export async function designerDraftDriveBlob(ref, token) {
+  const url = new URL(`${supabaseUrl}/functions/v1/designer-media`)
+  url.searchParams.set('path', ref.path)
+  url.searchParams.set('dl', '1')
+  const res = await fetch(url.toString(), {
+    headers: { authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error(`Could not load media (${res.status})`)
+  return res.blob()
+}
+
+// Resolve a stored media reference to a viewable URL, caching signed/object
+// URLs for this session so previews don't rediscover the URL on every paint.
+export function resolveMediaUrl(ref, token) {
+  if (!ref?.path) return Promise.resolve(null)
+  if (!token) return Promise.resolve(null)
+  const cached = SIGNED_URL_CACHE.get(ref.path)
+  if (cached) return Promise.resolve(cached)
+  if (ref.storageProvider === 'google_drive') {
+    return getSignedDesignerMediaUrl(ref, token)
+      .then((marker) => {
+        if (!marker) {
+          return designerDraftDriveBlob(ref, token)
+            .then((blob) => {
+              if (!(blob instanceof Blob)) return null
+              const url = URL.createObjectURL(blob)
+              SIGNED_URL_CACHE.set(ref.path, url)
+              return url
+            })
+            .catch(() => null)
+        }
+        SIGNED_URL_CACHE.set(ref.path, marker)
+        return marker
+      })
+      .catch(() => null)
+  }
+  return getSignedDesignerMediaUrl(ref, token)
+    .then((url) => {
+      SIGNED_URL_CACHE.set(ref.path, url)
+      return url
+    })
+    .catch(() => null)
+}
+
+export function forgetMediaUrl(path) {
+  SIGNED_URL_CACHE.delete(path)
+}
+
+// Crop a source image to the given pixel rect (react-easy-crop output) and
+// return a compact JPEG File ready for upload.
+export async function cropImageBlob(file, croppedAreaPixels, { maxDim = 1400, quality = 0.85 } = {}) {
+  const objectUrl = URL.createObjectURL(file)
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => resolve(img)
+      img.onerror = () => reject(new Error('Could not read the image'))
+      img.src = objectUrl
+    })
+    const { width, height, x, y } = croppedAreaPixels
+    const scale = Math.min(1, maxDim / Math.max(width, height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(width * scale))
+    canvas.height = Math.max(1, Math.round(height * scale))
+    const ctx = canvas.getContext('2d')
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(image, x, y, width, height, 0, 0, canvas.width, canvas.height)
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(resolve, 'image/jpeg', quality)
+      setTimeout(() => reject(new Error('Cropping timed out')), 30000)
+    })
+    if (!blob) throw new Error('Could not crop the image')
+    const base = (file.name ?? 'print').replace(/\.[^.]*$/, '')
+    return new File([blob], `${base}-print.jpg`, { type: 'image/jpeg' })
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
 }

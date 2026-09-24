@@ -1,49 +1,97 @@
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import { Folio, Fleuron } from './ornaments'
+import PageTurn from './PageTurn'
 
-// The physical book: a spread of paper on a dark desk. Left leaf is the
-// "verso" — a quiet statement of what the book is — and the right leaf is
-// the working folio. When a cover is present its board sits over both and
-// lifts open. Mirrors the hand-held scale: no chrome, oak, or glass.
+// The ink settle: after a landing the arriving words dim once into the grain.
+// Both sides of the spread perform the same quiet pass.
+const inkVariants = {
+  idle: { opacity: 1 },
+  ink: {
+    opacity: [1, 0.82, 1],
+    transition: { duration: 0.5, ease: 'easeOut', times: [0, 0.45, 1] },
+  },
+}
+
+// The physical book: an open spread of paper lying at a gentle angle on a
+// dark desk. Left leaf is quiet composition; right leaf is the working folio.
+// The cover and the sweeping leaf are animated by Motion and are unmounted
+// the moment they are done — a finished layer never stays in the DOM to sit
+// over the paper and swallow touches, and nothing depends on CSS keyframes
+// or animation-event timing.
 export default function BookShell({
   leftNode = <VersoPage />,
   rightNode,
-  turnNode,
   coverOpen = false,
   onOpenCover,
   flipping = false,
+  turnDirection = 'fwd',
+  turnFront = null,
+  turnBack = null,
+  onTurnEnd = () => {},
+  inking = false,
 }) {
+  const reduced = useReducedMotion()
   return (
     <div className="book-stage">
       <div className="book-scene">
-        <div className={`book${flipping ? ' flipping' : ''}`}>
-          <div className="book-sheet is-left">{leftNode}</div>
-          <div className="book-spine" aria-hidden="true" />
-          <div className="book-sheet is-right">
-            {rightNode}
-            {turnNode}
-          </div>
-          <button
-            type="button"
-            className={`book-cover${coverOpen ? ' is-opening' : ' is-closed'}`}
-            onClick={onOpenCover}
-            aria-label="Open the book"
+        <div className="book">
+          <div className="book-ambient" aria-hidden="true" />
+          <motion.div
+            className="spread"
+            variants={inkVariants}
+            initial={false}
+            animate={reduced || !inking ? 'idle' : 'ink'}
           >
-            <span className="cover-kicker">dearune · a finite book</span>
-            <span className="cover-device" aria-hidden="true">
-              D
-            </span>
-            <span className="cover-title">Dearune</span>
-            <span className="cover-subtitle">One private book, for a single message.</span>
-            <span className="cover-open">
-              Open the book
-              <span className="cover-arrow" aria-hidden="true">
-                →
-              </span>
-            </span>
-          </button>
+            <div className="book-sheet is-left">{leftNode}</div>
+            <div className="book-spine" aria-hidden="true">
+              <span className="spine-crease" />
+            </div>
+            <div className="book-sheet is-right">{rightNode}</div>
+          </motion.div>
+          {flipping ? (
+            <PageTurn direction={turnDirection} front={turnFront} back={turnBack} onLanded={onTurnEnd} />
+          ) : null}
+          <AnimatePresence>
+            {!coverOpen ? (
+              <motion.button
+                key="cover"
+                type="button"
+                className="book-cover"
+                onClick={onOpenCover}
+                aria-label="Open the book"
+                initial={{ opacity: 1 }}
+                animate={{ opacity: 1 }}
+                exit={
+                  reduced
+                    ? {
+                        opacity: 0,
+                        transition: { duration: 0.3, ease: 'easeOut' },
+                      }
+                    : {
+                        rotateX: -74,
+                        opacity: 0,
+                        transition: {
+                          duration: 0.85,
+                          ease: [0.45, 0.15, 0.2, 1],
+                          opacity: { duration: 0.6, delay: 0.5 },
+                        },
+                      }
+                }
+              >
+                <span className="cover-kicker">dearune · a finite book</span>
+                <span className="cover-device" aria-hidden="true">D</span>
+                <span className="cover-title">Dearune</span>
+                <span className="cover-subtitle">One private book, for a single message.</span>
+                <span className="cover-open">
+                  Open the book
+                  <span className="cover-arrow" aria-hidden="true">→</span>
+                </span>
+              </motion.button>
+            ) : null}
+          </AnimatePresence>
           <div className="book-block" aria-hidden="true">
-            {[0, 1, 2, 3, 4, 5].map((n) => (
-              <span key={n} className={n === 5 ? 'bottom' : ''} />
+            {[0, 1, 2, 3, 4, 5, 6].map((n) => (
+              <span key={n} className={n === 6 ? 'bottom' : ''} />
             ))}
           </div>
         </div>
@@ -55,32 +103,12 @@ export default function BookShell({
 export function VersoPage() {
   return (
     <Folio folio={2} className="verso">
-      <div style={{ textAlign: 'center', paddingTop: '1.2em' }}>
-        <div className="page-script">a word on keeping</div>
-        <div className="page-kicker" style={{ marginTop: 6, marginBottom: 12 }}>
+      <div style={{ textAlign: 'center', paddingTop: '1.4em' }}>
+        <div className="page-script">how a letter is made</div>
+        <div className="page-kicker" style={{ marginTop: 6, marginBottom: 14 }}>
           the first folio
         </div>
         <Fleuron />
-      </div>
-      <div className="page-body" style={{ marginTop: 8 }}>
-        <p className="dropcap">
-          A letter is the nearest thing to a held hand. At Dearune we keep one
-          message at a time — set by hand, closed in wax, mailed softly — so
-          that a few lines may travel as far as a person can be.
-        </p>
-        <p style={{ marginTop: '1em' }}>
-          This book belongs to a single message. Your hand reaches in to write
-          it; the world reaches in to read it.
-        </p>
-      </div>
-      <div className="mind" style={{ marginTop: 'auto' }}>
-        <Fleuron short />
-        <div className="page-kicker" style={{ marginTop: 4 }}>
-          remembered · not written to the clouds
-        </div>
-        <div style={{ marginTop: 14, fontSize: '0.74rem', letterSpacing: '0.28em', textTransform: 'uppercase', color: 'var(--ink-faint)', textAlign: 'center' }}>
-          ❦ est. to be read slowly ❦
-        </div>
       </div>
     </Folio>
   )

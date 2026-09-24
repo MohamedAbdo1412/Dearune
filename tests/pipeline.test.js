@@ -1,15 +1,19 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import {
   DRAFT_VERSION,
-  DRAFT_STAGES,
+  BASE_STAGES,
+  templateStagesFor,
   decodeJwtPayload,
   draftRef,
   draftStorageKey,
   formatCountdown,
   clearDraft,
   loadDraft,
+  loadTemplateDraft,
   normalizeDraft,
   saveDraft,
+  saveTemplateDraft,
+  clearTemplateDraft,
 } from '../src/services/draft'
 
 function makeStore() {
@@ -59,18 +63,19 @@ describe('draft storage keys', () => {
 })
 
 describe('normalizeDraft', () => {
-  const base = { version: DRAFT_VERSION, ref: 'designer:d-9', designerId: 'd-9', currentStage: 'template' }
+  const base = { version: DRAFT_VERSION, ref: 'designer:d-9', designerId: 'd-9', currentStage: 'templates' }
 
   it('rejects wrong version / wrong person / unknown stage', () => {
     expect(normalizeDraft({ ...base, version: 999 }, 'd-9')).toBeNull()
     expect(normalizeDraft({ ...base, ref: 'designer:other' }, 'd-9')).toBeNull()
     expect(normalizeDraft({ ...base, designerId: 'other' }, 'd-9')).toBeNull()
     expect(normalizeDraft({ ...base, currentStage: 'treasure-room' }, 'd-9')).toBeNull()
+    expect(normalizeDraft({ ...base, currentStage: 'reserved' }, 'd-9')).toBeNull()
   })
 
   it('normalizes valid drafts and fills timestamps', () => {
-    const out = normalizeDraft({ ...base, templateSlug: 'word-and-wax' }, 'd-9')
-    expect(out).toMatchObject({ version: DRAFT_VERSION, templateSlug: 'word-and-wax', currentStage: 'template' })
+    const out = normalizeDraft({ ...base, templateSlug: 'memorial-message', currentStage: 'memorial.editor' }, 'd-9')
+    expect(out).toMatchObject({ version: DRAFT_VERSION, templateSlug: 'memorial-message', currentStage: 'memorial.editor' })
     expect(typeof out.createdAt).toBe('string')
     expect(typeof out.updatedAt).toBe('string')
   })
@@ -87,15 +92,15 @@ describe('draft persistence', () => {
   })
 
   it('saves, loads, and clears a draft for one designer only', () => {
-    saveDraft('d-9', { designerName: 'Tess', currentStage: 'template', templateSlug: 'classic-letter' })
-    saveDraft('d-7', { designerName: 'Mika', currentStage: 'reserved', templateSlug: 'silent-card' })
+    saveDraft('d-9', { designerName: 'Tess', currentStage: 'templates', templateSlug: null })
+    saveDraft('d-7', { designerName: 'Mika', currentStage: 'unwritten', templateSlug: 'classic-letter' })
 
     const nine = loadDraft('d-9')
-    expect(nine).toMatchObject({ designerId: 'd-9', designerName: 'Tess', currentStage: 'template', templateSlug: 'classic-letter' })
+    expect(nine).toMatchObject({ designerId: 'd-9', designerName: 'Tess', currentStage: 'templates', templateSlug: null })
 
     const seven = loadDraft('d-7')
-    expect(seven.templateSlug).toBe('silent-card')
-    expect(seven.currentStage).toBe('reserved')
+    expect(seven.templateSlug).toBe('classic-letter')
+    expect(seven.currentStage).toBe('unwritten')
 
     clearDraft('d-9')
     expect(loadDraft('d-9')).toBeNull()
@@ -103,10 +108,10 @@ describe('draft persistence', () => {
   })
 
   it('keeps previous fields when patching a partial draft', () => {
-    saveDraft('d-9', { designerName: 'Tess', templateSlug: 'word-and-wax' })
-    saveDraft('d-9', { currentStage: 'reserved' })
+    saveDraft('d-9', { designerName: 'Tess', templateSlug: 'memorial-message', currentStage: 'memorial.language' })
+    saveDraft('d-9', { currentStage: 'memorial.password' })
     const draft = loadDraft('d-9')
-    expect(draft).toMatchObject({ designerName: 'Tess', templateSlug: 'word-and-wax', currentStage: 'reserved' })
+    expect(draft).toMatchObject({ designerName: 'Tess', templateSlug: 'memorial-message', currentStage: 'memorial.password' })
   })
 
   it('ignores corrupted storage', () => {
@@ -134,8 +139,57 @@ describe('formatCountdown', () => {
   })
 })
 
-describe('DRAFT_STAGES', () => {
-  it('exposes the reserved placeholder as the final chapter', () => {
-    expect(DRAFT_STAGES).toEqual(['access', 'template', 'reserved'])
+describe('template drafts stay isolated per slug', () => {
+  beforeEach(() => {
+    globalThis.localStorage = makeStore()
+  })
+
+  it('saves a memorial draft and never persists a message password', () => {
+    saveDraft('d-9', { currentStage: 'templates', templateSlug: null })
+    saveTemplateDraft('d-9', 'memorial-message', {
+      language: 'ar',
+      greeting: 'أبي الحبيب',
+      body: 'لا يوم يمر دونك.',
+      passwordSet: true,
+    })
+    const memorial = loadTemplateDraft('d-9', 'memorial-message')
+    expect(memorial).toMatchObject({ language: 'ar', greeting: 'أبي الحبيب', body: 'لا يوم يمر دونك.', passwordSet: true })
+    expect(memorial.photos).toEqual([null, null, null])
+    expect(memorial.audio).toBeNull()
+    expect(Object.keys(memorial)).not.toContain('password')
+  })
+
+  it('works even when a template draft precedes any base chapter', () => {
+    saveTemplateDraft('d-9', 'memorial-message', { body: 'first keystroke' })
+    expect(loadTemplateDraft('d-9', 'memorial-message')).toMatchObject({ body: 'first keystroke' })
+  })
+
+  it('leaves one paper alone while writing another', () => {
+    saveDraft('d-9', { currentStage: 'templates', templateSlug: null })
+    saveTemplateDraft('d-9', 'memorial-message', { body: 'chapter five', language: 'en' })
+    saveTemplateDraft('d-9', 'memorial-message', { closing: 'with love' })
+    saveTemplateDraft('d-9', 'classic-letter', { body: 'a classic draft' })
+
+    const memorial = loadTemplateDraft('d-9', 'memorial-message')
+    expect(memorial).toMatchObject({ body: 'chapter five', language: 'en', closing: 'with love' })
+
+    expect(loadTemplateDraft('d-9', 'classic-letter')).toMatchObject({ body: 'a classic draft' })
+
+    clearTemplateDraft('d-9', 'classic-letter')
+    expect(loadTemplateDraft('d-9', 'classic-letter')).toBeNull()
+    expect(loadTemplateDraft('d-9', 'memorial-message')).toMatchObject({ body: 'chapter five' })
+  })
+})
+
+describe('template stages', () => {
+  it('maps base stages, then template chapters after them', () => {
+    expect(BASE_STAGES).toEqual(['access', 'receiver', 'templates'])
+    expect(templateStagesFor('memorial-message')).toEqual(['memorial.language', 'memorial.editor', 'memorial.password', 'review'])
+  })
+
+  it('falls back to the unwritten placeholder for unknown papers', () => {
+    expect(templateStagesFor('classic-letter')).toEqual(['unwritten'])
+    expect(templateStagesFor(null)).toEqual([])
+    expect(templateStagesFor('')).toEqual([])
   })
 })
