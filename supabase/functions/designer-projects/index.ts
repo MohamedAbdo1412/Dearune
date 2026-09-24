@@ -94,7 +94,8 @@ Deno.serve(async (req) => {
   if (!designer) return errorResponse('Unauthorized', 401)
 
   const path = new URL(req.url).pathname.split('/').filter(Boolean)
-  const projectId = path[path.length - 1] ?? ''
+  const fnIndex = path.lastIndexOf('designer-projects')
+  const projectId = path[fnIndex + 1] ?? ''
   const sb = adminClient()
 
   if (req.method === 'POST') {
