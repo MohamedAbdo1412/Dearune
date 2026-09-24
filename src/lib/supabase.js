@@ -20,6 +20,59 @@ export async function currentAccessToken() {
 
 export async function invokeFunction(name, { method = 'GET', token = null, adminToken = null, body = undefined } = {}) {
   if (!supabaseUrl) throw new Error('Supabase is not configured')
+
+  const diagnostic = (e) => ({
+    name: e?.name,
+    message: e?.message,
+    cause: e?.cause ? { name: e.cause.name, message: e.cause.message, code: e.cause.code, errno: e.cause.errno } : null,
+    url: `${supabaseUrl}/functions/v1/${name}`,
+  })
+
+  const report = (technical, first, second, notes) => {
+    console.info('[supabase] fetch diagnostic (please share this):', diagnostic(first), diagnostic(second))
+    if (typeof window !== 'undefined') window.__dearuneFetchDiag = { technical, first: diagnostic(first), second: diagnostic(second), notes }
+    throw new Error(
+      `The Dearune archive could not be reached — check your connection, and if an ad or privacy blocker is on, allow this site, then try again. [technical: ${technical}]`
+    )
+  }
+
+  // Preferred path — no custom auth headers involved: let supabase-js own the
+  // request (canonical endpoint, apikey, keep-alive, relays). Used for anon
+  // calls like designer-login, the exact flow that reports "could not be
+  // reached".
+  if (!token && !adminToken && supabase) {
+    let data, err
+    try {
+      const result = await supabase.functions.invoke(name, {
+        method,
+        ...(body !== undefined ? { body } : {}),
+      })
+      data = result.data
+      err = result.error ?? null
+    } catch (e) {
+      // One retry for flaky DNS/proxy blips, then report with the diagnostic.
+      try {
+        const result = await supabase.functions.invoke(name, {
+          method,
+          ...(body !== undefined ? { body } : {}),
+        })
+        data = result.data
+        err = result.error ?? null
+      } catch (secondError) {
+        const firstError = e
+        const technical = [secondError?.cause?.code, secondError?.cause?.errno, secondError?.cause?.name, secondError?.name, firstError?.name].filter(Boolean)[0] ?? 'unknown fetch failure'
+        report(technical, firstError, secondError, 'sdk-path')
+      }
+    }
+    if (err) {
+      const error = new Error(err.message || `Request failed (${err.status ?? 'unknown'})`)
+      error.status = err.status ?? 0
+      error.payload = err
+      throw error
+    }
+    return data ?? {}
+  }
+
   const headers = {}
   if (body !== undefined) headers['content-type'] = 'application/json'
   if (token) headers.authorization = `Bearer ${token}`
@@ -28,14 +81,22 @@ export async function invokeFunction(name, { method = 'GET', token = null, admin
   headers['x-client-info'] = 'supabase-js-web/2'
 
   let response
-  try {
-    response = await fetch(`${supabaseUrl}/functions/v1/${name}`, {
+  const request = () =>
+    fetch(`${supabaseUrl}/functions/v1/${name}`, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
-  } catch {
-    throw new Error('Network error — could not reach the Supabase function')
+  try {
+    response = await request()
+  } catch (firstError) {
+    // One retry: flaky DNS/proxy blips are common and resolve on a second try.
+    try {
+      response = await request()
+    } catch (secondError) {
+      const technical = [secondError?.cause?.code, secondError?.cause?.errno, secondError?.cause?.name, secondError?.name, firstError?.name].filter(Boolean)[0] ?? 'unknown fetch failure'
+      report(technical, firstError, secondError, 'raw-path')
+    }
   }
 
   if (!response.ok) {

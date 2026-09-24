@@ -8,9 +8,12 @@ import {
   loadTemplateDraft,
   saveDraft,
   saveTemplateDraft,
+  clearTemplateDraft,
+  clearDraft,
   templateStagesFor,
 } from '@/services/draft'
 import { designerLogin, fetchDesignerTemplates, getDesignerToken, clearDesignerToken } from '@/services/designer'
+import { fetchProjects, createProject } from '@/services/projects'
 import { memorialDefaults } from '@/templates/memorial-message/MemorialLetter'
 import {
   playPageLift,
@@ -29,7 +32,8 @@ import ReceiverStage from './stages/ReceiverStage'
 import TemplateSelectionStage from './stages/TemplateSelectionStage'
 import UnwrittenStage from './stages/UnwrittenStage'
 import ReviewStage from './stages/ReviewStage'
-import StatusBook from './stages/StatusBook'
+import ProjectsBook from './stages/ProjectsBook'
+import ProjectSheet from './stages/ProjectSheet'
 import { TitleSheet, ReceiverSheet, PapersSheet, LanguageSheet, LockSheet, CloseSheet, ClosedBookSheet, UnwrittenSheet, ChapterPage } from './stages/chapters'
 
 import MemorialLetter from '@/templates/memorial-message/MemorialLetter'
@@ -50,14 +54,16 @@ function initialBook() {
   const token = getDesignerToken()
   const body = decodeJwtPayload(token)
   if (!body?.sub) {
-    return { designerId: '', designerName: '', stage: 'access', chosenSlug: null, closed: false, coverOpen: false }
+    return { designerId: '', stage: 'access', chosenSlug: null, closed: false, coverOpen: false }
   }
   const draft = loadDraft(body.sub)
   if (!draft) {
     return { designerId: body.sub, designerName: '', receiverName: '', stage: 'receiver', chosenSlug: null, closed: false, coverOpen: true }
   }
   if (draft.submittedAt) {
-    return { designerId: body.sub, designerName: draft.designerName, receiverName: draft.receiverName, stage: 'status', chosenSlug: draft.templateSlug, closed: true, coverOpen: true }
+    // A book was handed over: the cover stays closed on the shelf of books
+    // until the designer asks to begin a new dearune.
+    return { designerId: body.sub, designerName: draft.designerName, receiverName: draft.receiverName, stage: 'status', chosenSlug: null, closed: true, coverOpen: true }
   }
   return {
     designerId: body.sub,
@@ -76,6 +82,10 @@ function HomeDraft({ designerId, slug }) {
   return { ...memorialDefaults('en'), photos: [null, null, null], audio: null, passwordSet: false }
 }
 
+function hasNoWords(draft) {
+  return !draft || (!draft.body && !draft.greeting && !draft.closing && !draft.senderName && !draft.photos?.some(Boolean) && !draft.audio)
+}
+
 export default function CreateBook() {
   const initial = useMemo(() => initialBook(), [])
   const [designer, setDesigner] = useState({ id: initial.designerId, name: initial.designerName })
@@ -92,11 +102,15 @@ export default function CreateBook() {
   const [inking, setInking] = useState(false)
   const [inkDirection, setInkDirection] = useState('fwd')
   const [memorial, setMemorial] = useState(() => HomeDraft(initial.designerId, initial.chosenSlug))
+  const [projects, setProjects] = useState(null)
+  const [projectsError, setProjectsError] = useState('')
+  const [activeProject, setActiveProject] = useState(null)
 
   const reduced = useReducedMotion()
   const mobile = useIsMobile()
   const fetchingRef = useRef(false)
   const passwordRef = useRef('')
+  const justLoggedInRef = useRef(false)
   const sequence = useMemo(() => {
     if (closed) return []
     const base = [...BASE_STAGES]
@@ -135,15 +149,35 @@ export default function CreateBook() {
     }
   }, [sequence, stage, designer.id, chosenSlug, flip, closed])
 
-  const persistMemorial = useCallback(
-    (patch) => {
-      if (!designer.id || !chosenSlug) return
-      // Write-through on every change: switching papers mid-thought must
-      // never strand the freshest words in a pending timer.
-      saveTemplateDraft(designer.id, chosenSlug, patch)
-    },
-    [designer.id, chosenSlug]
-  )
+  // After login, open the shelf of books when history exists and nothing has
+  // been written yet; otherwise the designer lands on the writing pipeline.
+  useEffect(() => {
+    if (!designer.id || projects !== null) return
+    let alive = true
+    fetchProjects(getDesignerToken())
+      .then(({ projects: list }) => {
+        if (!alive) return
+        const rows = Array.isArray(list) ? list : []
+        setProjects(rows)
+        if (rows.length > 0 && justLoggedInRef.current && hasNoWords(memorial)) {
+          setFlip(null)
+          setStage('status')
+          setClosed(true)
+          setCoverOpen(true)
+        }
+        justLoggedInRef.current = false
+      })
+      .catch((error) => {
+        if (!alive) return
+        setProjectsError(error.message || 'The shelf did not open.')
+        setProjects([])
+        justLoggedInRef.current = false
+      })
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [designer.id])
 
   useEffect(() => {
     const handler = () => unmuteVia('pointer')
@@ -188,11 +222,11 @@ export default function CreateBook() {
 
   const goTo = useCallback(
     (target, direction) => {
-      if (flip || target === stage) return
+      if (flip || target === stage || closed) return
       playPageLift()
       setFlip({ target, direction, from: stage })
     },
-    [flip, stage]
+    [flip, stage, closed]
   )
 
   const handleTurnEnd = useCallback(() => {
@@ -222,6 +256,7 @@ export default function CreateBook() {
         if (id) {
           saveDraft(id, { designerName: name, currentStage: 'receiver', receiverName: '', templateSlug: null })
           setMemorial({ ...memorialDefaults('en'), photos: [null, null, null], audio: null, passwordSet: false })
+          justLoggedInRef.current = true
         }
         setReceiverName('')
         setChosenSlug(null)
@@ -268,6 +303,16 @@ export default function CreateBook() {
 
   const backTo = useCallback((target) => () => goTo(target, 'back'), [goTo])
 
+  const persistMemorial = useCallback(
+    (patch) => {
+      if (!designer.id || !chosenSlug) return
+      // Write-through on every change: switching papers mid-thought must
+      // never strand the freshest words in a pending timer.
+      saveTemplateDraft(designer.id, chosenSlug, patch)
+    },
+    [designer.id, chosenSlug]
+  )
+
   const handleLanguage = useCallback(
     (language) => {
       const patch = { language }
@@ -298,6 +343,42 @@ export default function CreateBook() {
     [persistMemorial]
   )
 
+  // Submission lifecycle: validate (already re-checked on the review stage),
+  // ask the server to close the book, and only when the server confirms do we
+  // remove this project's local draft and shut the book into the shelf.
+  const handleHandover = useCallback(async () => {
+    const { project } = await createProject(getDesignerToken(), {
+      templateSlug: chosenSlug,
+      receiverName,
+      draft: memorial,
+    })
+    const now = new Date().toISOString()
+    if (designer.id) {
+      saveDraft(designer.id, { submittedAt: now, submittedProjectId: project.id })
+      clearTemplateDraft(designer.id, chosenSlug)
+    }
+    setActiveProject(project)
+    setProjects((prev) => [project, ...(prev ?? []).filter((p) => p.id !== project.id)])
+    setFlip(null)
+    setClosed(true)
+    setCoverOpen(true)
+    setStage('status')
+  }, [chosenSlug, receiverName, memorial, designer.id])
+
+  const handleNewDearune = useCallback(() => {
+    if (designer.id) clearDraft(designer.id)
+    playClick()
+    setChosenSlug(null)
+    setReceiverName('')
+    setActiveProject(null)
+    setMemorial({ ...memorialDefaults('en'), photos: [null, null, null], audio: null, passwordSet: false })
+    setStage('receiver')
+    setClosed(false)
+    setCoverOpen(false)
+    setFlip(null)
+    setLogin({ status: 'idle' })
+  }, [designer.id])
+
   const handleLeave = useCallback(() => {
     clearDesignerToken()
     setDesigner({ id: '', name: '' })
@@ -309,6 +390,10 @@ export default function CreateBook() {
     setChosenSlug(null)
     setClosed(false)
     setCoverOpen(false)
+    setProjects(null)
+    setProjectsError('')
+    setActiveProject(null)
+    justLoggedInRef.current = false
   }, [])
 
   const toggleSound = useCallback(() => {
@@ -393,14 +478,14 @@ export default function CreateBook() {
         case 'review':
           return (
             <Folio folio={folio}>
-              <ReviewStage draft={memorial} templateName={chosenTemplate.name} onBack={backTo('memorial.password')} />
+              <ReviewStage draft={memorial} templateName={chosenTemplate.name} onBack={backTo('memorial.password')} onSubmit={handleHandover} />
             </Folio>
           )
         default:
           return null
       }
     },
-    [sequence, login, templates, templatesError, chosenSlug, chosenTemplate, designer, memorial, receiverName, handleAccess, handleCooldownEnd, handleReceiver, handlePickTemplate, handleLanguage, handleMemorialField, handleSetPassword, backTo]
+    [sequence, login, templates, templatesError, chosenSlug, chosenTemplate, designer, memorial, receiverName, handleAccess, handleCooldownEnd, handleReceiver, handlePickTemplate, handleLanguage, handleMemorialField, handleSetPassword, handleHandover, backTo]
   )
 
   const leftFor = useCallback(
@@ -431,7 +516,8 @@ export default function CreateBook() {
     [sequence, memorial, memorialToken, designer]
   )
 
-  // The closed-book view replaces the whole pipeline.
+  // The closed-book view replaces the whole pipeline: the shelf of books, or
+  // a single handed-over book opened from it.
   if (closed) {
     return (
       <div className="book-root">
@@ -440,7 +526,31 @@ export default function CreateBook() {
           onToggleSound={toggleSound}
           right={designer.id ? <Mast leave onLeave={handleLeave} /> : null}
         />
-        <BookShell leftNode={<ClosedBookSheet />} rightNode={<Folio folio={15}><StatusBook draft={{ ...memorial, meta: {} }} templateName={chosenTemplate.name} /></Folio>} coverOpen inking={false} />
+        <BookShell
+          leftNode={<ClosedBookSheet />}
+          rightNode={
+            <Folio folio={15}>
+              {activeProject ? (
+                <ProjectSheet project={activeProject} token={memorialToken} templates={templates} onBack={() => setActiveProject(null)} />
+              ) : (
+                <ProjectsBook
+                  projects={projects}
+                  loading={projects === null && !projectsError}
+                  error={projectsError}
+                  templates={templates}
+                  onOpen={setActiveProject}
+                  onNewDearune={handleNewDearune}
+                  onRetry={() => {
+                    setProjectsError('')
+                    setProjects(null)
+                  }}
+                />
+              )}
+            </Folio>
+          }
+          coverOpen={coverOpen}
+          inking={false}
+        />
         <footer className="book-footer">
           <span>paper &amp; ink · set by hand</span>
           <span>a closed book keeps its words</span>

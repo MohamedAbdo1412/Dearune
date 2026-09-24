@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Cropper from 'react-easy-crop'
 import MemorialLetter from './MemorialLetter'
+import MessageAudio from './MessageAudio'
 import { useIsMobile } from '@/pages/create/createHelpers'
 import { getDesignerToken } from '@/services/designer'
 import {
@@ -289,7 +290,7 @@ export default function MemorialEditorStage({ draft, onChange, onNext, onBack })
         {draft.audio ? (
           <div className="m-audio-copy">
             <span className="sound-label">{t('a sound is kept here', 'صوتٌ مُرفَق')}</span>
-            {audioUrl ? <audio src={audioUrl} controls preload="none" className="m-audio-player" /> : null}
+            {audioUrl ? <MessageAudio src={audioUrl} label={t('listen', 'استمع')} /> : null}
             <button type="button" className="d-btn d-btn--ghost d-btn--danger" onClick={removeAudio} disabled={audioBusy}>
               {t('lift the sound', 'إزالة الصوت')}
             </button>

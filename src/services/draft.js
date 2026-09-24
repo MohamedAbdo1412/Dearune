@@ -145,6 +145,7 @@ export function normalizeDraft(raw, designerId) {
     currentStage,
     templateSlug,
     submittedAt: typeof raw.submittedAt === 'string' ? raw.submittedAt : null,
+    submittedProjectId: typeof raw.submittedProjectId === 'string' ? raw.submittedProjectId : null,
     templateDrafts,
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString(),
@@ -173,6 +174,7 @@ function migrateV1(raw, designerId) {
     templateSlug,
     templateDrafts: {},
     submittedAt: null,
+    submittedProjectId: null,
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }

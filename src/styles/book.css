@@ -202,8 +202,6 @@
 
 .book-scene {
   position: relative;
-  perspective: 2600px;
-  perspective-origin: 50% 30%;
   width: 100%;
   display: grid;
   place-items: center;
@@ -220,17 +218,19 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  transform-style: preserve-3d;
   transform: rotateX(1.4deg);
 }
 
 /* the open spread: both leaves stretch to the taller page so the two sides
-   of the book always share one height, and leave room for the ink motion. */
+   of the book always share one height, and leave room for the ink motion.
+   The resting book is strictly 2D — 3D rises only inside the turning leaf,
+   which carries its own perspective. A preserve-3d/perspective stack on the
+   resting pages makes Chromium's event hit-testing disagree with the layout
+   rects, so clicks on inputs land elsewhere (focus falls back to <body>). */
 .spread {
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  transform-style: preserve-3d;
 }
 
 .book-sheet {
@@ -293,6 +293,7 @@
   gap: 2px;
   z-index: -1;
   padding: 0 10px;
+  pointer-events: none;
 }
 
 .book-block span {
@@ -1180,8 +1181,8 @@
 /* ------------------------------ the choosing of papers — two uprights */
 .paper-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(min(430px, 100%), 1fr));
+  gap: 16px;
   padding: 2px;
   margin: 6px -4px -6px;
 }
@@ -1231,7 +1232,7 @@
 }
 
 .paper-art {
-  width: min(150px, 62%);
+  width: min(132px, 64%);
   aspect-ratio: 210 / 297;
   display: grid;
   place-items: center;
@@ -1944,6 +1945,11 @@
   touch-action: manipulation;
 }
 
+.sound-play.is-on {
+  background: var(--brass);
+  color: var(--paper-0);
+}
+
 .m-toolbar {
   position: relative;
   z-index: 2;
@@ -1961,12 +1967,6 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-}
-
-.m-audio-player {
-  display: block;
-  height: 36px;
-  background: var(--paper-0);
 }
 
 /* -------------------------------------------------------- language cards */
@@ -2300,6 +2300,63 @@
   gap: 18px;
   margin-top: 10px;
   flex-wrap: wrap;
+}
+
+/* --------------------------------------------------- the shelf of books */
+.project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.project-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid rgba(85, 66, 44, 0.32);
+  background: rgba(255, 252, 242, 0.16);
+  color: var(--ink);
+  cursor: pointer;
+  touch-action: manipulation;
+  text-align: left;
+  transition: border-color 0.25s ease, box-shadow 0.3s ease, transform 0.25s var(--ease-settle), background 0.25s ease;
+}
+
+.project-row:hover {
+  border-color: rgba(140, 108, 52, 0.75);
+  box-shadow: 0 16px 34px -20px rgba(48, 34, 16, 0.5);
+  background: rgba(255, 252, 242, 0.42);
+  transform: translateY(-2px);
+}
+
+.project-title {
+  font-family: var(--font-display);
+  font-weight: 560;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+}
+
+.project-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.project-state {
+  font-size: 0.62rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ink-ghost);
+}
+
+[dir='rtl'] .project-row {
+  text-align: right;
 }
 
 /* ------------------------------------------------------------- settle */

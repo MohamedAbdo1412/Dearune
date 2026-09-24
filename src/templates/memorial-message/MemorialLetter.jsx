@@ -1,4 +1,5 @@
 import PushPin, { PIN_NAMES } from './pushpin'
+import MessageAudio from './MessageAudio'
 
 // The Memorial Message composition — the one that "will be sent", used live
 // in the editor, read-only as a proof on the facing page, and in Review. One
@@ -80,7 +81,6 @@ export default function MemorialLetter({
   onPhotoTap,
   audio = null,
   audioUrl = null,
-  onAudioPreview = null,
   compact = false,
 }) {
   const language = draft.language === 'ar' ? 'ar' : 'en'
@@ -199,11 +199,7 @@ export default function MemorialLetter({
             <i /><i /><i /><i /><i />
           </span>
           <span className="sound-label">{isAr ? 'صوت مرافق' : 'a sound is kept here'}</span>
-          {onAudioPreview && audioUrl ? (
-            <button type="button" className="sound-play" onClick={onAudioPreview}>
-              {isAr ? 'استمع' : 'listen'}
-            </button>
-          ) : null}
+          {audioUrl ? <MessageAudio src={audioUrl} label={isAr ? 'استمع' : 'listen'} /> : null}
         </div>
       ) : null}
 

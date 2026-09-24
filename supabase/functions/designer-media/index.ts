@@ -157,11 +157,15 @@ Deno.serve(async (req) => {
     if (!path) return errorResponse('Nothing to remove', 400)
     try {
       const provider = providerHint === 'google_drive' ? 'google_drive' : await resolveStorageProvider(sb)
-      if (provider === 'google_drive') {
+      if (provider === 'supabase') {
+        // Object names are namespaced by designer id on upload; refusing any
+        // path outside that namespace keeps one designer from addressing
+        // (or signing) another designer's drafts.
+        if (!path.startsWith(`${designer.designerId}/`)) return errorResponse('Not yours to remove', 403)
+        await sb.storage.from(BUCKET).remove([path])
+      } else {
         const token = await googleAccessToken()
         await driveTrash(token, path)
-      } else {
-        await sb.storage.from(BUCKET).remove([path])
       }
       return jsonResponse({ removed: path })
     } catch (cause) {
@@ -205,7 +209,9 @@ Deno.serve(async (req) => {
     }
 
     // Supabase objects resolve to short-lived signed URLs (the resolve step
-    // happens server-side so no bucket wiring ever leaks).
+    // happens server-side so no bucket wiring ever leaks). Only objects in
+    // this designer's own namespace may be signed.
+    if (!path.startsWith(`${designer.designerId}/`)) return errorResponse('Not yours to read', 403)
     const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_TTL)
     if (error || !data?.signedUrl) return errorResponse('Media unavailable', 404)
     return jsonResponse({ url: data.signedUrl })
