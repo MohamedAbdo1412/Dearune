@@ -24,20 +24,3 @@ export async function isAdminSession() {
     .maybeSingle()
   return Boolean(row)
 }
-
-export async function toggleMessageActive(orderId, active) {
-  if (!supabase) throw new Error('Supabase is not configured')
-  await supabase.from('messages').update({ message_active: active }).eq('order_id', orderId)
-}
-
-export async function fetchMediaRows(messageId) {
-  if (!supabase) throw new Error('Supabase is not configured')
-  const { data, error } = await supabase
-    .from('message_media')
-    .select('*')
-    .eq('message_id', messageId)
-    .is('disabled_at', null)
-    .order('sort_order', { ascending: true })
-  if (error) throw error
-  return data ?? []
-}

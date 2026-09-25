@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 export function AdminLogin() {
   const navigate = useNavigate()
   const location = useLocation()
-  const from = location.state?.from ?? '/admin/orders'
+  const from = location.state?.from ?? '/admin/overview'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)

@@ -6,7 +6,7 @@ const DEFAULT_SETTINGS = {
   maintenance_mode: false,
   allow_new_orders: true,
   business_name: 'Dearune',
-  currency: 'GBP',
+  currency: 'EGP',
   storage_provider: 'supabase',
 }
 

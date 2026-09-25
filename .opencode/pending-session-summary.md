@@ -128,3 +128,66 @@ body) → looks like TEMPLATE SAMPLE. Old deployed function rows may also be pay
   Designs → confirm the actual words/media render (not sample) in EN and AR.
 - Remaining spec item worth noting: sample separation now enforced (blankPageDraft), and
   media refs persisted are permanent server refs (no blob: URLs in payloads).
+
+---
+
+## Active task: Admin — Sales merged into Designers ("Designer operations")
+
+Goal: one Designer-centered admin (designer → many Dearunes/messages), immutable EGP
+`sales_log` "Sold Logs" with CSV, dashboard metrics; legacy Orders UI removed.
+
+### Done this session
+- Migration `supabase/migrations/20260925000001_designer_operations.sql` (unpushed):
+  sequences; `projects` operational columns (reference/configured_at/wrapper_type/
+  sale_price/estimated_cost/currency EGP/paid|manufactured|shipped|arrived/archived)
+  + checks + `DR-000001` trigger + reference backfill; `shipping.project_id`;
+  `sales_log` (generated `estimated_profit`, `sale_reference`, status/void checks,
+  partial unique one-active-sale index, `sales_log_guard` money-immutability trigger);
+  `project_events`; RLS enable + `admins_read_*` select policies + revoked writes;
+  legacy paid orders → `sales_log` once (paid→completed, paid+cancelled→voided, original
+  currency kept); EGP default/seed on `app_settings`.
+- Edge `supabase/functions/admin-dearunes/index.ts` — sole writer: mark-paid (snapshots
+  designer_name + template_id), reverse-paid (maintenance+reason), stamp/unstamp
+  (physical only, order enforced, Shipped needs shipping fields), set-wrapper (locked
+  after paid), set-active (paid required; first activation starts 2-year window),
+  save-shipping, archive/restore. Every action logs `project_events`.
+- Edge `designer-media` — GET now `requireAdminOrDesigner` (admin letter preview);
+  namespace guard = UUID regex + conditional prefix check; POST/DELETE stay designer-only.
+- Client services: `src/services/dearunes.js` (reads + `act()` wrappers), `src/services/
+  sales.js` (fetch/search/sum/CSV with `﻿` BOM), constants `projectStage`,
+  `PROJECT_STAGE_*`, `isDigital`, `nextDearuneAction`, `ProjectBadge`, `formatMoney`
+  default EGP, `DEFAULT_SETTINGS.currency` EGP.
+- UI: `Designers.jsx` (accordion + stage tabs + search + stats + create/credentials),
+  `DesignerDetail.jsx`, `MessageDetail.jsx` (pipeline strip, sale card, wrapper select,
+  message window, shipping form, activity, lazy `LetterPreview` w/ `book.css`),
+  `SoldLogs.jsx` (tabs/search/totals/CSV), `SaleDetail.jsx` (read-only + maintenance
+  void), `Overview.jsx` = Dashboard, `DearuneActions.jsx` + `DearuneList.jsx` shared,
+  `AdminShell` nav (Dashboard/Designers/Templates/Sold Logs/Settings), routes incl.
+  `/admin/orders` → overview redirect, `/admin/sold/:saleId`.
+- Deleted: `Orders.jsx`, `OrderDetail.jsx`, `services/orders.js`, `services/shipping.js`;
+  dead helpers trimmed from `services/messages.js`.
+- Final-round fixes: AdminLogin default redirect; `basePath` now includes `/messages`;
+  SaleDialog no longer calls its pricing prop as a function (was a crash for wrapper-less
+  projects); row "Close message" not blocked by maintenance; `Select` value `|| undefined`;
+  MessageDetail 2-year math in UTC; DesignerDetail error state; Designers totals =
+  whole ledger (legacy included, voided excluded).
+- Tests: `tests/dearune-ops.test.js` (projectStage, nextDearuneAction, sumSales,
+  saleDearuneLabel, salesCsv quoting/Arabic/BOM bytes). `npm test` **78/78**;
+  `npm run build` pass (LetterPreview + book.css split off); `npm run lint` exit 0,
+  warnings only (same `set-state-in-effect` pattern as existing pages).
+
+### Still required from the user (deploy + live check)
+1. `supabase db push` (adds `20260925000001_designer_operations.sql` on top of the two
+   20260924 migrations if those are not pushed yet).
+2. `supabase functions deploy admin-dearunes designer-media` (+ designer-projects/
+   designer-login if not current).
+3. `supabase secrets set --env-file supabase/.env --project-ref xwgegarncnxswiswsufx`.
+4. Live walkthrough: create designer → record sale (price/cost prefilled from
+   template_pricing) → mark made → enter delivery → shipped → arrived → open message →
+   check 2-year "Reads until" → Sold Logs CSV in Excel (Arabic + EGP) → maintenance ON →
+   void sale with reason → confirm voided row stays and totals drop → archive/restore.
+5. Known gap to accept or schedule: NO public project reader — "Copy Public Link" was
+   deliberately not shipped (`get_public_message` still reads messages+orders only); the
+   admin reads the letter in-app at `/admin/designers/:id/messages/:projectId`.
+   Shipping edit is also allowed while maintenance is on (server + UI), which is fine
+   but worth confirming as intended.

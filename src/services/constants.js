@@ -44,6 +44,62 @@ export function orderStage(order, publishedAt = null) {
   return 'pending'
 }
 
+// A Dearune (a `projects` record) walks its own pipeline, which starts one
+// step earlier than an order did: Configured (the designer handed it over)
+// → Sold → Made → Shipped → Delivered. Digital Dearunes skip making and
+// shipping: they are delivered the moment the message is opened.
+export const PROJECT_STAGE_ORDER = ['configured', 'sold', 'made', 'shipped', 'delivered', 'archived']
+
+export const PROJECT_STAGE_LABELS = {
+  configured: 'Configured',
+  sold: 'Sold',
+  made: 'Made',
+  shipped: 'Shipped',
+  delivered: 'Delivered',
+  archived: 'Archived',
+}
+
+export function projectStage(project) {
+  const row = project ?? {}
+  if (row.archived_at || row.status === 'archived') return 'archived'
+  if (row.paid_at) {
+    if (row.arrived_at) return 'delivered'
+    if (row.shipped_at) return 'shipped'
+    if (row.manufactured_at) return 'made'
+    if (row.wrapper_type === 'digital' && row.message_active) return 'delivered'
+    return 'sold'
+  }
+  return 'configured'
+}
+
+export function isDigital(project) {
+  return project?.wrapper_type === 'digital'
+}
+
+// The next thing the studio has to do with a Dearune. Returns an action key
+// (or null when there is nothing left to do on this screen).
+export function nextDearuneAction(project) {
+  if (!project) return null
+  if (project.archived_at || project.status === 'archived') return 'restore'
+  if (!project.paid_at) return 'sale'
+  if (isDigital(project)) return project.message_active ? null : 'open'
+  if (!project.manufactured_at) return 'made'
+  if (!project.shipped_at) return 'shipped'
+  if (!project.arrived_at) return 'arrived'
+  return project.message_active ? null : 'open'
+}
+
+export const DEARUNE_ACTION_LABELS = {
+  sale: 'Record sale',
+  made: 'Mark made',
+  shipped: 'Mark shipped',
+  arrived: 'Mark arrived',
+  open: 'Open message',
+  close: 'Close message',
+  restore: 'Restore',
+}
+
+
 export function isCacheable(chars) {
   return chars
     .toUpperCase()

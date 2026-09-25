@@ -6,9 +6,11 @@ import { PublicMessage } from '@/pages/PublicMessage'
 import { AdminLogin } from '@/pages/admin/AdminLogin'
 import { AdminShell } from '@/pages/admin/AdminShell'
 import { Overview } from '@/pages/admin/Overview'
-import { Orders } from '@/pages/admin/Orders'
-import { OrderDetail } from '@/pages/admin/OrderDetail'
 import { Designers } from '@/pages/admin/Designers'
+import { DesignerDetail } from '@/pages/admin/DesignerDetail'
+import { MessageDetail } from '@/pages/admin/MessageDetail'
+import { SoldLogs } from '@/pages/admin/SoldLogs'
+import { SaleDetail } from '@/pages/admin/SaleDetail'
 import { Templates } from '@/pages/admin/Templates'
 import { Settings } from '@/pages/admin/Settings'
 import { NotFound } from '@/pages/NotFound'
@@ -92,9 +94,16 @@ export default function App() {
       >
         <Route index element={<Navigate to="/admin/overview" replace />} />
         <Route path="overview" element={<Overview />} />
-        <Route path="orders" element={<Orders />} />
-        <Route path="orders/:orderId" element={<OrderDetail />} />
+        {/* The old Sales screens are gone: one Dearune record now carries the
+            sale, the message and the production steps. Keep the old URLs
+            working so any bookmark lands somewhere useful. */}
+        <Route path="orders" element={<Navigate to="/admin/overview" replace />} />
+        <Route path="orders/:orderId" element={<Navigate to="/admin/overview" replace />} />
         <Route path="designers" element={<Designers />} />
+        <Route path="designers/:designerId" element={<DesignerDetail />} />
+        <Route path="designers/:designerId/messages/:projectId" element={<MessageDetail />} />
+        <Route path="sold" element={<SoldLogs />} />
+        <Route path="sold/:saleId" element={<SaleDetail />} />
         <Route path="templates" element={<Templates />} />
         <Route path="settings" element={<Settings />} />
       </Route>

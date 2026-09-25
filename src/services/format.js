@@ -1,4 +1,4 @@
-export function formatMoney(value, currency = 'GBP') {
+export function formatMoney(value, currency = 'EGP') {
   if (value === null || value === undefined) return '—'
   const num = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(num)) return '—'

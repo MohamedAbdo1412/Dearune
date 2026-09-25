@@ -1,6 +1,6 @@
 import { corsHeaders, errorResponse, handleOptions, jsonResponse } from '../_shared/cors.ts'
 import { adminClient } from '../_shared/supabase.ts'
-import { requireDesigner } from '../_shared/auth.ts'
+import { requireAdminOrDesigner, requireDesigner } from '../_shared/auth.ts'
 import { googleAccessToken, driveEnsureFolder, driveCreateResumableSession, driveTrash, driveDownload } from '../_shared/drive.ts'
 
 // Designers draft media privately, before any order exists, so the bytes are
@@ -124,8 +124,21 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions()
 
   const sb = adminClient()
-  const designer = await requireDesigner(req)
-  if (!designer) return errorResponse('This book is closed to you', 401)
+
+  // Reading a book's media is also how the admin previews the letter it
+  // belongs to, so GET accepts an admin session as well as the designer's.
+  // Uploading and deleting stay designer-only: an admin never touches the
+  // drafts another account owns.
+  let designerId = ''
+  if (req.method === 'GET') {
+    const who = await requireAdminOrDesigner(req)
+    if (!who) return errorResponse('This book is closed to you', 401)
+    designerId = who.role === 'designer' ? who.designerId : ''
+  } else {
+    const designer = await requireDesigner(req)
+    if (!designer) return errorResponse('This book is closed to you', 401)
+    designerId = designer.designerId
+  }
 
   const url = new URL(req.url)
   const path = url.searchParams.get('path') ?? ''
@@ -150,8 +163,8 @@ Deno.serve(async (req) => {
     try {
       const provider = await resolveStorageProvider(sb)
       const storagePath = provider === 'google_drive'
-        ? await uploadToDrive(sb, designer.designerId, bytes, mimeType, originalName)
-        : await uploadToSupabase(sb, designer.designerId, bytes, mimeType, extensionFor(mimeType, originalName), fixedName)
+        ? await uploadToDrive(sb, designerId, bytes, mimeType, originalName)
+        : await uploadToSupabase(sb, designerId, bytes, mimeType, extensionFor(mimeType, originalName), fixedName)
       return jsonResponse(mediaRef({ storageProvider: provider, path: storagePath, mimeType, sizeBytes: bytes.byteLength, originalName }), 201)
     } catch (cause) {
       return errorResponse(cause instanceof Error ? cause.message : 'Upload failed', 500)
@@ -167,7 +180,7 @@ Deno.serve(async (req) => {
         // Object names are namespaced by designer id on upload; refusing any
         // path outside that namespace keeps one designer from addressing
         // (or signing) another designer's drafts.
-        if (!path.startsWith(`${designer.designerId}/`)) return errorResponse('Not yours to remove', 403)
+        if (!path.startsWith(`${designerId}/`)) return errorResponse('Not yours to remove', 403)
         await sb.storage.from(BUCKET).remove([path])
       } else {
         const token = await googleAccessToken()
@@ -215,9 +228,12 @@ Deno.serve(async (req) => {
     }
 
     // Supabase objects resolve to short-lived signed URLs (the resolve step
-    // happens server-side so no bucket wiring ever leaks). Only objects in
-    // this designer's own namespace may be signed.
-    if (!path.startsWith(`${designer.designerId}/`)) return errorResponse('Not yours to read', 403)
+    // happens server-side so no bucket wiring ever leaks). The object must
+    // live in a designer's namespace; a designer may only sign their own,
+    // while an admin session may sign any book the studio has taken on.
+    const inNamespace = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\//i.test(path)
+    if (!inNamespace) return errorResponse('Not a studio draft', 403)
+    if (designerId && !path.startsWith(`${designerId}/`)) return errorResponse('Not yours to read', 403)
     const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_TTL)
     if (error || !data?.signedUrl) return errorResponse('Media unavailable', 404)
     return jsonResponse({ url: data.signedUrl })

@@ -19,7 +19,7 @@ export function Settings() {
     if (settings && !form) {
       setForm({
         businessName: settings.business_name ?? '',
-        currency: settings.currency ?? 'GBP',
+        currency: settings.currency ?? 'EGP',
         maintenanceMode: settings.maintenance_mode,
         allowNewOrders: settings.allow_new_orders,
         storageProvider: settings.storage_provider ?? 'supabase',
@@ -87,6 +87,7 @@ export function Settings() {
             <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
+                <SelectItem value="EGP">EGP · £E</SelectItem>
                 <SelectItem value="GBP">GBP · £</SelectItem>
                 <SelectItem value="EUR">EUR · €</SelectItem>
                 <SelectItem value="USD">USD · $</SelectItem>
