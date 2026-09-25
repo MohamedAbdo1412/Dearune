@@ -1,8 +1,11 @@
 {
-  "name": "dearune-v1",
+  "name": "dearune",
+  "main": "worker.js",
   "compatibility_date": "2026-09-25",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
   }
 }
