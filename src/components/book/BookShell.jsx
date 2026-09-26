@@ -23,6 +23,7 @@ export default function BookShell({
   rightNode,
   coverOpen = false,
   onOpenCover,
+  onCoverSettled,
   flipping = false,
   turnDirection = 'fwd',
   turnFront = null,
@@ -36,11 +37,16 @@ export default function BookShell({
       <div className="book-scene">
         <div className="book">
           <div className="book-ambient" aria-hidden="true" />
+          {/* While a leaf sweeps, the resting spread underneath is fully out
+              of the way: inert to pointers and hidden from assistive tech, so
+              a mid-turn tap can never land on the page that is leaving. */}
           <motion.div
             className="spread"
             variants={inkVariants}
             initial={false}
             animate={reduced || !inking ? 'idle' : 'ink'}
+            inert={flipping}
+            aria-hidden={flipping || undefined}
           >
             <div className="book-sheet is-left">{leftNode}</div>
             <div className="book-spine" aria-hidden="true">
@@ -51,7 +57,11 @@ export default function BookShell({
           {flipping ? (
             <PageTurn direction={turnDirection} front={turnFront} back={turnBack} onLanded={onTurnEnd} />
           ) : null}
-          <AnimatePresence>
+          <AnimatePresence
+            onExitComplete={() => {
+              onCoverSettled?.()
+            }}
+          >
             {!coverOpen ? (
               <motion.button
                 key="cover"

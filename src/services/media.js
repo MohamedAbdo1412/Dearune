@@ -162,7 +162,9 @@ export async function designerAuthedDriveBlob(fileId, token) {
 
 const SIGNED_URL_CACHE = new Map()
 
-async function designerMedia(method, path, { token, query, body, contentType } = {}) {
+// `designerMedia` is shared with `services/wrappers.js` (wrapper catalog
+// photos live in the same private bucket, through this same edge function).
+export async function designerMedia(method, path, { token, query, body, contentType } = {}) {
   const url = new URL(`${supabaseUrl}/functions/v1/designer-media`)
   if (query) {
     for (const [key, value] of Object.entries(query)) {

@@ -28,7 +28,16 @@ import { requireAdmin } from '../_shared/auth.ts'
 // Maintenance mode pauses the forward actions; corrections are only allowed
 // while it is ON (the studio is paused precisely when mistakes get fixed).
 
-const WRAPPERS = ['digital', 'open_letter', 'sealed_letter', 'open_card']
+// Dearunes recorded before the wrapper catalog existed carry one of these
+// four keys; they stay valid forever. Anything else must exist (and be
+// active) in `wrapper_types` — checked in one place so `mark-paid` and
+// `set-wrapper` can never disagree about what a Dearune may be.
+const LEGACY_WRAPPERS = ['digital', 'open_letter', 'sealed_letter', 'open_card']
+
+async function knownWrapperKeys(sb: ReturnType<typeof adminClient>) {
+  const { data } = await sb.from('wrapper_types').select('key').eq('active', true)
+  return new Set<string>([...LEGACY_WRAPPERS, ...(data ?? []).map((row) => String(row.key))])
+}
 const FORWARD_FIELDS = ['manufactured_at', 'shipped_at', 'arrived_at'] as const
 type ForwardField = (typeof FORWARD_FIELDS)[number]
 
@@ -109,14 +118,46 @@ async function loadShipping(sb: ReturnType<typeof adminClient>, projectId: strin
   return (data ?? null) as Row | null
 }
 
-// The price a Dearune should sell for, straight from the pricing table for
-// this paper + wrapper. The admin can override it in the confirm dialog; what
-// they confirm is what gets snapshotted.
+// The price a Dearune should sell for. Resolved in the same order the
+// whole app uses (see `resolveWrapperPrice` in `src/services/wrappers.js`):
+//
+//   template option override  →  wrapper base price  →  legacy pricing row
+//
+// The legacy `template_pricing` fallback keeps Dearunes from before the
+// catalog selling at exactly the price they always sold at. The admin can
+// override the result in the confirm dialog; what they confirm is what
+// gets snapshotted.
 async function pricingFor(sb: ReturnType<typeof adminClient>, templateSlug: string, wrapperType: string) {
   const { data: template } = await sb.from('templates').select('id, name').eq('slug', templateSlug).maybeSingle()
   if (!template) {
     return { templateId: null as string | null, templateName: null as string | null, price: null as number | null, cost: null as number | null }
   }
+
+  const { data: wrapper } = await sb
+    .from('wrapper_types')
+    .select('id, base_price, production_cost')
+    .eq('key', wrapperType)
+    .maybeSingle()
+  if (wrapper) {
+    const { data: option } = await sb
+      .from('template_wrapper_options')
+      .select('price_override, cost_override')
+      .eq('template_id', template.id)
+      .eq('wrapper_id', wrapper.id)
+      .maybeSingle()
+    // No option row for this pair means the template does not offer it to
+    // new books — but an existing Dearune still deserves its legacy price,
+    // which is what the fall-through below returns.
+    if (option) {
+      return {
+        templateId: template.id as string,
+        templateName: template.name as string,
+        price: asNumber(option.price_override ?? wrapper.base_price),
+        cost: asNumber(option.cost_override ?? wrapper.production_cost, 0),
+      }
+    }
+  }
+
   const { data: row } = await sb
     .from('template_pricing')
     .select('price, cost')
@@ -162,7 +203,7 @@ Deno.serve(async (req) => {
     }
 
     const chosenWrapper = asText(body.wrapperType, 30) || asText(project.wrapper_type, 30)
-    if (!WRAPPERS.includes(chosenWrapper)) {
+    if (!chosenWrapper || !(await knownWrapperKeys(sb)).has(chosenWrapper)) {
       return errorResponse('Choose what this Dearune is (digital or a physical wrapper) before recording the sale', 400)
     }
 
@@ -363,7 +404,7 @@ Deno.serve(async (req) => {
     if (settings.maintenance) return errorResponse('Maintenance mode is on — the studio is paused', 409)
     if (archived) return errorResponse('This Dearune is archived', 400)
     const wrapperType = asText(body.wrapperType, 30)
-    if (!WRAPPERS.includes(wrapperType)) return errorResponse('Unknown wrapper', 400)
+    if (!wrapperType || !(await knownWrapperKeys(sb)).has(wrapperType)) return errorResponse('Unknown wrapper', 400)
     if (project.paid_at) return errorResponse('It is already sold — correct the sale to change what it is', 400)
     if (project.wrapper_type === wrapperType) return jsonResponse({ ok: true, unchanged: true })
 

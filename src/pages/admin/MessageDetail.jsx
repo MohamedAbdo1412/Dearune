@@ -6,17 +6,18 @@ import { currentAccessToken } from '@/lib/supabase'
 import { fetchDearune, fetchDearuneEvents, fetchDearuneShipping, fetchSalesForProject, saveDearuneShipping, setDearuneWrapper } from '@/services/dearunes'
 import { fetchDesigners } from '@/services/designers'
 import { fetchTemplates } from '@/services/templates'
-import { isDigital, WRAPPER_LABELS, WRAPPER_TYPES } from '@/services/constants'
+import { isDigital } from '@/services/constants'
+import { findWrapper, wrapperLabel } from '@/services/wrappers'
 import { formatDate, formatDateTime, formatMoney } from '@/services/format'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { ProjectBadge } from '@/components/stage-badge'
 import { DearuneActions } from '@/components/admin/DearuneActions'
+import { WrapperSelect, wrappersForSelect } from '@/components/admin/WrapperSelect'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const LetterPreview = lazy(() => import('@/components/admin/LetterPreview'))
@@ -65,6 +66,13 @@ const EMPTY_SHIP = {
   special_instructions: '',
   tracking_code: '',
   tracking_url: '',
+}
+
+// The wrapper's display name for this record — the catalog's copy when it
+// is loaded, the shared label table as fallback (legacy / deactivated keys).
+function wrapperName(catalog, key, fallback = 'no wrapper') {
+  if (!key) return fallback
+  return wrapperLabel(findWrapper(catalog?.wrappers ?? [], key) ?? { key })
 }
 
 export function MessageDetail() {
@@ -229,7 +237,7 @@ export function MessageDetail() {
             {paper?.name ?? project.template_slug}
             {project.template_version ? ` v${project.template_version}` : ''}
             {' · '}
-            {project.wrapper_type ? WRAPPER_LABELS[project.wrapper_type] : 'wrapper not chosen'}
+            {wrapperName(catalog, project.wrapper_type, 'wrapper not chosen')}
             {' · '}
             {digital ? 'digital' : 'physical'}
             {' · handed over '}{formatDateTime(project.configured_at ?? project.submitted_at)}
@@ -291,14 +299,14 @@ export function MessageDetail() {
                 <p className="text-sm text-muted-foreground">Not sold yet. Recording the sale snapshots the wrapper, price and cost into Sold Logs.</p>
                 <div className="space-y-2">
                   <Label>What is this Dearune?</Label>
-                  <Select value={project.wrapper_type || undefined} onValueChange={(v) => void saveWrapper(v)} disabled={savingWrapper || maintenance || Boolean(project.paid_at)}>
-                    <SelectTrigger><SelectValue placeholder={savingWrapper ? 'Saving…' : 'Choose a wrapper'} /></SelectTrigger>
-                    <SelectContent>
-                      {WRAPPER_TYPES.map((type) => (
-                        <SelectItem key={type} value={type}>{WRAPPER_LABELS[type]}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <WrapperSelect
+                    wrappers={wrappersForSelect(catalog)}
+                    currentKey={project.wrapper_type ?? ''}
+                    value={project.wrapper_type ?? ''}
+                    onChange={(v) => void saveWrapper(v)}
+                    disabled={savingWrapper || maintenance || Boolean(project.paid_at)}
+                    placeholder={savingWrapper ? 'Saving…' : 'Choose a wrapper'}
+                  />
                   <p className="text-xs text-muted-foreground">Also chosen inside the Record sale dialog — setting it here first lets you see the listed price.</p>
                 </div>
               </div>
@@ -322,7 +330,7 @@ export function MessageDetail() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {activeSale.sale_reference} · sold {formatDateTime(activeSale.sold_at)}
-                  {' · '}{WRAPPER_LABELS[activeSale.wrapper_type] ?? activeSale.wrapper_type ?? 'no wrapper'}
+                  {' · '}{wrapperName(catalog, activeSale.wrapper_type)}
                   {activeSale.designer_name ? ` · ${activeSale.designer_name}` : ''}
                 </p>
                 <p className="text-xs">

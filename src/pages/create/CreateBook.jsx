@@ -1,22 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import BookShell from '@/components/book/BookShell'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import BookShell, { VersoPage } from '@/components/book/BookShell'
 import DearuneLoader from '@/components/book/DearuneLoader'
 import { Folio } from '@/components/book/ornaments'
 import {
-  BASE_STAGES,
   decodeJwtPayload,
   loadDraft,
   saveDraft,
   saveTemplateDraft,
   loadTemplateDraft,
   clearDraft,
-  templateStagesFor,
   createLocalProject,
   getActiveProjectId,
-  REVIEW_STAGE,
-  POLICIES_STAGE,
-  SUBMITTED_STAGE,
 } from '@/services/draft'
+import { BASE_STAGES, REVIEW_STAGE, POLICIES_STAGE, SUBMITTED_STAGE, WRAPPER_STAGE, templateStagesFor, nextStageIn } from '@/templates/stages'
+import { templateRegistry } from '@/templates'
 import { lockDraftKey, unlockDraftKey, decryptBytes } from '@/services/draftCrypto'
 import { deleteProjectMedia, getEncryptedMedia, mediaStorageKey } from '@/services/draftMediaStore'
 import { designerLogin, fetchDesignerTemplates, getDesignerToken, clearDesignerToken } from '@/services/designer'
@@ -41,21 +38,21 @@ import DesignerAccessStage from './stages/DesignerAccessStage'
 import ReceiverStage from './stages/ReceiverStage'
 import TemplateSelectionStage from './stages/TemplateSelectionStage'
 import UnwrittenStage from './stages/UnwrittenStage'
+import WrapperSelectionStage from './stages/WrapperSelectionStage'
 import ReviewStage from './stages/ReviewStage'
 import PoliciesStage from './stages/PoliciesStage'
 import SubmittedStage from './stages/SubmittedStage'
 import ProjectsBook from './stages/ProjectsBook'
 import ProjectSheet from './stages/ProjectSheet'
-import { TitleSheet, ReceiverSheet, PapersSheet, LanguageSheet, LockSheet, CloseSheet, PoliciesSheet, SubmittedSheet, ClosedBookSheet, UnwrittenSheet, ChapterPage } from './stages/chapters'
+import { TitleSheet, ReceiverSheet, PapersSheet, LanguageSheet, WrapperSheet, LockSheet, CloseSheet, PoliciesSheet, SubmittedSheet, ClosedBookSheet, UnwrittenSheet, ChapterPage } from './stages/chapters'
 
 import MemorialLetter from '@/templates/memorial-message/MemorialLetter'
-import MemorialLanguageStage from '@/templates/memorial-message/MemorialLanguageStage'
-import MemorialEditorStage, { validateMemorial } from '@/templates/memorial-message/MemorialEditorStage'
-import MemorialPasswordStage from '@/templates/memorial-message/MemorialPasswordStage'
+import { validateMemorial } from '@/templates/memorial-message/MemorialEditorStage'
 import { useMemorialMedia } from '@/templates/memorial-message/useMemorialMedia'
 import { MEMORIAL_TEMPLATE } from '@/templates/memorial-message'
 
-import { useReducedMotion, useIsMobile } from './createHelpers'
+import { useReducedMotion, useIsMobile } from '@/hooks/use-media'
+import { bookReducer, initialBookMotion } from './state/bookMachine'
 
 const AUDIO_INK_MS = 520
 // The delivered paper's fixed proportion; the living proof is framed to it.
@@ -85,19 +82,20 @@ export default function CreateBook() {
   const initial = useMemo(() => initialBook(), [])
   const [designer, setDesigner] = useState({ id: initial.designerId, name: '' })
   const [stage, setStage] = useState(initial.stage)
-  const [coverOpen, setCoverOpen] = useState(initial.coverOpen)
-  const [flip, setFlip] = useState(null)
+  // How the book MOVES (cover · turning leaf · ink pass) lives in the pure
+  // book machine; CreateBook keeps only the page it is ON and which view is
+  // showing (shelf vs pipeline).
+  const [motion, dispatch] = useReducer(bookReducer, initial.coverOpen, (coverOpen) => initialBookMotion({ coverOpen }))
   const [templates, setTemplates] = useState(null)
   const [templatesError, setTemplatesError] = useState('')
   const [chosenSlug, setChosenSlug] = useState(initial.chosenSlug)
   const [receiverName, setReceiverName] = useState('')
+  const [wrapperKey, setWrapperKey] = useState('')
   const [projectId, setProjectId] = useState(null)
   const [closed, setClosed] = useState(initial.closed)
   const [booting, setBooting] = useState(Boolean(initial.designerId))
   const [login, setLogin] = useState({ status: 'idle' })
   const [insonicated, setInsonicated] = useState(!isSoundMuted())
-  const [inking, setInking] = useState(false)
-  const [inkDirection, setInkDirection] = useState('fwd')
   const [memorial, setMemorial] = useState(freshMemorial)
   const [projects, setProjects] = useState(null)
   const [projectsError, setProjectsError] = useState('')
@@ -111,6 +109,7 @@ export default function CreateBook() {
   const passwordRef = useRef('')
   const memorialPendingRef = useRef(null)
   const memorialTimerRef = useRef(null)
+  const inkTimersRef = useRef([])
 
   const sequence = useMemo(() => {
     if (closed) return []
@@ -137,8 +136,19 @@ export default function CreateBook() {
   useEffect(() => {
     return () => {
       if (memorialTimerRef.current) clearTimeout(memorialTimerRef.current)
+      for (const t of inkTimersRef.current) window.clearTimeout(t)
     }
   }, [])
+
+  // Safety net for the cover swing: the machine normally settles when the
+  // motion exit callback reports completion, but if that callback never fires
+  // (interrupted animation, backgrounded tab) the book must not stay locked
+  // "opening" forever. A generous deadline clears the flag regardless.
+  useEffect(() => {
+    if (!motion.opening) return
+    const t = window.setTimeout(() => dispatch({ type: 'COVER_SETTLED' }), 1400)
+    return () => window.clearTimeout(t)
+  }, [motion.opening])
 
   // -------------------------------------------------------------------------
   // Session hydration: with a token but a memory-only draft key, the page
@@ -157,11 +167,12 @@ export default function CreateBook() {
       setProjectId(null)
       setChosenSlug(null)
       setReceiverName('')
+      setWrapperKey('')
       setMemorial(freshMemorial())
       setProjects(projects)
       setProjectsError('')
       setClosed(true)
-      setCoverOpen(true)
+      dispatch({ type: 'SHOW_SHELF' })
       setStage('status')
     }
     const resumeLetter = (nextDraft, nextPid, prevRows) => {
@@ -169,12 +180,13 @@ export default function CreateBook() {
       setProjectId(nextPid)
       setChosenSlug(nextDraft.templateSlug)
       setReceiverName(nextDraft.receiverName ?? '')
+      setWrapperKey(nextDraft.wrapperKey ?? '')
       const slug = nextDraft.templateSlug
       setMemorial(slug && nextDraft.templateDrafts?.[slug] ? nextDraft.templateDrafts[slug] : freshMemorial())
       setProjects(prevRows)
       setProjectsError('')
       setClosed(false)
-      setCoverOpen(true)
+      dispatch({ type: 'SHOW_SHELF' })
       setStage(nextDraft.currentStage)
     }
 
@@ -241,7 +253,7 @@ export default function CreateBook() {
   // sequence (a designer may have changed paper mid-flight).
   useEffect(() => {
     if (closed) return
-    if (flip) return
+    if (motion.turn) return
     if (booting) return
     if (!designer.id) {
       if (stage !== 'access') setStage('access')
@@ -253,7 +265,7 @@ export default function CreateBook() {
       setStage(fallback)
       if (projectId) saveDraft(designer.id, { currentStage: fallback, templateSlug: chosenSlug || null }, projectId)
     }
-  }, [sequence, stage, designer.id, chosenSlug, flip, closed, booting, projectId])
+  }, [sequence, stage, designer.id, chosenSlug, motion.turn, closed, booting, projectId])
 
   useEffect(() => {
     const handler = () => unmuteVia('pointer')
@@ -303,28 +315,35 @@ export default function CreateBook() {
 
   const goTo = useCallback(
     (target, direction) => {
-      if (flip || target === stage || closed) return
+      // No turn while a leaf sweeps, while the cover swings open, on the
+      // page already showing, or on the shelf — same contract as ever, now
+      // enforced by the machine as well.
+      if (motion.turn || motion.opening || target === stage || closed) return
       playPageLift()
-      setFlip({ target, direction, from: stage })
+      dispatch({ type: 'GO', target, direction, from: stage })
     },
-    [flip, stage, closed]
+    [motion.turn, motion.opening, stage, closed]
   )
 
   const handleTurnEnd = useCallback(() => {
-    if (!flip) return
+    if (!motion.turn) return
     playPageSettle()
-    const target = flip.target
-    const direction = flip.direction
+    const target = motion.turn.target
+    // Any ink pass of a previous turn dies here so a stale timer can never
+    // dim the spread that is arriving now.
+    for (const t of inkTimersRef.current) window.clearTimeout(t)
+    inkTimersRef.current = []
+    dispatch({ type: 'TURN_END' })
     setStage(target)
-    setFlip(null)
     persistStage(target)
-    window.setTimeout(() => {
-      setInking(true)
-      setInkDirection(direction)
+    const start = window.setTimeout(() => {
+      dispatch({ type: 'INK_START' })
       playInkTouch()
-      window.setTimeout(() => setInking(false), reduced ? 200 : AUDIO_INK_MS)
+      const stop = window.setTimeout(() => dispatch({ type: 'INK_END' }), reduced ? 200 : AUDIO_INK_MS)
+      inkTimersRef.current = [stop]
     }, reduced ? 60 : 220)
-  }, [flip, persistStage, reduced])
+    inkTimersRef.current = [start]
+  }, [motion.turn, persistStage, reduced])
 
   const handleAccess = useCallback(
     async (code, passcode) => {
@@ -346,9 +365,12 @@ export default function CreateBook() {
         setProjectId(null)
         setChosenSlug(null)
         setReceiverName('')
+        setWrapperKey('')
         setMemorial(freshMemorial())
         setClosed(true)
-        setCoverOpen(true)
+        // The cover is shut on the access spread: opening it swings onto the
+        // shelf — the one cover animation the machine stages for real.
+        dispatch({ type: 'OPEN_COVER' })
         setStage('status')
         setLogin({ status: 'idle' })
         playPin()
@@ -380,8 +402,11 @@ export default function CreateBook() {
       if (!designer.id || !projectId) return
       const code = template.slug
       setChosenSlug(code)
+      // Wrappers are offered per paper: a choice made for one template can
+      // never travel to another (the server would rightly refuse it).
+      setWrapperKey('')
       const first = templateStagesFor(code)[0]
-      saveDraft(designer.id, { templateSlug: code, currentStage: first }, projectId)
+      saveDraft(designer.id, { templateSlug: code, currentStage: first, wrapperKey: '' }, projectId)
       playPin()
       goTo(first, 'fwd')
     },
@@ -391,36 +416,38 @@ export default function CreateBook() {
   // The one Back control of the pipeline. Every stage that has a previous page
   // hands it a destination through the same masthead leaf, so the way back never
   // relocates from spread to spread and each previous page arrives with the
-  // reverse turn the book has always done.
-  const previousStageOf = {
-    'receiver': 'shelf',
-    'templates': 'receiver',
-    'unwritten': 'templates',
-    'memorial.language': 'templates',
-    'memorial.editor': 'memorial.language',
-    'memorial.password': 'memorial.editor',
-    [REVIEW_STAGE]: 'memorial.password',
-    [POLICIES_STAGE]: REVIEW_STAGE,
-  }
+  // reverse turn the book has always done. The chain is DERIVED from the stage
+  // sequence itself — a template that contributes a stage (the wrapper, say)
+  // is automatically the previous page of whatever follows it, and no hand-
+  // maintained table can fall out of step with TEMPLATE_STAGES.
+  const previousStageOf = useMemo(() => {
+    const map = { receiver: 'shelf', templates: 'receiver' }
+    let prev = 'templates'
+    for (const key of templateStagesFor(chosenSlug)) {
+      map[key] = prev
+      prev = key
+    }
+    return map
+  }, [chosenSlug])
 
   // The receiver is the first spread of the book: its previous page is not one
   // of the chapters but the shelf itself, so going back closes the view (the
   // in-progress draft stays where it is, untouched) instead of turning to a
   // spread that does not exist.
   const returnToShelf = useCallback(() => {
-    if (flip) return
+    if (motion.turn) return
     playPageLift()
-    setFlip(null)
     setActiveProject(null)
     setProjectId(null)
     setChosenSlug(null)
     setReceiverName('')
+    setWrapperKey('')
     setMemorial(freshMemorial())
-    setCoverOpen(true)
+    dispatch({ type: 'SHOW_SHELF' })
     setClosed(true)
     setStage('status')
     playPageSettle()
-  }, [flip])
+  }, [motion.turn])
 
   // Template field changes are debounced (~⅓ s) so a hurried pen stays calm;
   // the pending patch is flushed whenever a page turns or the seal is pressed,
@@ -449,6 +476,18 @@ export default function CreateBook() {
       goTo('memorial.editor', 'fwd')
     },
     [goTo, persistMemorial]
+  )
+
+  // The wrapper choice writes through at once (a plain root draft field, not
+  // a debounced template patch): it is one click, and the stage may be left
+  // for the lock immediately after.
+  const handleWrapperPick = useCallback(
+    (key) => {
+      setWrapperKey(key)
+      if (designer.id && projectId) saveDraft(designer.id, { wrapperKey: key }, projectId)
+      playClick()
+    },
+    [designer.id, projectId]
   )
 
   const handleMemorialField = useCallback(
@@ -488,7 +527,12 @@ export default function CreateBook() {
     const token = getDesignerToken()
     const now = new Date().toISOString()
 
-    const ledger = (await loadDraft(designer.id, projectId))?.submitLedger ?? {}
+    // The desk is the source of truth: the wrapper choice is read back from
+    // the same decrypted draft as the ledger (the in-memory copy only stands
+    // in for the pathological case where nothing was persisted yet).
+    const fullDraft = await loadDraft(designer.id, projectId)
+    const ledger = fullDraft?.submitLedger ?? {}
+    const wrapperType = fullDraft?.wrapperKey || wrapperKey || null
     const serverRefFor = async (localRef, kind) => {
       const slotKey = `${localRef.role}:${localRef.slot}`
       if (ledger[slotKey]) return ledger[slotKey]
@@ -529,17 +573,17 @@ export default function CreateBook() {
       draft: serverDraft,
       policyVersion: DEARUNE_POLICY_VERSION,
       policiesAcceptedAt: now,
+      wrapperType,
     })
     await saveDraft(designer.id, { submittedAt: now, submittedProjectId: project.id, submitLedger: {} }, projectId)
     setActiveProject(project)
     setProjects((prev) => [project, ...(prev ?? []).filter((p) => p.id !== project.id)])
-    setFlip(null)
+    // The hand-over is a REAL turn, not a jump: the leaf sweeps from the
+    // terms onto the handed-over page and the ink pass greets it there.
     setClosed(false)
-    setCoverOpen(true)
-    setStage(SUBMITTED_STAGE)
-    playPageSettle()
+    dispatch({ type: 'GO', target: SUBMITTED_STAGE, direction: 'fwd', from: stage })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [designer.id, projectId, chosenSlug, receiverName, memorial, flushMemorialNow])
+  }, [designer.id, projectId, chosenSlug, receiverName, wrapperKey, stage, memorial, flushMemorialNow])
 
   // Close the Book: the server owns the letter now, so the local project
   // (encrypted draft + its media) is swept off this device and the cover shuts
@@ -553,11 +597,11 @@ export default function CreateBook() {
     setProjectId(null)
     setChosenSlug(null)
     setReceiverName('')
+    setWrapperKey('')
     setMemorial(freshMemorial())
     setActiveProject(null)
-    setFlip(null)
+    dispatch({ type: 'SHOW_SHELF' })
     setClosed(true)
-    setCoverOpen(true)
     setStage('status')
     passwordRef.current = ''
     playPageSettle()
@@ -593,12 +637,12 @@ export default function CreateBook() {
     playClick()
     setChosenSlug(null)
     setReceiverName('')
+    setWrapperKey('')
     setActiveProject(null)
     setMemorial(freshMemorial())
     setStage('receiver')
     setClosed(false)
-    setCoverOpen(false)
-    setFlip(null)
+    dispatch({ type: 'RESET_DESK' })
     setLogin({ status: 'idle' })
     passwordRef.current = ''
     setOpeningId(null)
@@ -610,16 +654,18 @@ export default function CreateBook() {
     lockDraftKey()
     memorialPendingRef.current = null
     if (memorialTimerRef.current) clearTimeout(memorialTimerRef.current)
+    for (const t of inkTimersRef.current) window.clearTimeout(t)
+    inkTimersRef.current = []
     setDesigner({ id: '', name: '' })
     setProjectId(null)
     setReceiverName('')
+    setWrapperKey('')
     setStage('access')
-    setFlip(null)
+    dispatch({ type: 'RESET_DESK' })
     setTemplates(null)
     setTemplatesError('')
     setChosenSlug(null)
     setClosed(false)
-    setCoverOpen(false)
     setProjects(null)
     setProjectsError('')
     setActiveProject(null)
@@ -636,10 +682,23 @@ export default function CreateBook() {
     if (next) unmuteVia('toggle')
   }, [])
 
-  const chosenTemplate = useMemo(
-    () => (templates ?? []).find((t) => t.slug === chosenSlug) ?? { slug: chosenSlug, name: chosenSlug, description: '' },
-    [templates, chosenSlug]
-  )
+  // The paper in hand: the SERVER owns what it looks like on the shelf
+  // (name, phrase, wrappers), the frontend registry owns how its PAGES are
+  // built — merged here so `template.components` is live for the spread.
+  const chosenTemplate = useMemo(() => {
+    const fromServer = (templates ?? []).find((t) => t.slug === chosenSlug)
+    const contract = templateRegistry(chosenSlug)
+    if (!contract) return fromServer ?? { slug: chosenSlug, name: chosenSlug, description: '' }
+    return { ...contract, ...fromServer, components: contract.components }
+  }, [templates, chosenSlug])
+
+  // The wrappers THIS paper offers (already filtered to enabled, active
+  // options by the server); null while the archive is still loading. A failed
+  // archive read degrades to "no wrappers known" so the desk never deadlocks.
+  const wrapperOptions = useMemo(() => {
+    if (templates === null) return templatesError ? [] : null
+    return chosenTemplate.wrappers ?? []
+  }, [templates, templatesError, chosenTemplate])
 
   // ---------------------------------------------------------------------------
   // The Back control. One leaf in the masthead, same place on every spread;
@@ -647,16 +706,19 @@ export default function CreateBook() {
   // ---------------------------------------------------------------------------
 
   const nestLabels = memorial.language === 'ar'
+  // Each word names the page the Back leaf returns TO (the destination), so
+  // the label and the turn can never disagree about where you land.
   const PREVIOUS_WORDS = {
     shelf: nestLabels ? 'الرف' : 'the shelf',
     receiver: nestLabels ? 'لمن' : 'for whom',
     templates: nestLabels ? 'الأوراق' : 'the papers',
     unwritten: nestLabels ? 'الأوراق' : 'the papers',
-    'memorial.language': nestLabels ? 'الأوراق' : 'the papers',
-    'memorial.editor': nestLabels ? 'اللغة' : 'the tongue',
-    'memorial.password': nestLabels ? 'صفحة الكلام' : 'the speaking page',
-    [REVIEW_STAGE]: nestLabels ? 'القفل' : 'the lock',
-    [POLICIES_STAGE]: nestLabels ? 'الخاتمة' : 'the close',
+    'memorial.language': nestLabels ? 'اللغة' : 'the tongue',
+    'memorial.editor': nestLabels ? 'صفحة الكلام' : 'the speaking page',
+    'wrapper': nestLabels ? 'التغليف' : 'the wrapper',
+    'memorial.password': nestLabels ? 'القفل' : 'the lock',
+    [REVIEW_STAGE]: nestLabels ? 'الخاتمة' : 'the close',
+    [POLICIES_STAGE]: nestLabels ? 'الختم' : 'the seal',
   }
 
   const previousStage = previousStageOf[stage]
@@ -680,8 +742,34 @@ export default function CreateBook() {
 
   const rightFor = useCallback(
     (key) => {
-      const index = sequence.indexOf(key)
+      // The handed-over page sits just past the last spread of the sequence,
+      // so its folio continues the book's numbering instead of falling back.
+      const index = key === SUBMITTED_STAGE ? sequence.length : sequence.indexOf(key)
       const folio = index >= 0 ? index * 2 + 2 : 2
+
+      // Pages a template owns render through ITS registry entry — one prop
+      // bag, the component picks what it knows. The next leaf is derived
+      // from the sequence, never hardcoded, so re-ordering a template's
+      // pages cannot strand a stage pointing at the wrong neighbour.
+      const TemplatePage = chosenTemplate?.components?.[key]
+      if (TemplatePage) {
+        const next = nextStageIn(sequence, key)
+        return (
+          <Folio folio={folio}>
+            <TemplatePage
+              draft={memorial}
+              template={chosenTemplate}
+              value={memorial.language}
+              projectId={projectId}
+              onChange={handleMemorialField}
+              onSelect={handleLanguage}
+              onSet={handleSetPassword}
+              onNext={next ? () => goTo(next, 'fwd') : undefined}
+            />
+          </Folio>
+        )
+      }
+
       switch (key) {
         case 'access':
           return (
@@ -723,28 +811,30 @@ export default function CreateBook() {
               <UnwrittenStage template={chosenTemplate} />
             </Folio>
           )
-        case 'memorial.language':
+        case WRAPPER_STAGE: {
+          const next = nextStageIn(sequence, key) ?? 'review'
           return (
             <Folio folio={folio}>
-              <MemorialLanguageStage value={memorial.language} onSelect={handleLanguage} />
+              <WrapperSelectionStage
+                template={chosenTemplate}
+                wrappers={wrapperOptions}
+                value={wrapperKey}
+                onChange={handleWrapperPick}
+                onNext={() => goTo(next, 'fwd')}
+                language={memorial.language}
+              />
             </Folio>
           )
-        case 'memorial.editor':
+        }
+        case REVIEW_STAGE:
           return (
             <Folio folio={folio}>
-              <MemorialEditorStage draft={memorial} projectId={projectId} onChange={handleMemorialField} onNext={() => goTo('memorial.password')} />
-            </Folio>
-          )
-        case 'memorial.password':
-          return (
-            <Folio folio={folio}>
-              <MemorialPasswordStage draft={memorial} onSet={handleSetPassword} onNext={() => goTo('review')} />
-            </Folio>
-          )
-        case 'review':
-          return (
-            <Folio folio={folio}>
-              <ReviewStage draft={memorial} token={memorialToken} templateName={chosenTemplate.name} onNext={() => goTo(POLICIES_STAGE)} />
+              <ReviewStage
+                draft={memorial}
+                token={memorialToken}
+                templateName={chosenTemplate.name}
+                onNext={() => goTo(nextStageIn(sequence, key) ?? POLICIES_STAGE, 'fwd')}
+              />
             </Folio>
           )
         case POLICIES_STAGE:
@@ -774,7 +864,7 @@ export default function CreateBook() {
           return null
       }
     },
-    [sequence, login, templates, templatesError, chosenSlug, chosenTemplate, designer, memorial, memorialToken, receiverName, projectId, activeProject, handleAccess, handleCooldownEnd, handleReceiver, handlePickTemplate, handleLanguage, handleMemorialField, handleSetPassword, handleSubmit, handleCloseBook, goTo]
+    [sequence, login, templates, templatesError, chosenSlug, chosenTemplate, wrapperOptions, wrapperKey, designer, memorial, memorialToken, receiverName, projectId, activeProject, handleAccess, handleCooldownEnd, handleReceiver, handlePickTemplate, handleLanguage, handleMemorialField, handleWrapperPick, handleSetPassword, handleSubmit, handleCloseBook, goTo]
   )
 
   const leftFor = useCallback(
@@ -794,6 +884,8 @@ export default function CreateBook() {
           return <LanguageSheet />
         case 'memorial.editor':
           return <EditorProofPage draft={memorial} token={memorialToken} />
+        case 'wrapper':
+          return <WrapperSheet />
         case 'memorial.password':
           return <LockSheet />
         case 'review':
@@ -809,15 +901,28 @@ export default function CreateBook() {
     [sequence, memorial, memorialToken, designer]
   )
 
-  // While the draft is being decrypted and the shelf fetched, show a quiet
-  // loader instead of flashing an empty book.
+  // While the draft is being decrypted and the shelf fetched, the BOOK is
+  // still the hero: an open spread carrying a quiet loader on its right page,
+  // never a bare spinner replacing the object.
   if (booting && designer.id) {
     return (
       <div className="book-root">
         <Masthead insonicated={insonicated} onToggleSound={toggleSound} />
-        <div className="book-loader-wrap">
-          <DearuneLoader label="setting the type…" />
-        </div>
+        <BookShell
+          leftNode={<VersoPage />}
+          rightNode={
+            <Folio folio={2}>
+              <div className="book-boot">
+                <DearuneLoader size="lg" label="setting the type…" />
+              </div>
+            </Folio>
+          }
+          coverOpen
+        />
+        <footer className="book-footer">
+          <span>paper &amp; ink · set by hand</span>
+          <span>a closed book keeps its words</span>
+        </footer>
       </div>
     )
   }
@@ -836,7 +941,7 @@ export default function CreateBook() {
         <BookShell
           leftNode={<ClosedBookSheet />}
           rightNode={
-            <Folio folio={15}>
+            <Folio folio={17}>
               {activeProject ? (
                 <ProjectSheet project={activeProject} token={memorialToken} templates={templates} onBack={() => setActiveProject(null)} />
               ) : (
@@ -857,7 +962,8 @@ export default function CreateBook() {
               )}
             </Folio>
           }
-          coverOpen={coverOpen}
+          coverOpen={motion.coverOpen}
+          onCoverSettled={() => dispatch({ type: 'COVER_SETTLED' })}
           inking={false}
         />
         <footer className="book-footer">
@@ -868,25 +974,25 @@ export default function CreateBook() {
     )
   }
 
-  const resting = flip ? flip.target : stage
+  const resting = motion.turn ? motion.turn.target : stage
   const spreadNumber = Math.max(1, sequence.indexOf(resting) + 1)
 
   // One leaf, two faces. On the desktop spread the arriving page appears on
   // the far half of the book; on mobile there is only one exposed page, so
   // the arriving face is the next working page itself.
-  const turnFront = flip
-    ? flip.direction === 'back'
+  const turnFront = motion.turn
+    ? motion.turn.direction === 'back'
       ? mobile
-        ? rightFor(flip.from)
-        : leftFor(flip.from)
-      : rightFor(flip.from)
+        ? rightFor(motion.turn.from)
+        : leftFor(motion.turn.from)
+      : rightFor(motion.turn.from)
     : null
-  const turnBack = flip
-    ? flip.direction === 'back'
-      ? rightFor(flip.target)
+  const turnBack = motion.turn
+    ? motion.turn.direction === 'back'
+      ? rightFor(motion.turn.target)
       : mobile
-        ? rightFor(flip.target)
-        : leftFor(flip.target)
+        ? rightFor(motion.turn.target)
+        : leftFor(motion.turn.target)
     : null
 
   return (
@@ -900,18 +1006,19 @@ export default function CreateBook() {
       <BookShell
         leftNode={leftFor(resting)}
         rightNode={rightFor(resting)}
-        coverOpen={coverOpen}
+        coverOpen={motion.coverOpen}
         onOpenCover={() => {
           unmuteVia('cover')
-          setCoverOpen(true)
+          dispatch({ type: 'OPEN_COVER' })
         }}
-        flipping={Boolean(flip)}
-        turnDirection={flip?.direction ?? 'fwd'}
+        onCoverSettled={() => dispatch({ type: 'COVER_SETTLED' })}
+        flipping={Boolean(motion.turn)}
+        turnDirection={motion.turn?.direction ?? 'fwd'}
         turnFront={turnFront}
         turnBack={turnBack}
         onTurnEnd={handleTurnEnd}
-        inking={inking}
-        inkDirection={inkDirection}
+        inking={motion.inking}
+        inkDirection={motion.inkDirection}
       />
       <footer className="book-footer">
         <span>paper &amp; ink · set by hand</span>

@@ -178,6 +178,27 @@ Deno.serve(async (req) => {
     const payload = sanitizePayload(body.draft, designer.designerId)
     if (!payload) return errorResponse('The words are not written yet', 400)
 
+    // The arrival wrapper chosen in Create (optional: a draft written before
+    // the wrapper stage existed still submits). It must be an ACTIVE catalog
+    // wrapper that THIS template actually offers — the same rule the
+    // `designer-templates` payload that fed the stage enforces, re-checked
+    // here so a hand-crafted request can't send a Dearune in a wrapper the
+    // studio does not offer for this paper.
+    const wrapperType = typeof body.wrapperType === 'string' ? body.wrapperType.trim().slice(0, 30) : ''
+    if (wrapperType) {
+      const { data: wrapperRow } = await sb.from('wrapper_types').select('id').eq('key', wrapperType).eq('active', true).maybeSingle()
+      const { data: option } = wrapperRow
+        ? await sb
+          .from('template_wrapper_options')
+          .select('id')
+          .eq('template_id', template.id)
+          .eq('wrapper_id', wrapperRow.id)
+          .eq('enabled', true)
+          .maybeSingle()
+        : { data: null }
+      if (!wrapperRow || !option) return errorResponse('This way of sending it is not available', 400)
+    }
+
     const receiverName = typeof body.receiverName === 'string'
       ? body.receiverName.trim().slice(0, MAX_LENGTHS.receiverName)
       : ''
@@ -197,6 +218,7 @@ Deno.serve(async (req) => {
       policy_version: POLICY_VERSION,
       policies_accepted_at: acceptedAt.toISOString(),
     }
+    if (wrapperType) insert.wrapper_type = wrapperType
     if (projectId) insert.id = projectId
 
     const { data: project, error } = await sb.from('projects').insert(insert)

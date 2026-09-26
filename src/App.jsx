@@ -12,8 +12,10 @@ import { MessageDetail } from '@/pages/admin/MessageDetail'
 import { SoldLogs } from '@/pages/admin/SoldLogs'
 import { SaleDetail } from '@/pages/admin/SaleDetail'
 import { Templates } from '@/pages/admin/Templates'
+import { Wrappers } from '@/pages/admin/Wrappers'
 import { Settings } from '@/pages/admin/Settings'
 import { NotFound } from '@/pages/NotFound'
+import { MemorialQa } from '@/pages/QaMemorial'
 
 const CreateBook = lazy(() => import('@/pages/create/CreateBook'))
 
@@ -84,6 +86,9 @@ export default function App() {
         }
       />
       <Route path="/admin/login" element={<AdminLogin />} />
+      {/* Visual-QA bench for the letter — static, no auth, kept out of every
+          menu. e2e/qa-memorial.mjs screenshots it from 1920 down to 360. */}
+      <Route path="/qa/memorial" element={<MemorialQa />} />
       <Route
         path="/admin"
         element={
@@ -105,6 +110,7 @@ export default function App() {
         <Route path="sold" element={<SoldLogs />} />
         <Route path="sold/:saleId" element={<SaleDetail />} />
         <Route path="templates" element={<Templates />} />
+        <Route path="wrappers" element={<Wrappers />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<NotFound />} />

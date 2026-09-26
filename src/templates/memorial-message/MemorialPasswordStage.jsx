@@ -74,7 +74,7 @@ export default function MemorialPasswordStage({ draft, onSet, onNext }) {
     <div className="settle stage-root">
       <div className="page-script">{t('the lock', 'القفل')}</div>
       <div className="page-kicker" style={{ marginTop: 6 }}>
-        chapter the sixth
+        chapter the seventh
       </div>
 
       <Fleuron />

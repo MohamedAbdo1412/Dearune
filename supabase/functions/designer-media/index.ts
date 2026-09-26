@@ -1,6 +1,6 @@
 import { corsHeaders, errorResponse, handleOptions, jsonResponse } from '../_shared/cors.ts'
 import { adminClient } from '../_shared/supabase.ts'
-import { requireAdminOrDesigner, requireDesigner } from '../_shared/auth.ts'
+import { requireAdminOrDesigner } from '../_shared/auth.ts'
 import { googleAccessToken, driveEnsureFolder, driveCreateResumableSession, driveTrash, driveDownload } from '../_shared/drive.ts'
 
 // Designers draft media privately, before any order exists, so the bytes are
@@ -127,22 +127,31 @@ Deno.serve(async (req) => {
 
   // Reading a book's media is also how the admin previews the letter it
   // belongs to, so GET accepts an admin session as well as the designer's.
-  // Uploading and deleting stay designer-only: an admin never touches the
-  // drafts another account owns.
-  let designerId = ''
-  if (req.method === 'GET') {
-    const who = await requireAdminOrDesigner(req)
-    if (!who) return errorResponse('This book is closed to you', 401)
-    designerId = who.role === 'designer' ? who.designerId : ''
-  } else {
-    const designer = await requireDesigner(req)
-    if (!designer) return errorResponse('This book is closed to you', 401)
-    designerId = designer.designerId
-  }
-
+  // Uploading and deleting a BOOK's drafts stay designer-only: an admin
+  // never touches drafts another account owns.
+  //
+  // The one exception is the wrapper catalog: its photos live under
+  // `wrappers/<key>/…` in the same private bucket, are uploaded and removed
+  // by an admin only (Settings → Wrappers), and are readable by any studio
+  // member — the designer needs them to show the arrival options in Create.
   const url = new URL(req.url)
   const path = url.searchParams.get('path') ?? ''
   const providerHint = url.searchParams.get('storageProvider')
+  const wrapperKey = url.searchParams.get('wrapper') ?? ''
+  const isWrapperAsset = path.startsWith('wrappers/') || Boolean(wrapperKey)
+
+  let designerId = ''
+  let isAdmin = false
+  {
+    const who = await requireAdminOrDesigner(req)
+    if (!who) return errorResponse('This book is closed to you', 401)
+    if (who.role === 'admin') isAdmin = true
+    else designerId = who.designerId
+  }
+  if (req.method !== 'GET') {
+    if (wrapperKey && !isAdmin) return errorResponse('Only the studio can set a wrapper', 403)
+    if (!wrapperKey && isAdmin) return errorResponse('Admins do not own drafts', 403)
+  }
 
   // -- Upload ---------------------------------------------------------------
   if (req.method === 'POST') {
@@ -160,6 +169,21 @@ Deno.serve(async (req) => {
     if (bytes.byteLength === 0) return errorResponse('Nothing was sent', 400)
     if (bytes.byteLength > limit) return errorResponse('That is too heavy to pin', 413)
 
+    // Wrapper catalog photos always live in Supabase storage (the designer
+    // interface must show them without any Drive dependency), under the
+    // wrapper's key so a re-upload replaces the previous photo in place.
+    if (wrapperKey) {
+      if (!/^[a-z][a-z0-9_]{0,29}$/.test(wrapperKey)) return errorResponse('Unknown wrapper', 400)
+      const objectName = `wrappers/${wrapperKey}/${fixedName || crypto.randomUUID()}${extensionFor(mimeType, originalName)}`
+      const { error } = await sb.storage.from(BUCKET).upload(objectName, bytes, {
+        contentType: mimeType,
+        cacheControl: '3600',
+        upsert: true,
+      })
+      if (error) return errorResponse('Could not store the photo', 500)
+      return jsonResponse(mediaRef({ storageProvider: 'supabase', path: objectName, mimeType, sizeBytes: bytes.byteLength, originalName }), 201)
+    }
+
     try {
       const provider = await resolveStorageProvider(sb)
       const storagePath = provider === 'google_drive'
@@ -174,6 +198,12 @@ Deno.serve(async (req) => {
   // -- Delete ---------------------------------------------------------------
   if (req.method === 'DELETE') {
     if (!path) return errorResponse('Nothing to remove', 400)
+    if (path.startsWith('wrappers/')) {
+      if (!isAdmin) return errorResponse('Only the studio can change a wrapper', 403)
+      if (!/^wrappers\/[a-z][a-z0-9_]{0,29}\/[^/]+$/.test(path)) return errorResponse('Not a wrapper photo', 403)
+      await sb.storage.from(BUCKET).remove([path])
+      return jsonResponse({ removed: path })
+    }
     try {
       const provider = providerHint === 'google_drive' ? 'google_drive' : await resolveStorageProvider(sb)
       if (provider === 'supabase') {
@@ -196,8 +226,10 @@ Deno.serve(async (req) => {
   if (req.method === 'GET') {
     if (!path) return errorResponse('Nothing to resolve', 400)
 
-    const streaming = url.searchParams.get('dl') === '1'
-    const provider = providerHint === 'google_drive' ? 'google_drive' : providerHint === 'supabase' ? 'supabase' : await resolveStorageProvider(sb)
+    const streaming = !isWrapperAsset && url.searchParams.get('dl') === '1'
+    const provider = isWrapperAsset
+      ? 'supabase'
+      : providerHint === 'google_drive' ? 'google_drive' : providerHint === 'supabase' ? 'supabase' : await resolveStorageProvider(sb)
 
     // Drive files are streamed through this function so the client keeps one
     // origin and range requests keep working for audio seeking. The bytes are
@@ -231,6 +263,15 @@ Deno.serve(async (req) => {
     // happens server-side so no bucket wiring ever leaks). The object must
     // live in a designer's namespace; a designer may only sign their own,
     // while an admin session may sign any book the studio has taken on.
+    // Wrapper catalog photos are shared studio assets: any signed-in studio
+    // member may resolve them (the object name itself carries the wrapper
+    // key, which is validated against the catalog shape above).
+    if (path.startsWith('wrappers/')) {
+      if (!/^wrappers\/[a-z][a-z0-9_]{0,29}\/[^/]+$/.test(path)) return errorResponse('Not a wrapper photo', 403)
+      const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_TTL)
+      if (error || !data?.signedUrl) return errorResponse('Photo unavailable', 404)
+      return jsonResponse({ url: data.signedUrl })
+    }
     const inNamespace = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\//i.test(path)
     if (!inNamespace) return errorResponse('Not a studio draft', 403)
     if (designerId && !path.startsWith(`${designerId}/`)) return errorResponse('Not yours to read', 403)

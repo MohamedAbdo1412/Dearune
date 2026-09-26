@@ -1,4 +1,4 @@
-import { memorialDefaults } from './MemorialLetter'
+import { memorialDefaults } from './letterDefaults'
 
 // THE SAMPLE. This is the only place a made-up sheet may be drawn, and only for
 // two purposes: the paper's card in the gallery, and the opening of a brand-new

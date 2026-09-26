@@ -83,11 +83,23 @@ export function UnwrittenSheet() {
   )
 }
 
-export function LockSheet() {
+export function WrapperSheet() {
   return (
     <ChapterPage
       folio={11}
       script="chapter the sixth"
+      title="The wrapper"
+      body="A letter is also how it arrives. Choose the wrapper this book will
+            travel in — it becomes part of what is being given."
+    />
+  )
+}
+
+export function LockSheet() {
+  return (
+    <ChapterPage
+      folio={13}
+      script="chapter the seventh"
       title="The lock"
     >
       <div className="lock-engraving" aria-hidden="true">
@@ -104,8 +116,8 @@ export function LockSheet() {
 export function CloseSheet({ receiverName }) {
   return (
     <ChapterPage
-      folio={13}
-      script="chapter the seventh"
+      folio={15}
+      script="chapter the eighth"
       title="The close"
     >
       <div className="close-ornament" aria-hidden="true">
@@ -124,8 +136,8 @@ export function CloseSheet({ receiverName }) {
 export function PoliciesSheet() {
   return (
     <ChapterPage
-      folio={15}
-      script="chapter the eighth"
+      folio={17}
+      script="chapter the ninth"
       title="The seal"
     >
       <div className="seal-mark" aria-hidden="true">
@@ -142,7 +154,7 @@ export function PoliciesSheet() {
 export function SubmittedSheet() {
   return (
     <ChapterPage
-      folio={17}
+      folio={19}
       script="chapter the last"
       title="Handed over"
     >
@@ -160,7 +172,7 @@ export function SubmittedSheet() {
 export function ClosedBookSheet() {
   return (
     <ChapterPage
-      folio={16}
+      folio={18}
       script="the end"
       title="A closed book"
       body="The message is in its wrappers now. Its pages are no longer turned

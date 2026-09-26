@@ -6,9 +6,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { archiveDearune, correctSale, correctStep, recordSale, restoreDearune, setDearuneActive, stampDearune } from '@/services/dearunes'
-import { isDigital, nextDearuneAction, WRAPPER_LABELS, WRAPPER_TYPES } from '@/services/constants'
+import { isDigital, nextDearuneAction } from '@/services/constants'
+import { wrapperPriceFor } from '@/services/wrappers'
+import { WrapperSelect, wrappersForSelect } from '@/components/admin/WrapperSelect'
 import { formatMoney } from '@/services/format'
 
 // Every button that changes a Dearune's state, in one place, so the rules
@@ -50,11 +51,22 @@ export function DearuneActions({ project, maintenance = false, onChanged, detail
   }
 
   // -- Sale dialog ----------------------------------------------------------
-  const pricingRow = () => {
-    if (!catalog?.pricing || !saleFor) return null
-    const template = catalog.templates.find((t) => t.slug === saleFor.template_slug)
+  // The price the ledger will default to. Resolved from the WRAPPER CATALOG
+  // through the same helper every other screen uses (option override →
+  // wrapper base), so the suggestion the admin sees is the price the
+  // templates page shows. The frozen legacy pricing row remains the last
+  // resort for a pair that predates the catalog.
+  const suggestedPrice = () => {
+    if (!catalog || !saleFor || !saleForm.wrapperType) return null
+    const template = catalog.templates?.find((t) => t.slug === saleFor.template_slug)
+    const wrapper = catalog.wrappers?.find((w) => w.key === saleForm.wrapperType)
+    if (wrapper) {
+      const resolved = wrapperPriceFor({ template, wrapper, options: catalog.options ?? [] })
+      return { price: resolved.price, cost: resolved.cost }
+    }
     if (!template) return null
-    return catalog.pricing.find((p) => p.template_id === template.id && p.wrapper_type === saleForm.wrapperType) ?? null
+    const row = catalog.pricing?.find((p) => p.template_id === template.id && p.wrapper_type === saleForm.wrapperType)
+    return row ? { price: Number(row.price), cost: Number(row.cost ?? 0) } : null
   }
 
   const openSale = (p) => {
@@ -144,7 +156,8 @@ export function DearuneActions({ project, maintenance = false, onChanged, detail
           project={saleFor}
           form={saleForm}
           setForm={setSaleForm}
-          pricingRow={saleForm.wrapperType ? pricingRow() : null}
+          suggested={saleForm.wrapperType ? suggestedPrice() : null}
+          wrappers={wrappersForSelect(catalog)}
           onClose={() => setSaleFor(null)}
           onSubmit={submitSale}
           busy={busy}
@@ -241,7 +254,8 @@ export function DearuneActions({ project, maintenance = false, onChanged, detail
         project={saleFor}
         form={saleForm}
         setForm={setSaleForm}
-        pricingRow={saleForm.wrapperType ? pricingRow() : null}
+        suggested={saleForm.wrapperType ? suggestedPrice() : null}
+        wrappers={wrappersForSelect(catalog)}
         onClose={() => setSaleFor(null)}
         onSubmit={submitSale}
         busy={busy}
@@ -259,11 +273,10 @@ export function DearuneActions({ project, maintenance = false, onChanged, detail
 }
 
 // What this Dearune physically is + what it sold for. The wrapper decides the
-// price (one pricing row per paper + wrapper), so the ledger snapshot starts
-// here. `pricingRow` is the already-looked-up row (or null when the paper has
-// no price for the chosen wrapper) — never a function.
-function SaleDialog({ open, project, form, setForm, pricingRow, onClose, onSubmit, busy }) {
-  const suggested = pricingRow
+// price (resolved once, in `suggestedPrice`), so the ledger snapshot starts
+// here. `suggested` is the already-resolved { price, cost } (or null when the
+// catalog has no price for the chosen wrapper) — never a function.
+function SaleDialog({ open, project, form, setForm, suggested, wrappers = [], onClose, onSubmit, busy }) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
       <DialogContent className="max-w-md">
@@ -277,14 +290,12 @@ function SaleDialog({ open, project, form, setForm, pricingRow, onClose, onSubmi
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>What is this Dearune?</Label>
-            <Select value={form.wrapperType || undefined} onValueChange={(v) => setForm({ ...form, wrapperType: v })}>
-              <SelectTrigger><SelectValue placeholder="Choose a wrapper" /></SelectTrigger>
-              <SelectContent>
-                {WRAPPER_TYPES.map((type) => (
-                  <SelectItem key={type} value={type}>{WRAPPER_LABELS[type]}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <WrapperSelect
+              wrappers={wrappers}
+              currentKey={project?.wrapper_type ?? ''}
+              value={form.wrapperType}
+              onChange={(v) => setForm({ ...form, wrapperType: v })}
+            />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

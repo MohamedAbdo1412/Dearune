@@ -114,8 +114,17 @@ describe('normalizeDraft', () => {
     const withPaper = { ...base, templateSlug: 'memorial-message' }
     expect(normalizeDraft({ ...withPaper, currentStage: REVIEW_STAGE }, 'd-9', 'p-1')).toMatchObject({ currentStage: REVIEW_STAGE })
     expect(normalizeDraft({ ...withPaper, currentStage: POLICIES_STAGE }, 'd-9', 'p-1')).toMatchObject({ currentStage: POLICIES_STAGE })
+    expect(normalizeDraft({ ...withPaper, currentStage: 'wrapper' }, 'd-9', 'p-1')).toMatchObject({ currentStage: 'wrapper' })
     expect(normalizeDraft({ ...base, currentStage: SUBMITTED_STAGE }, 'd-9', 'p-1')).toMatchObject({ currentStage: SUBMITTED_STAGE })
     expect(normalizeDraft({ ...base, currentStage: STATUS_STAGE }, 'd-9', 'p-1')).toMatchObject({ currentStage: STATUS_STAGE })
+  })
+
+  it('keeps only a well-formed wrapper key on the draft root', () => {
+    expect(normalizeDraft({ ...base, wrapperKey: 'sealed_letter' }, 'd-9', 'p-1').wrapperKey).toBe('sealed_letter')
+    expect(normalizeDraft({ ...base }, 'd-9', 'p-1').wrapperKey).toBe('')
+    expect(normalizeDraft({ ...base, wrapperKey: 'Not A Key!' }, 'd-9', 'p-1').wrapperKey).toBe('')
+    expect(normalizeDraft({ ...base, wrapperKey: '9leading' }, 'd-9', 'p-1').wrapperKey).toBe('')
+    expect(normalizeDraft({ ...base, wrapperKey: 42 }, 'd-9', 'p-1').wrapperKey).toBe('')
   })
 
   it('normalizes valid drafts and fills timestamps', () => {
@@ -345,7 +354,7 @@ describe('template drafts stay isolated per slug', () => {
 describe('template stages', () => {
   it('maps base stages, then template chapters after them', () => {
     expect(BASE_STAGES).toEqual(['access', 'receiver', 'templates'])
-    expect(templateStagesFor('memorial-message')).toEqual(['memorial.language', 'memorial.editor', 'memorial.password', REVIEW_STAGE, POLICIES_STAGE])
+    expect(templateStagesFor('memorial-message')).toEqual(['memorial.language', 'memorial.editor', 'wrapper', 'memorial.password', REVIEW_STAGE, POLICIES_STAGE])
     expect(POLICIES_STAGE).toBe('policies')
     expect(SUBMITTED_STAGE).toBe('submitted')
   })

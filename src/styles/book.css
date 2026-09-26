@@ -14,6 +14,7 @@
 @import '@fontsource/pinyon-script/400.css';
 @import '@fontsource/amiri/400.css';
 @import '@fontsource/amiri/700.css';
+@import './memorial.css';
 
 :root {
   /* paper & ink */
@@ -623,6 +624,8 @@
 }
 
 /* ------------------------------------------------------------- chrome */
+/* Four loader sizes: xs 14 · sm 20 · md 34 · lg 54. The spinner ornaments
+   (the dashed ring and the fleuron) only appear once there is room. */
 .book-loader {
   display: inline-flex;
   flex-direction: column;
@@ -631,26 +634,17 @@
   color: var(--ink-faint);
 }
 
-.book-loader--small {
+.book-loader--xs,
+.book-loader--sm,
+.book-loader--md {
   flex-direction: row;
   gap: 10px;
   color: currentColor;
 }
 
-.book-loader--small .spinner {
-  width: 22px;
-  height: 22px;
-  border-width: 1px;
-}
-
-.book-loader--small .spinner::before,
-.book-loader--small .spinner::after {
-  display: none;
-}
-
 .book-loader .spinner {
-  width: 74px;
-  height: 74px;
+  width: 54px;
+  height: 54px;
   border-radius: 50%;
   border: 1px solid rgba(140, 112, 62, 0.28);
   border-top-color: var(--brass);
@@ -674,6 +668,38 @@
   font-family: var(--font-display);
   color: var(--brass);
   font-size: 1.7rem;
+}
+
+.book-loader--md .spinner {
+  width: 34px;
+  height: 34px;
+}
+
+.book-loader--md .spinner::before {
+  inset: 4px;
+}
+
+.book-loader--md .spinner::after {
+  display: none;
+}
+
+.book-loader--sm .spinner,
+.book-loader--xs .spinner {
+  width: 20px;
+  height: 20px;
+  border-width: 1px;
+}
+
+.book-loader--xs .spinner {
+  width: 14px;
+  height: 14px;
+}
+
+.book-loader--sm .spinner::before,
+.book-loader--sm .spinner::after,
+.book-loader--xs .spinner::before,
+.book-loader--xs .spinner::after {
+  display: none;
 }
 
 @keyframes dl-spin {
@@ -1604,489 +1630,6 @@
   background: var(--brass);
 }
 
-/* ------------------------------------------------------- memorial letter
-   One renderer, two moods: while editing the words sit on ruled manuscript
-   lines with margin captions; once read, the same letter is clean serif.
-   The three prints hang on a rail at the foot of the paper — beside the
-   words, never on top of them — so the text stays fully reachable. */
-.memorial {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 8px 8px 0;
-  font-family: var(--letter-lang, var(--font-text));
-}
-
-.memorial.is-arabic {
-  direction: rtl;
-  text-align: right;
-}
-
-.m-line {
-  border: none;
-  background: none;
-  width: 100%;
-  color: inherit;
-  line-height: 1.5;
-}
-
-/* zone captions — the margin notes shown only while writing */
-.m-zone {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-height: 0;
-}
-
-.m-zone--body {
-  flex: 1;
-  min-height: 0;
-  margin-top: 9px;
-}
-
-.m-zone--tall {
-  justify-content: flex-end;
-}
-
-.m-caption {
-  font-family: var(--font-display);
-  font-size: 0.58rem;
-  letter-spacing: 0.34em;
-  text-transform: uppercase;
-  color: var(--ink-ghost);
-  user-select: none;
-  pointer-events: none;
-}
-
-/* the greeting — an inked headline on a single ruled baseline */
-.m-greeting {
-  font-family: var(--font-display);
-  font-size: 1.2rem;
-  letter-spacing: 0.01em;
-}
-
-.m-greeting.m-editable {
-  padding: 2px 2px 9px;
-  border-top: none;
-  border-right: none;
-  border-left: none;
-  border-bottom: 1px solid rgba(96, 74, 48, 0.3);
-  border-radius: 0;
-  transition: border-color 0.25s ease, box-shadow 0.3s ease, background 0.3s ease;
-}
-
-.m-greeting.m-editable:focus {
-  border-bottom-color: var(--brass-deep);
-  box-shadow: 0 1px 0 0 var(--brass), 0 10px 20px -16px var(--brass-glow);
-  background: linear-gradient(180deg, rgba(255, 252, 240, 0) 30%, rgba(219, 190, 140, 0.18) 100%);
-}
-
-/* the words — a ruled writing surface read as a page still being written */
-.m-body {
-  font-size: 1.02rem;
-}
-
-.m-body.m-editable {
-  --rule: 1.92em;
-  flex: 1;
-  min-height: 0;
-  resize: none;
-  outline: none;
-  padding: 6px 6px 8px;
-  line-height: var(--rule);
-  border-right: 1px solid rgba(85, 66, 44, 0.14);
-  transition: box-shadow 0.3s ease;
-}
-
-.m-body.m-editable,
-.m-body.m-editable:focus {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0,
-    transparent calc(var(--rule) - 1px),
-    rgba(96, 74, 48, 0.16) calc(var(--rule) - 1px),
-    rgba(96, 74, 48, 0.16) var(--rule)
-  );
-}
-
-.m-body.m-editable::selection {
-  background: var(--brass-glow);
-}
-
-.m-body.m-editable:focus {
-  box-shadow: inset 3px 0 0 -1px rgba(162, 124, 61, 0.55);
-}
-
-.m-body.m-scripted {
-  flex: 1;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  font-style: italic;
-  padding: 4px 2px;
-}
-
-.m-scripted p {
-  margin: 0;
-}
-
-.m-blank {
-  font-style: italic;
-  color: var(--ink-ghost);
-}
-
-.m-editable::placeholder {
-  color: var(--ink-ghost);
-  font-style: italic;
-  opacity: 0.85;
-}
-
-/* the close — salutation and signature on their own baselines, side by side */
-.m-close {
-  margin-top: 18px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
-  gap: 22px;
-  align-items: end;
-}
-
-.m-closing {
-  font-family: var(--font-display);
-  font-size: 1.02rem;
-  min-width: 0;
-}
-
-.m-closing.m-editable {
-  padding: 4px 2px 8px;
-  border-top: none;
-  border-right: none;
-  border-left: none;
-  border-bottom: 1px solid rgba(85, 66, 44, 0.26);
-  border-radius: 0;
-  transition: border-color 0.25s ease, box-shadow 0.3s ease, background 0.3s ease;
-}
-
-.m-closing.m-editable:focus {
-  border-bottom-color: var(--brass-deep);
-  box-shadow: 0 1px 0 0 var(--brass), 0 10px 20px -16px var(--brass-glow);
-  background: linear-gradient(180deg, rgba(255, 252, 240, 0) 30%, rgba(219, 190, 140, 0.18) 100%);
-}
-
-.m-signature {
-  font-family: var(--font-script);
-  font-size: 1.4rem;
-  line-height: 1.2;
-  color: var(--ink-soft);
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.m-signature.m-editable {
-  padding: 2px 2px 8px;
-  font-size: 1.28rem;
-  border-top: none;
-  border-right: none;
-  border-left: none;
-  border-bottom: 1px solid rgba(85, 66, 44, 0.26);
-  border-radius: 0;
-  transition: border-color 0.25s ease, box-shadow 0.3s ease, background 0.3s ease;
-}
-
-.m-signature.m-editable:focus {
-  border-bottom-color: var(--brass);
-  box-shadow: 0 1px 0 0 var(--brass), 0 10px 20px -16px var(--brass-glow);
-  background: linear-gradient(180deg, rgba(255, 252, 240, 0) 30%, rgba(219, 190, 140, 0.18) 100%);
-}
-
-/* the picture rail — three prints pinned near the foot of the letter */
-.m-photos {
-  position: relative;
-  z-index: 1;
-  margin-top: 20px;
-  padding: 18px 6px 6px;
-  border-top: 1px dashed rgba(85, 66, 44, 0.4);
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  justify-items: center;
-  align-items: flex-start;
-  gap: clamp(10px, 2.4vw, 22px);
-  pointer-events: none;
-}
-
-.m-print {
-  position: relative;
-  width: min(118px, 100%);
-  appearance: none;
-  border: none;
-  background: none;
-  padding: 0;
-  cursor: pointer;
-  transform: rotate(var(--pt-rot, -2deg)) translateY(var(--pt-y, 0px));
-  filter: drop-shadow(0 3px 5px rgba(40, 26, 12, 0.22));
-  touch-action: manipulation;
-  transition: transform 0.25s var(--ease-settle), filter 0.3s ease;
-}
-
-.m-print.is-editable {
-  pointer-events: auto;
-}
-
-.m-print.is-editable:hover {
-  transform: rotate(0deg) translateY(var(--pt-y, 0px)) translateY(-2px);
-  filter: drop-shadow(0 5px 9px rgba(40, 26, 12, 0.3));
-}
-
-.m-print.is-editable:active {
-  transform: rotate(0deg) translateY(var(--pt-y, 0px));
-}
-
-.m-print.pos-a { --pt-rot: -4deg; }
-.m-print.pos-b { --pt-rot: 3deg; }
-.m-print.pos-c { --pt-rot: -1.5deg; }
-
-.m-print:not(.is-editable) {
-  cursor: default;
-}
-
-.print-paper {
-  position: relative;
-  display: block;
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  background: #f1ead9;
-  padding: 7px;
-  box-shadow: 0 2px 6px rgba(40, 26, 12, 0.34), 0 8px 18px -8px rgba(40, 26, 12, 0.4);
-}
-
-.print-paper img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.print-fade {
-  position: absolute;
-  inset: 7px;
-  background: radial-gradient(130% 100% at 40% 18%, rgba(255, 250, 235, 0.34), rgba(50, 32, 14, 0.24) 96%);
-  pointer-events: none;
-}
-
-.print-empty {
-  position: absolute;
-  inset: 7px;
-  display: grid;
-  place-items: center;
-  border: 1px dashed rgba(90, 70, 46, 0.42);
-  background: rgba(246, 237, 218, 0.55);
-}
-
-.print-plus {
-  font-family: var(--font-display);
-  font-size: 1.5rem;
-  color: var(--ink-ghost);
-  line-height: 1;
-}
-
-.print-baseline {
-  content: attr(data-label);
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: -19px;
-  font-size: 0.56rem;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--ink-ghost);
-  white-space: nowrap;
-}
-
-.m-print.is-editable:hover .print-paper {
-  box-shadow: 0 4px 10px rgba(40, 26, 12, 0.42), 0 0 0 1px var(--brass-glow);
-}
-
-.m-print.is-editable:hover .print-plus {
-  color: var(--brass);
-}
-
-.m-print.is-editable:focus-visible {
-  outline: 2px solid var(--brass);
-  outline-offset: 4px;
-}
-
-/* the pin sits through the top edge of its print */
-.m-print .pin {
-  position: absolute;
-  top: -14px;
-  left: 50%;
-  transform: translateX(-50%) rotate(10deg);
-  filter: drop-shadow(0 2px 2px rgba(30, 16, 6, 0.35));
-  z-index: 3;
-  pointer-events: none;
-}
-
-/* mid-ground proof (the left-leaving copy) */
-.proof-note {
-  text-align: center;
-  font-style: italic;
-  font-size: 0.86rem;
-  color: var(--ink-faint);
-  margin: 4px 0 10px;
-}
-
-/* The proof is the paper, not the page. The letter is composed inside a
-   fixed-proportion sheet sized to the FREE space of the folio leaf (container
-   queries), so the preview always matches the real delivery's aspect — short
-   letters leave honest margin, long letters scroll within the sheet, and the
-   page decorations can never stretch the composition. */
-.proof-frame {
-  container-type: size;
-  contain: layout style;
-  flex: 1 1 auto;
-  min-height: 140px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  padding: 4px 2px;
-}
-
-.proof-paper {
-  container-type: size;
-  width: min(100cqw, 100cqh * var(--render-ratio, 0.75));
-  aspect-ratio: var(--render-ratio, 0.75);
-  max-width: 100%;
-  background:
-    radial-gradient(120% 90% at 30% 12%, rgba(255, 252, 242, 0.9), rgba(240, 230, 208, 0.55) 70%),
-    var(--paper, #f6efdf);
-  border: 1px solid rgba(85, 66, 44, 0.4);
-  box-shadow: 0 10px 26px -16px rgba(30, 18, 8, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
-  overflow: hidden;
-}
-
-.proof-paper .memorial {
-  height: 100%;
-  overflow: hidden;
-}
-
-.proof-paper .memorial.is-compact {
-  flex: none;
-}
-
-.proof-paper .m-body.m-scripted {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.memorial.is-compact .m-greeting { font-size: 1rem; }
-.memorial.is-compact .m-body.m-scripted { font-size: 0.94rem; }
-.memorial.is-compact .m-body.m-editable { --rule: 1.78em; font-size: 0.9rem; }
-.memorial.is-compact .m-close { margin-top: 12px; gap: 14px; }
-.memorial.is-compact .m-signature { font-size: 1.16rem; }
-.memorial.is-compact .m-photos { margin-top: 14px; padding-top: 11px; gap: 8px; }
-.memorial.is-compact .print-paper { padding: 5px; }
-.memorial.is-compact .m-soundchip { margin-top: 10px; padding: 7px 10px; }
-
-/* --------------------------------------------------- editing stage
-   While words are being written the page furniture stands aside so the
-   whole leaf is the letter: hide the ornamental running-head, and let the
-   leaf grow to its words instead of shrinking the writing to a sliver.
-   Only a minimum writing depth is kept so a short letter still reads like
-   a full ruled page; the surrounding geometry (rail, toolbar, actions) keeps
-   its native spacing because the page now has the room for it. */
-.settle.is-editing-page .page-script,
-.settle.is-editing-page .page-kicker,
-.settle.is-editing-page .rule {
-  display: none;
-}
-
-.settle.is-editing-page .m-body.m-editable {
-  min-height: calc(var(--rule) * 3.4);
-}
-
-/* the letter's sound chip */
-.m-soundchip {
-  margin-top: 14px;
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  align-self: flex-start;
-  padding: 9px 12px;
-  border: 1px solid rgba(85, 66, 44, 0.35);
-  background: rgba(255, 252, 242, 0.2);
-}
-
-.sound-wave {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  height: 16px;
-}
-
-.sound-wave i {
-  width: 2px;
-  background: var(--brass);
-  border-radius: 1px;
-  animation: wave-breathe 1.6s ease-in-out infinite;
-}
-
-.sound-wave i:nth-child(1) { height: 34%; }
-.sound-wave i:nth-child(2) { height: 68%; animation-delay: 0.2s; }
-.sound-wave i:nth-child(3) { height: 100%; animation-delay: 0.4s; }
-.sound-wave i:nth-child(4) { height: 58%; animation-delay: 0.6s; }
-.sound-wave i:nth-child(5) { height: 30%; animation-delay: 0.8s; }
-
-@keyframes wave-breathe {
-  0%, 100% { transform: scaleY(0.6); }
-  50% { transform: scaleY(1); }
-}
-
-.sound-label {
-  font-family: var(--font-display);
-  font-size: 0.66rem;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-
-.sound-play {
-  border: 1px solid var(--brass);
-  background: none;
-  color: var(--brass-deep);
-  font-family: var(--font-display);
-  font-size: 0.64rem;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  padding: 6px 12px;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.sound-play.is-on {
-  background: var(--brass);
-  color: var(--paper-0);
-}
-
-.m-toolbar {
-  position: relative;
-  z-index: 2;
-  margin-top: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 44px;
-  flex-wrap: wrap;
-}
-
-.m-audio-copy {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
 /* -------------------------------------------------------- language cards */
 .lang-row {
   display: grid;
@@ -2156,6 +1699,136 @@
   font-size: 0.8rem;
   font-style: italic;
   color: var(--ink-soft);
+}
+
+/* ----------------------------------------------------- the wrapper stage */
+.wrap-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.wrap-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(85, 66, 44, 0.32);
+  background: rgba(255, 252, 242, 0.16);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: border-color 0.25s ease, box-shadow 0.3s ease, transform 0.25s var(--ease-settle), background 0.25s ease;
+}
+
+[dir='rtl'] .wrap-card {
+  text-align: right;
+}
+
+.wrap-card:hover {
+  border-color: rgba(140, 108, 52, 0.75);
+  background: rgba(255, 252, 242, 0.42);
+  transform: translateY(-2px);
+}
+
+.wrap-card.is-chosen {
+  border-color: var(--brass);
+  box-shadow: 0 0 0 1px var(--brass-glow);
+  background: rgba(255, 252, 242, 0.52);
+}
+
+.wrap-card.is-chosen::after {
+  content: '✦';
+  position: absolute;
+  top: 7px;
+  inset-inline-end: 11px;
+  font-size: 0.7rem;
+  color: var(--brass);
+}
+
+.wrap-photo {
+  display: grid;
+  place-items: center;
+  width: 74px;
+  height: 54px;
+  overflow: hidden;
+  border: 1px solid rgba(85, 66, 44, 0.28);
+  background: var(--paper-2);
+}
+
+.wrap-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wrap-photo-mark {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  color: var(--ink-ghost);
+}
+
+.wrap-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.wrap-name {
+  font-family: var(--font-display);
+  font-weight: 560;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+.wrap-desc {
+  font-size: 0.82rem;
+  font-style: italic;
+  line-height: 1.35;
+  color: var(--ink-soft);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.wrap-price {
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  color: var(--brass-deep);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.wrap-empty {
+  margin-top: 18px;
+  font-size: 0.92rem;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.wrap-loading {
+  flex: 1;
+  min-height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--ink-faint);
 }
 
 /* ------------------------------------------------------- the lock stage */
@@ -2632,12 +2305,11 @@
   margin: 10px auto 0;
 }
 
-/* full-spread loader shown while the encrypted draft hydrates */
-.book-loader-wrap {
-  flex: 1;
-  min-height: 0;
+/* the quiet loader riding ON the open spread while the draft hydrates */
+.book-boot {
   display: grid;
   place-items: center;
+  min-height: min(46vh, 340px);
 }
 
 /* ------------------------------------------------------------- settle */
@@ -2720,32 +2392,6 @@
     right: 0;
   }
 
-  .m-photos {
-    margin-top: 16px;
-    gap: 8px;
-  }
-
-  .m-print {
-    width: 92px;
-  }
-
-  .m-print .pin {
-    top: -12px;
-  }
-
-  .m-close {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-
-  .m-zone--tall .m-caption {
-    display: none;
-  }
-
-  .m-zone--tall {
-    margin-top: 2px;
-  }
-
   .lang-row {
     grid-template-columns: 1fr;
   }
@@ -2801,9 +2447,5 @@
   .book-loader .spinner,
   .book-loader .spinner::before {
     animation-duration: 6s;
-  }
-
-  .sound-wave i {
-    animation: none;
   }
 }

@@ -27,27 +27,23 @@
 // guarded so the module is safe to import in node test environments.
 
 import { isDraftUnlocked, sealJson, unsealJson } from './draftCrypto'
+import { BASE_STAGES, STATUS_STAGE, SUBMITTED_STAGE, templateStagesFor } from '@/templates/stages'
 
 export const DRAFT_VERSION = 3
-export const BASE_STAGES = ['access', 'receiver', 'templates']
-export const UNWRITTEN_STAGE = 'unwritten'
-export const REVIEW_STAGE = 'review'
-export const POLICIES_STAGE = 'policies'
-export const SUBMITTED_STAGE = 'submitted'
-export const STATUS_STAGE = 'status'
 
-// Stable stage sequence each registered template contributes after the base
-// book. Keyed by template slug; must match the frontend template registry.
-// The Review (read the proof once more) and the Policies (accept the terms and
-// submit) are added AFTER the template's own stages.
-export const TEMPLATE_STAGES = {
-  'memorial-message': ['memorial.language', 'memorial.editor', 'memorial.password', REVIEW_STAGE, POLICIES_STAGE],
-}
-
-export function templateStagesFor(slug) {
-  if (!slug) return []
-  return TEMPLATE_STAGES[slug] ?? [UNWRITTEN_STAGE]
-}
+// The page vocabulary and template sequences live in the template contract
+// (src/templates/stages.js); the draft layer re-exports them so persistence
+// and the pipeline share one sequence instead of keeping a parallel copy.
+export {
+  BASE_STAGES,
+  UNWRITTEN_STAGE,
+  REVIEW_STAGE,
+  POLICIES_STAGE,
+  SUBMITTED_STAGE,
+  STATUS_STAGE,
+  TEMPLATE_SEQUENCES as TEMPLATE_STAGES,
+  templateStagesFor,
+} from '@/templates/stages'
 
 export function isTemplateStage(stage) {
   return !!stage && stage.startsWith('memorial.')
@@ -193,6 +189,8 @@ export function normalizeDraft(raw, designerId, projectId) {
     receiverName: typeof raw.receiverName === 'string' ? raw.receiverName : '',
     currentStage,
     templateSlug,
+    // The arrival wrapper chosen in Create ('' until the stage is passed).
+    wrapperKey: typeof raw.wrapperKey === 'string' && /^[a-z][a-z0-9_]{0,29}$/.test(raw.wrapperKey) ? raw.wrapperKey : '',
     submittedAt: typeof raw.submittedAt === 'string' ? raw.submittedAt : null,
     submittedProjectId: typeof raw.submittedProjectId === 'string' ? raw.submittedProjectId : null,
     submitLedger: raw.submitLedger && typeof raw.submitLedger === 'object' ? raw.submitLedger : {},

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Cropper from 'react-easy-crop'
 import MemorialLetter from './MemorialLetter'
 import MessageAudio from './MessageAudio'
-import { useIsMobile } from '@/pages/create/createHelpers'
+import { useIsMobile } from '@/hooks/use-media'
 import { getDesignerToken } from '@/services/designer'
 import { cropImageBlob, MEDIA_TYPE_LIMITS } from '@/services/media'
 import { encryptBytes } from '@/services/draftCrypto'
@@ -91,7 +91,7 @@ function PhotoCropDialog({ open, src, hasExisting, onCancel, onPin, onLift, subm
               cancel
             </button>
             <button type="button" className="d-btn d-btn--ink" onClick={() => canPin && onPin(pixelArea)} disabled={!canPin}>
-              {submitting ? <DearuneLoader small /> : 'pin it to the page'}
+              {submitting ? <DearuneLoader size="sm" /> : 'pin it to the page'}
             </button>
           </div>
           {submitting ? <div className="crop-note">letting the ink dry…</div> : null}
@@ -316,7 +316,7 @@ export default function MemorialEditorStage({ draft, onChange, onNext, projectId
           </div>
         ) : (
           <label className={`d-btn d-btn--thread${audioBusy ? ' is-busy' : ''}`}>
-            {audioBusy ? <DearuneLoader small /> : t('keep a sound here', 'احتفظ بصوتٍ هنا')}
+            {audioBusy ? <DearuneLoader size="sm" /> : t('keep a sound here', 'احتفظ بصوتٍ هنا')}
             <input type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleAudioFile} />
           </label>
         )}

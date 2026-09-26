@@ -22,10 +22,10 @@ export function fetchDraftUnlock(token) {
   return invokeFunction('designer-projects/unlock', { token })
 }
 
-export function createProject(token, { projectId, templateSlug, receiverName, draft, policyVersion, policiesAcceptedAt }) {
+export function createProject(token, { projectId, templateSlug, receiverName, draft, policyVersion, policiesAcceptedAt, wrapperType }) {
   return invokeFunction('designer-projects', {
     method: 'POST',
     token,
-    body: { projectId, templateSlug, receiverName, draft, policyVersion, policiesAcceptedAt },
+    body: { projectId, templateSlug, receiverName, draft, policyVersion, policiesAcceptedAt, wrapperType: wrapperType || null },
   })
 }

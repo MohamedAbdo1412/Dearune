@@ -94,7 +94,7 @@ export default function PoliciesStage({ draft, templateName, receiverName, onSub
 
       <div className="stage-actions">
         <button type="button" id="mm-submit" className="d-btn d-btn--ink" onClick={handleSubmit} disabled={!accepted || problems.length > 0 || submitting}>
-          {submitting ? <DearuneLoader small label={t('submitting', 'يُرسل')} /> : t('submit book', 'أرسل الكتاب')}
+          {submitting ? <DearuneLoader size="sm" label={t('submitting', 'يُرسل')} /> : t('submit book', 'أرسل الكتاب')}
         </button>
       </div>
       {!accepted ? (

@@ -90,7 +90,7 @@ export default function ProjectsBook({ projects, loading, error, templates, onOp
                 </span>
                 {openingId === project.id ? (
                   <span className="project-opening">
-                    <DearuneLoader small label="opening…" />
+                    <DearuneLoader size="sm" label="opening…" />
                   </span>
                 ) : null}
               </button>

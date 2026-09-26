@@ -1,30 +1,20 @@
 import PushPin, { PIN_NAMES } from './pushpin'
 import MessageAudio from './MessageAudio'
+import { memorialDefaults } from './letterDefaults'
 
 // The Memorial Message composition — the one that "will be sent", used live
 // in the editor, read-only as a proof on the facing page, and in Review. One
-// renderer, no drifting duplicates. A warm preserved letter with three small
-// prints pinned to a rail near the foot of the paper, in English (LTR) or
-// Arabic (RTL).
+// renderer, no drifting duplicates. A warm preserved letter whose prints are
+// laid out editorially — one hero high on the right, two smaller prints
+// answering it below — in English (LTR) or Arabic (RTL).
 //
-// While editing, the words sit on ruled manuscript lines with captions in the
-// margin — unmistakably a place being written, not read. The three prints live
-// on their own rail below the letter so they can never overlap or intercept
-// the text.
+// While editing, the whole letter is one continuous ruled sheet: a single
+// textarea carries the words and the greeting, close and name ink their own
+// baselines on the same page, never boxed into a form.
 
-const DEFAULT_AR = {
-  greeting: 'عزيزي …،',
-  closing: 'بكل الحب،',
-}
-const DEFAULT_EN = {
-  greeting: 'Dear friend,',
-  closing: 'Sincerely,',
-}
-
-// Three pinned prints on the rail, each hung at its own height so the line
-// reads like a wall of keepsakes rather than a row of ID cards: the middle
-// pin hangs a little higher, the flanking two a touch lower, with their
-// rotations off the grid.
+// Three prints, composed across twelve columns: the hero sits high on the
+// right, the two smaller prints answer it below. Each keeps its own tilt so
+// the page reads laid-by-hand, never gridded.
 const PHOTO_PLACEMENT = [
   { rotate: -4, y: 3, cls: 'pos-a' },
   { rotate: 3, y: -8, cls: 'pos-b' },
@@ -33,10 +23,6 @@ const PHOTO_PLACEMENT = [
 
 // Enter-advance between the single-line entries of the letter.
 const NEXT_FIELD = { 'mm-greeting': 'mm-body', 'mm-closing': 'mm-sender' }
-
-export function memorialDefaults(language) {
-  return language === 'ar' ? { ...DEFAULT_AR, body: '', senderName: '' } : { ...DEFAULT_EN, body: '', senderName: '' }
-}
 
 function PhotoPrint({ media, src, rotate, drop, cls, editable, onTap, pin }) {
   const live = editable && onTap

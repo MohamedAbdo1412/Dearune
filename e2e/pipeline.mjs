@@ -201,6 +201,15 @@ async function attachAudio(page) {
 
 async function seal(page) {
   await page.locator('.stage-actions .d-btn--ink').first().dispatchEvent('click')
+  // The wrapper stage sits between the letter and the lock. Its catalog may
+  // be absent (an older functions deployment) — then the stage just carries
+  // an empty note and the same continue button.
+  const toLock = page.getByRole('button', { name: /to the lock/ })
+  await toLock.first().waitFor({ state: 'visible', timeout: 15000 })
+  await settled(page)
+  const card = page.locator('.wrap-card').first()
+  if (await card.count()) await card.dispatchEvent('click')
+  await toLock.first().dispatchEvent('click')
   await page.locator('.lock-stage').first().waitFor({ state: 'visible', timeout: 15000 })
   await settled(page)
   const pw = page.locator('.lock-field input')
@@ -345,6 +354,12 @@ try {
 
   await mpage.locator('#mm-body').fill(BODY_EN)
   await mpage.getByRole('button', { name: /seal the letter/ }).first().dispatchEvent('click')
+  const mToLock = mpage.getByRole('button', { name: /to the lock/ })
+  await mToLock.first().waitFor({ state: 'visible', timeout: 15000 })
+  await settled(mpage)
+  const mCard = mpage.locator('.wrap-card').first()
+  if (await mCard.count()) await mCard.dispatchEvent('click')
+  await mToLock.first().dispatchEvent('click')
   await mpage.locator('.lock-stage').waitFor({ state: 'visible', timeout: 15000 })
   await settled(mpage)
   const mpw = mpage.locator('.lock-field input')

@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
 
+// The book's small media hooks — one place for "is this true on THIS screen":
+// the mobile spread, and whether motion is welcome. Used by the pipeline and
+// by the template stages (which need to know, for example, that a phone's
+// keyboard must not spring open on its own).
+
 const MOBILE = '(max-width: 860px)'
 
 export function useMediaQuery(query) {
