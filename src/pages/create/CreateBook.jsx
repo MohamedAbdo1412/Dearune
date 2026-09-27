@@ -53,6 +53,7 @@ import { MEMORIAL_TEMPLATE } from '@/templates/memorial-message'
 
 import { useReducedMotion, useIsMobile } from '@/hooks/use-media'
 import { bookReducer, initialBookMotion } from './state/bookMachine'
+import { chooserCatalogItems, getCatalogItemState } from '@/services/catalog'
 
 const AUDIO_INK_MS = 520
 // The delivered paper's fixed proportion; the living proof is framed to it.
@@ -88,6 +89,9 @@ export default function CreateBook() {
   const [motion, dispatch] = useReducer(bookReducer, initial.coverOpen, (coverOpen) => initialBookMotion({ coverOpen }))
   const [templates, setTemplates] = useState(null)
   const [templatesError, setTemplatesError] = useState('')
+  // Why the book just turned back to the chooser (a paper or wrapper the
+  // admin has since hidden or set aside). Shown by the stage it belongs to.
+  const [catalogNotice, setCatalogNotice] = useState('')
   const [chosenSlug, setChosenSlug] = useState(initial.chosenSlug)
   const [receiverName, setReceiverName] = useState('')
   const [wrapperKey, setWrapperKey] = useState('')
@@ -303,6 +307,78 @@ export default function CreateBook() {
     }
   }, [designer.id, templates])
 
+  // The paper in hand: the SERVER owns what it looks like on the shelf
+  // (name, phrase, wrappers), the frontend registry owns how its PAGES are
+  // built — merged here so `template.components` is live for the spread.
+  const chosenTemplate = useMemo(() => {
+    const fromServer = (templates ?? []).find((t) => t.slug === chosenSlug)
+    const contract = templateRegistry(chosenSlug)
+    if (!contract) return fromServer ?? { slug: chosenSlug, name: chosenSlug, description: '' }
+    return { ...contract, ...fromServer, components: contract.components }
+  }, [templates, chosenSlug])
+
+  // The wrappers THIS paper offers, put through the admin's merchandising
+  // rules in ONE place: hidden rows never reach a stage, resting rows do
+  // (veiled), and the order is the admin's. `null` while the archive is
+  // still loading; a failed archive read degrades to "no wrappers known" so
+  // the desk never deadlocks.
+  const wrapperOptions = useMemo(() => {
+    if (templates === null) return templatesError ? [] : null
+    return chooserCatalogItems(chosenTemplate.wrappers ?? [])
+  }, [templates, templatesError, chosenTemplate])
+
+  // What the template chooser renders, under the same rules: the admin's
+  // visible papers in the admin's order — an inactive paper leaves no slot
+  // behind, a resting one keeps its place under a veil.
+  const chooserTemplates = useMemo(
+    () => (templates === null ? null : chooserCatalogItems(templates)),
+    [templates]
+  )
+
+  // -------------------------------------------------------------------------
+  // The archive outlives a draft: what was chosen on an earlier visit may
+  // since have been hidden or set aside by the admin. Their settings are the
+  // source of truth, so the book never continues onto a page the chooser
+  // would no longer offer — it turns back to the choosing spread with a word
+  // of why. The words themselves stay in the encrypted draft: re-picking the
+  // same paper restores them.
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!templates || !chosenSlug || closed || booting || !designer.id) return
+    if (motion.turn) return
+    const item = getCatalogItemState(templates.find((row) => row.slug === chosenSlug))
+    if (item.selectable) return
+    setCatalogNotice(
+      memorial.language === 'ar'
+        ? 'الورقة التي بدأتها لم تعد متاحة الآن — اختر أخرى للمتابعة.'
+        : 'The paper you had begun is no longer available — choose another to continue.'
+    )
+    setChosenSlug(null)
+    setWrapperKey('')
+    if (projectId) {
+      saveDraft(designer.id, { templateSlug: null, wrapperKey: '', currentStage: 'templates' }, projectId)
+    }
+    setStage('templates')
+  }, [templates, chosenSlug, closed, booting, designer.id, projectId, motion.turn, memorial.language])
+
+  // The same rule one chapter later: a wrapper retired after it was picked
+  // is dropped from the draft (the server would refuse it at the seal
+  // anyway) and the stage is told why.
+  useEffect(() => {
+    // Only a REAL archive may condemn a choice: while it is still loading
+    // (or failed to load), the draft keeps its wrapper untouched.
+    if (!wrapperKey || !templates || !wrapperOptions || closed || booting || motion.turn) return
+    const row = wrapperOptions.find((w) => w.key === wrapperKey)
+    if (row && getCatalogItemState(row).selectable) return
+    setCatalogNotice(
+      memorial.language === 'ar'
+        ? 'التغليف الذي اخترته لم يعد متاحًا الآن — اختر آخرًا للمتابعة.'
+        : 'The wrapper you had chosen is no longer available — choose another.'
+    )
+    setWrapperKey('')
+    if (designer.id && projectId) saveDraft(designer.id, { wrapperKey: '' }, projectId)
+  }, [wrapperKey, wrapperOptions, closed, booting, motion.turn, designer.id, projectId, memorial.language])
+
   const persistStage = useCallback(
     (target) => {
       if (!designer.id || !projectId) return
@@ -400,7 +476,12 @@ export default function CreateBook() {
   const handlePickTemplate = useCallback(
     (template) => {
       if (!designer.id || !projectId) return
+      // The card itself is disabled when the admin has hidden or set the
+      // paper aside; guard the handler as well so no code path can enter a
+      // paper the chooser would not offer.
+      if (!getCatalogItemState(template).selectable) return
       const code = template.slug
+      setCatalogNotice('')
       setChosenSlug(code)
       // Wrappers are offered per paper: a choice made for one template can
       // never travel to another (the server would rightly refuse it).
@@ -446,6 +527,7 @@ export default function CreateBook() {
     dispatch({ type: 'SHOW_SHELF' })
     setClosed(true)
     setStage('status')
+    setCatalogNotice('')
     playPageSettle()
   }, [motion.turn])
 
@@ -480,14 +562,19 @@ export default function CreateBook() {
 
   // The wrapper choice writes through at once (a plain root draft field, not
   // a debounced template patch): it is one click, and the stage may be left
-  // for the lock immediately after.
+  // for the lock immediately after. Cards the admin has veiled are refused
+  // here too — `wrapperOptions` is the visible catalog, so anything absent
+  // from it (hidden, unset or resting) never lands in the draft.
   const handleWrapperPick = useCallback(
     (key) => {
+      const row = (wrapperOptions ?? []).find((w) => w.key === key)
+      if (!row || !getCatalogItemState(row).selectable) return
+      setCatalogNotice('')
       setWrapperKey(key)
       if (designer.id && projectId) saveDraft(designer.id, { wrapperKey: key }, projectId)
       playClick()
     },
-    [designer.id, projectId]
+    [designer.id, projectId, wrapperOptions]
   )
 
   const handleMemorialField = useCallback(
@@ -566,15 +653,26 @@ export default function CreateBook() {
       audio,
       passwordSet: Boolean(atSubmit.passwordSet),
     }
-    const { project } = await createProject(token, {
-      projectId,
-      templateSlug: chosenSlug,
-      receiverName,
-      draft: serverDraft,
-      policyVersion: DEARUNE_POLICY_VERSION,
-      policiesAcceptedAt: now,
-      wrapperType,
-    })
+    let project
+    try {
+      ({ project } = await createProject(token, {
+        projectId,
+        templateSlug: chosenSlug,
+        receiverName,
+        draft: serverDraft,
+        policyVersion: DEARUNE_POLICY_VERSION,
+        policiesAcceptedAt: now,
+        wrapperType,
+      }))
+    } catch (cause) {
+      // The archive may have moved under the letter (a paper or wrapper the
+      // admin set aside between opening the book and pressing the seal — the
+      // server refuses it). Re-open the archive so the validation effect
+      // above can return the book to the choosing spread; the reason itself
+      // surfaces on the terms page through the usual catch.
+      setTemplates(null)
+      throw cause
+    }
     await saveDraft(designer.id, { submittedAt: now, submittedProjectId: project.id, submitLedger: {} }, projectId)
     setActiveProject(project)
     setProjects((prev) => [project, ...(prev ?? []).filter((p) => p.id !== project.id)])
@@ -647,6 +745,7 @@ export default function CreateBook() {
     passwordRef.current = ''
     setOpeningId(null)
     setOpeningAlert('')
+    setCatalogNotice('')
   }, [designer.id])
 
   const handleLeave = useCallback(() => {
@@ -673,6 +772,7 @@ export default function CreateBook() {
     setOpeningAlert('')
     setBooting(false)
     passwordRef.current = ''
+    setCatalogNotice('')
   }, [])
 
   const toggleSound = useCallback(() => {
@@ -681,24 +781,6 @@ export default function CreateBook() {
     setInsonicated(!next)
     if (next) unmuteVia('toggle')
   }, [])
-
-  // The paper in hand: the SERVER owns what it looks like on the shelf
-  // (name, phrase, wrappers), the frontend registry owns how its PAGES are
-  // built — merged here so `template.components` is live for the spread.
-  const chosenTemplate = useMemo(() => {
-    const fromServer = (templates ?? []).find((t) => t.slug === chosenSlug)
-    const contract = templateRegistry(chosenSlug)
-    if (!contract) return fromServer ?? { slug: chosenSlug, name: chosenSlug, description: '' }
-    return { ...contract, ...fromServer, components: contract.components }
-  }, [templates, chosenSlug])
-
-  // The wrappers THIS paper offers (already filtered to enabled, active
-  // options by the server); null while the archive is still loading. A failed
-  // archive read degrades to "no wrappers known" so the desk never deadlocks.
-  const wrapperOptions = useMemo(() => {
-    if (templates === null) return templatesError ? [] : null
-    return chosenTemplate.wrappers ?? []
-  }, [templates, templatesError, chosenTemplate])
 
   // ---------------------------------------------------------------------------
   // The Back control. One leaf in the masthead, same place on every spread;
@@ -793,11 +875,12 @@ export default function CreateBook() {
           return (
             <Folio folio={folio}>
               <TemplateSelectionStage
-                templates={templates ?? []}
+                templates={chooserTemplates ?? []}
                 loading={Boolean(designer.id) && templates === null && !templatesError}
                 error={templatesError}
                 chosenSlug={chosenSlug}
                 onSelect={handlePickTemplate}
+                notice={catalogNotice}
                 onRetry={() => {
                   setTemplatesError('')
                   setTemplates(null)
@@ -822,6 +905,7 @@ export default function CreateBook() {
                 onChange={handleWrapperPick}
                 onNext={() => goTo(next, 'fwd')}
                 language={memorial.language}
+                notice={catalogNotice}
               />
             </Folio>
           )
@@ -864,7 +948,7 @@ export default function CreateBook() {
           return null
       }
     },
-    [sequence, login, templates, templatesError, chosenSlug, chosenTemplate, wrapperOptions, wrapperKey, designer, memorial, memorialToken, receiverName, projectId, activeProject, handleAccess, handleCooldownEnd, handleReceiver, handlePickTemplate, handleLanguage, handleMemorialField, handleWrapperPick, handleSetPassword, handleSubmit, handleCloseBook, goTo]
+    [sequence, login, templates, templatesError, chooserTemplates, catalogNotice, chosenSlug, chosenTemplate, wrapperOptions, wrapperKey, designer, memorial, memorialToken, receiverName, projectId, activeProject, handleAccess, handleCooldownEnd, handleReceiver, handlePickTemplate, handleLanguage, handleMemorialField, handleWrapperPick, handleSetPassword, handleSubmit, handleCloseBook, goTo]
   )
 
   const leftFor = useCallback(

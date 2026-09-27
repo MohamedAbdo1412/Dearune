@@ -16,6 +16,7 @@ import { Wrappers } from '@/pages/admin/Wrappers'
 import { Settings } from '@/pages/admin/Settings'
 import { NotFound } from '@/pages/NotFound'
 import { MemorialQa } from '@/pages/QaMemorial'
+import { CatalogQa } from '@/pages/QaCatalog'
 
 const CreateBook = lazy(() => import('@/pages/create/CreateBook'))
 
@@ -86,9 +87,10 @@ export default function App() {
         }
       />
       <Route path="/admin/login" element={<AdminLogin />} />
-      {/* Visual-QA bench for the letter — static, no auth, kept out of every
-          menu. e2e/qa-memorial.mjs screenshots it from 1920 down to 360. */}
+      {/* Visual-QA benches — static, no auth, kept out of every menu.
+          e2e/qa-memorial.mjs and e2e/qa-catalog.mjs screenshot them. */}
       <Route path="/qa/memorial" element={<MemorialQa />} />
+      <Route path="/qa/catalog" element={<CatalogQa />} />
       <Route
         path="/admin"
         element={

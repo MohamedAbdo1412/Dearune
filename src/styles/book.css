@@ -2428,6 +2428,115 @@
   }
 }
 
+/* --------- catalog states: the NEW seal · the resting "not available" veil
+   Driven by `display_state` via `getCatalogItemState` (services/catalog.js):
+   a card wears the seal when its registry entry declares a badge, and the
+   veil whenever selection is refused (resting, or an unknown future state).
+   The veil is a soft wash, never a wash-out — the paper or wrapper must
+   still read as the beautiful thing it is; it is merely resting today. */
+.paper-seal,
+.wrap-seal {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.58rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--brass-deep);
+  background: rgba(255, 252, 242, 0.94);
+  border: 1px solid var(--brass);
+  /* the double rule of a stamp pressed into paper */
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 252, 242, 0.85),
+    inset 0 0 0 2px rgba(140, 108, 52, 0.55);
+}
+
+.paper-seal {
+  position: absolute;
+  top: 10px;
+  inset-inline-start: 12px;
+  padding: 4px 8px 4px 11px;
+  transform: rotate(-4deg);
+  z-index: 1;
+}
+
+.wrap-seal {
+  display: inline-block;
+  vertical-align: middle;
+  margin-inline-start: 7px;
+  padding: 1px 6px 1px 8px;
+  transform: rotate(-3deg);
+}
+
+.paper-card.is-badged,
+.wrap-card.is-badged {
+  border-color: rgba(140, 108, 52, 0.62);
+}
+
+/* resting: offered, visible, unchoosable */
+.paper-card.is-unavailable,
+.wrap-card.is-unavailable {
+  cursor: default;
+}
+
+.paper-card.is-unavailable:hover,
+.wrap-card.is-unavailable:hover {
+  transform: none;
+  background: rgba(255, 252, 242, 0.16);
+  border-color: rgba(85, 66, 44, 0.32);
+  box-shadow: none;
+}
+
+.paper-card.is-unavailable .paper-art {
+  filter: saturate(0.55) brightness(0.98);
+}
+
+.wrap-card.is-unavailable .wrap-photo img {
+  filter: saturate(0.6);
+}
+
+.card-veil {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  background: rgba(40, 30, 18, 0.34);
+  /* an inner rule, so the resting card wears a frame, not a broken look */
+  box-shadow: inset 0 0 0 1px rgba(140, 108, 52, 0.5);
+  pointer-events: none;
+}
+
+.card-veil-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  font-weight: 560;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: rgba(255, 252, 242, 0.94);
+  border: 1px solid rgba(140, 108, 52, 0.6);
+  padding: 6px 12px;
+  text-align: center;
+  box-shadow: 0 8px 20px -14px rgba(30, 20, 8, 0.7);
+}
+
+/* a word of why the book just turned back to the chooser */
+.stage-note {
+  margin: 4px 0 2px;
+  padding: 8px 12px;
+  font-size: 0.84rem;
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  text-align: start;
+  background: rgba(255, 252, 242, 0.5);
+  border: 1px solid rgba(140, 108, 52, 0.35);
+  border-inline-start: 3px solid var(--brass);
+}
+
 /* ---------------------------------------------------- reduced motion */
 @media (prefers-reduced-motion: reduce) {
   :root {

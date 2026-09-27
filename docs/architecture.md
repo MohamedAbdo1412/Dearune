@@ -155,13 +155,43 @@ the same act of sending.
 
 ---
 
+## Availability & merchandising (display state)
+
+One vocabulary, one module: `services/catalog.js`.
+
+- `display_state` (`normal` · `new` · `not_available`) lives on `templates`
+  and `wrapper_types` (migration `20260927000001_catalog_display_state.sql`).
+  Activation stays where it always was — `templates.enabled` /
+  `wrapper_types.active` — and ordering stays `sort_order` / `display_order`.
+- **Hidden** (`enabled/active = false`) rows vanish everywhere — no slot, no
+  hint. **Resting** (`not_available`) rows are shown, veiled, and *unpressable*
+  (a disabled `<button>` refuses pointer and keyboard). **New** rows carry the
+  rotated double-rule seal and stay choosable.
+- Reading order: `designer-templates` drops hidden rows and returns
+  `display_state` → `chooserCatalogItems()` re-applies the rules client-side →
+  the stages render through `getCatalogItemState()` (an unknown future state
+  fails safe: visible, never selectable; `DISPLAY_STATE_META` is the registry).
+- Stale drafts: two effects in `CreateBook.jsx` bounce the book to the
+  choosing stage with a bilingual `.stage-note` whenever the archived choice
+  is no longer *selectable* — the words stay encrypted in the draft. At
+  submission `designer-projects` re-checks
+  `SELECTABLE_STATES = ['normal','new']` for template **and** wrapper (keep in
+  sync with `DISPLAY_STATE_META`).
+- Admin: the Templates and Wrappers screens each carry an Enabled/Hidden
+  switch, a Display-state select, and an Order field with per-row save; each
+  card's summary line previews the exact Create result
+  (`Visible • New • Order #2` / `Hidden`). `create-sale` intentionally does
+  not gate on display state — historical sales keep resolving.
+
+---
+
 ## Backend map (Supabase)
 
 - **Migrations** (`supabase/migrations/`, forward-only): initial schema →
   functions/policies → seeds → drive media → admin RLS → designer pipeline →
   designer media storage → designer projects → pipeline policies → project
   template version → designer operations (Sales merged into a single Dearune
-  record) → wrapper catalog.
+  record) → wrapper catalog → catalog display-state.
 - **Edge functions**: `designer-login`, `designer-templates`,
   `designer-projects`, `designer-messages`, `designer-message`,
   `designer-media`, `admin-dearunes`, `admin-designers`, `create-sale`, and
@@ -191,7 +221,7 @@ template code.
 ## Testing & visual QA
 
 - `npm test` — Vitest: pipeline/draft invariants, wrappers, **book machine**,
-  **template contract**.
+  **template contract**, **catalog display state**.
 - `e2e/pipeline.mjs` — Playwright walk of the full pipeline (note: its
   plaintext localStorage audit predates draft v3 encryption; only the stage
   traversal is maintained).
@@ -201,6 +231,11 @@ template code.
   machine-checked layout assertions (grid slots, dropcap red, ruqaa loaded,
   close stacking ≤ 860 px). Run: `npm run preview` then
   `node e2e/qa-memorial.mjs`.
+- `e2e/qa-catalog.mjs` + route **`/qa/catalog`** — the merchandising bench:
+  the real chooser stages fed a synthetic archive with every display state
+  side by side — hidden rows proven absent, resting rows veiled and held,
+  seals/order/RTL/Next-gating asserted — screenshotted at 1920 · 768 · 390.
+  Run: `npm run preview` then `node e2e/qa-catalog.mjs`.
 
 ## Conventions & gotchas
 

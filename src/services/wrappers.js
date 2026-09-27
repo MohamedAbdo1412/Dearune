@@ -79,11 +79,19 @@ export function wrapperDescription(wrapper, lang = 'en') {
 
 // ---------------------------------------------------------------------------
 // Catalog reads/writes (admin browser, RLS: admins only).
+//
+// Read order is `display_order ASC, created_at ASC` — the same stable
+// sequence Create renders (`sortCatalogItems` in `services/catalog.js`
+// re-applies it defensively on the client).
 // ---------------------------------------------------------------------------
 
 export async function fetchWrapperTypes({ activeOnly = false } = {}) {
   if (!supabase) throw new Error('Supabase is not configured')
-  let query = supabase.from('wrapper_types').select('*').order('display_order', { ascending: true })
+  let query = supabase
+    .from('wrapper_types')
+    .select('*')
+    .order('display_order', { ascending: true })
+    .order('created_at', { ascending: true })
   if (activeOnly) query = query.eq('active', true)
   const { data, error } = await query
   if (error) throw error
@@ -112,6 +120,7 @@ export async function createWrapper(wrapper) {
       description_ar: wrapper.description_ar ?? '',
       image_url: wrapper.image_url ?? '',
       active: wrapper.active ?? true,
+      display_state: wrapper.display_state ?? 'normal',
       base_price: wrapper.base_price ?? 0,
       production_cost: wrapper.production_cost ?? 0,
       display_order: wrapper.display_order ?? 0,
@@ -128,7 +137,8 @@ export async function updateWrapper(wrapperId, patch) {
   if (!supabase) throw new Error('Supabase is not configured')
   const allowed = [
     'name', 'name_ar', 'description', 'description_ar', 'image_url', 'active',
-    'base_price', 'production_cost', 'display_order', 'estimated_production_days', 'sku', 'notes',
+    'display_state', 'base_price', 'production_cost', 'display_order',
+    'estimated_production_days', 'sku', 'notes',
   ]
   const clean = {}
   for (const field of allowed) {

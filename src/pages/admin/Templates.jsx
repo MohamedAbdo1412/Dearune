@@ -2,17 +2,27 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2Icon, Plus, Save } from 'lucide-react'
 import { toast } from 'sonner'
-import { fetchTemplates } from '@/services/templates'
+import { fetchTemplates, updateTemplate } from '@/services/templates'
 import { findOption, saveTemplateWrapperOption, wrapperLabel } from '@/services/wrappers'
+import { DISPLAY_STATES, DISPLAY_STATE_META, getCatalogItemState } from '@/services/catalog'
+import { templateMiniFor } from '@/templates'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAppSettings } from '@/hooks/use-app-settings'
 
-// Which wrappers each paper OFFERS, at which price.
+const rowKey = (templateId, wrapperId) => `${templateId}:${wrapperId}`
+
+// Which wrappers each paper OFFERS, at which price — plus, in each card's
+// header, the paper's own merchandising: Enabled (hidden from Create when
+// off), Display state (Normal / New / Not Available Now) and Display order
+// (the order Create renders). The shelf line beside the name previews the
+// exact frontend result: `Visible • New • Order #1` or `Hidden`.
 //
 // The rows come from the wrapper catalog (`template_wrapper_options` joined
 // to `wrapper_types`): turning "Offered" on creates the option row, turning
@@ -22,8 +32,6 @@ import { useAppSettings } from '@/hooks/use-app-settings'
 // screen resolves through `resolveWrapperPrice`. The legacy
 // `template_pricing` table is frozen and no longer edited here.
 
-const rowKey = (templateId, wrapperId) => `${templateId}:${wrapperId}`
-
 export function Templates() {
   const { settings } = useAppSettings()
   const maintenance = Boolean(settings?.maintenance_mode)
@@ -32,6 +40,8 @@ export function Templates() {
   const [options, setOptions] = useState([])
   const [draft, setDraft] = useState({})
   const [savingKey, setSavingKey] = useState(null)
+  const [orderDraft, setOrderDraft] = useState({})
+  const [savingTemplateId, setSavingTemplateId] = useState(null)
 
   const reload = async () => {
     try {
@@ -48,6 +58,9 @@ export function Templates() {
         }
       }
       setDraft(next)
+      const orders = {}
+      for (const template of data.templates) orders[template.id] = String(template.sort_order ?? 0)
+      setOrderDraft(orders)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not load templates')
     }
@@ -56,6 +69,31 @@ export function Templates() {
   useEffect(() => {
     void reload()
   }, [])
+
+  // One row-level save for the header controls (activation, display state,
+  // order). RLS keeps the write admin-only; Create picks it up on its next
+  // archive fetch.
+  const saveTemplateRow = async (template, patch) => {
+    setSavingTemplateId(template.id)
+    try {
+      await updateTemplate(template.id, patch)
+      if ('enabled' in patch) {
+        toast.success(patch.enabled ? `${template.name} is on the shelf` : `${template.name} is hidden from Create`)
+      } else if ('display_state' in patch) {
+        toast.success(`${template.name}: ${DISPLAY_STATE_META[patch.display_state]?.label ?? patch.display_state}`)
+      } else {
+        toast.success('Display order saved')
+      }
+      await reload()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save this paper')
+    } finally {
+      setSavingTemplateId(null)
+    }
+  }
+
+  const orderIsClean = (template) =>
+    String(template.sort_order ?? 0) === String(Number(orderDraft[template.id] ?? '') || 0)
 
   const blankDraft = () => ({ enabled: true, price: '', cost: '' })
 
@@ -117,6 +155,8 @@ export function Templates() {
     ? []
     : templates.map((template) => ({
         template,
+        item: getCatalogItemState(template),
+        Mini: templateMiniFor(template.slug),
         rows: wrappers.map((wrapper) => {
           const value = draftFor(template.id, wrapper)
           const original = originalFor(template.id, wrapper)
@@ -135,7 +175,9 @@ export function Templates() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl">Templates</h1>
-          <p className="text-sm text-muted-foreground">The paper, the layout, and the wrappers it can be sent in. Price edits are blocked during maintenance.</p>
+          <p className="text-sm text-muted-foreground">
+            The paper, its shelf life, and the wrappers it can be sent in. Enabled / Display state / Order are exactly what Create renders — switching one here changes the archive designers open next time they fetch it.
+          </p>
         </div>
         <Button size="sm" variant="outline" asChild>
           <Link to="/admin/wrappers">
@@ -150,16 +192,80 @@ export function Templates() {
         <Card><CardContent className="py-16 text-center text-sm text-muted-foreground">No templates yet. Apply the seed migration to create them.</CardContent></Card>
       ) : (
         <div className="space-y-6">
-          {rowsFor.map(({ template: t, rows }) => (
+          {rowsFor.map(({ template: t, item, Mini, rows }) => (
             <Card key={t.id}>
               <CardHeader>
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <CardTitle className="font-heading text-xl">{t.name}</CardTitle>
-                    <CardDescription className="font-mono text-xs">/{t.slug}</CardDescription>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="hidden h-20 w-14 shrink-0 overflow-hidden rounded-md border bg-muted/40 sm:grid sm:place-items-center">
+                      {Mini ? (
+                        <div className="grid h-full w-full place-items-center p-1 [&_svg]:max-h-full [&_svg]:max-w-full">
+                          <Mini />
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="min-w-0">
+                      <CardTitle className="font-heading text-xl">{t.name}</CardTitle>
+                      <CardDescription className="font-mono text-xs">/{t.slug}</CardDescription>
+                      <p className="mt-1 text-[11px] text-muted-foreground">{item.summary}</p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {t.enabled ? <Badge variant="outline" className="text-emerald-700 dark:text-emerald-400">Enabled</Badge> : <Badge variant="secondary">Disabled</Badge>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id={`enabled-${t.id}`}
+                        checked={t.enabled !== false}
+                        disabled={maintenance || savingTemplateId === t.id}
+                        onCheckedChange={(checked) => void saveTemplateRow(t, { enabled: checked })}
+                        aria-label={`Show ${t.name} in Create`}
+                      />
+                      <Label htmlFor={`enabled-${t.id}`} className="cursor-pointer text-xs text-muted-foreground">
+                        {t.enabled !== false ? 'Enabled' : 'Hidden'}
+                      </Label>
+                    </div>
+                    <Select
+                      value={t.display_state ?? 'normal'}
+                      onValueChange={(value) => void saveTemplateRow(t, { display_state: value })}
+                      disabled={maintenance || savingTemplateId === t.id}
+                    >
+                      <SelectTrigger className="h-8 w-[172px] text-xs" aria-label={`Display state for ${t.name}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DISPLAY_STATES.map((state) => (
+                          <SelectItem key={state} value={state}>
+                            {DISPLAY_STATE_META[state].label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex items-center gap-1.5">
+                      <Label htmlFor={`order-${t.id}`} className="text-xs text-muted-foreground">
+                        Order
+                      </Label>
+                      <Input
+                        id={`order-${t.id}`}
+                        type="number"
+                        className="h-8 w-16 text-xs"
+                        value={orderDraft[t.id] ?? ''}
+                        disabled={maintenance}
+                        onChange={(e) => setOrderDraft((current) => ({ ...current, [t.id]: e.target.value }))}
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 px-2"
+                        disabled={maintenance || savingTemplateId === t.id || orderIsClean(t)}
+                        onClick={() => void saveTemplateRow(t, { sort_order: Number(orderDraft[t.id]) || 0 })}
+                        aria-label={`Save display order for ${t.name}`}
+                      >
+                        {savingTemplateId === t.id ? (
+                          <Loader2Icon className="size-3.5 animate-spin" />
+                        ) : (
+                          <Save className="size-3.5" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </CardHeader>
@@ -188,7 +294,7 @@ export function Templates() {
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium">
                               {wrapperLabel(wrapper)}
-                              {!wrapper.active && <Badge variant="secondary" className="ml-2 align-middle">Inactive</Badge>}
+                              {!wrapper.active && <Badge variant="secondary" className="ml-2 align-middle">Hidden</Badge>}
                             </p>
                             <p className="truncate font-mono text-[11px] text-muted-foreground">
                               {wrapper.key} · base {Number(wrapper.base_price ?? 0)} / cost {Number(wrapper.production_cost ?? 0)}

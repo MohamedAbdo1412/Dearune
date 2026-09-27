@@ -11,6 +11,7 @@ import {
   updateWrapper,
   uploadWrapperPhoto,
 } from '@/services/wrappers'
+import { DISPLAY_STATES, DISPLAY_STATE_META, getCatalogItemState } from '@/services/catalog'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -19,14 +20,18 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAppSettings } from '@/hooks/use-app-settings'
 
 // The wrapper catalog itself: what a Dearune can be sent as. Each row owns
-// its copy (English + Arabic), photo, BASE price/cost and display order;
-// the Templates page decides which papers offer it and any per-paper price
-// override. Deactivating (rather than deleting) keeps history readable —
-// Dearunes already sold in this wrapper still show it.
+// its copy (English + Arabic), photo, BASE price/cost, display order and
+// merchandising (Enabled / Display state — the same Normal · New · Not
+// Available vocabulary the Templates page speaks; the card's shelf line
+// previews the exact Create result). The Templates page decides which
+// papers offer it and any per-paper price override. Deactivating (rather
+// than deleting) keeps history readable — Dearunes already sold in this
+// wrapper still show it.
 //
 // Photos are uploaded through the `designer-media` edge function into the
 // private `designer-drafts` bucket under `wrappers/<key>/…`, so the object
@@ -44,6 +49,7 @@ const emptyDraft = {
   base_price: '0',
   production_cost: '0',
   display_order: '0',
+  display_state: 'normal',
   estimated_production_days: '7',
 }
 
@@ -73,6 +79,7 @@ export function Wrappers() {
           base_price: String(row.base_price ?? 0),
           production_cost: String(row.production_cost ?? 0),
           display_order: String(row.display_order ?? 0),
+          display_state: row.display_state ?? 'normal',
           estimated_production_days: String(row.estimated_production_days ?? 7),
         }
       }
@@ -116,6 +123,7 @@ export function Wrappers() {
         base_price: Number(draft.base_price) || 0,
         production_cost: Number(draft.production_cost) || 0,
         display_order: Number(draft.display_order) || 0,
+        display_state: DISPLAY_STATES.includes(draft.display_state) ? draft.display_state : 'normal',
         estimated_production_days: Number(draft.estimated_production_days) || 0,
       })
       toast.success('Wrapper saved')
@@ -201,6 +209,7 @@ export function Wrappers() {
         base_price: Number(newWrapper.base_price) || 0,
         production_cost: Number(newWrapper.production_cost) || 0,
         display_order: Number(newWrapper.display_order) || 0,
+        display_state: DISPLAY_STATES.includes(newWrapper.display_state) ? newWrapper.display_state : 'normal',
         estimated_production_days: Number(newWrapper.estimated_production_days) || 0,
       })
       toast.success(`${newWrapper.name.trim()} added to the catalog`)
@@ -244,12 +253,13 @@ export function Wrappers() {
                     <div className="min-w-0">
                       <CardTitle className="flex items-center gap-2 font-heading text-lg">
                         <span className="truncate">{row.name}</span>
-                        {!row.active && <Badge variant="secondary">Inactive</Badge>}
+                        {!row.active && <Badge variant="secondary">Hidden</Badge>}
                       </CardTitle>
                       <CardDescription className="font-mono text-xs">{row.key}</CardDescription>
+                      <p className="mt-1 text-[11px] text-muted-foreground">{getCatalogItemState(row).summary}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">{row.active ? 'Active' : 'Off'}</span>
+                      <span className="text-xs text-muted-foreground">{row.active ? 'Enabled' : 'Hidden'}</span>
                       <Switch
                         checked={row.active}
                         disabled={busy}
@@ -329,6 +339,25 @@ export function Wrappers() {
                       <Input id={`order-${key}`} type="number" value={draft.display_order ?? ''} disabled={maintenance} onChange={(e) => setField(key, { display_order: e.target.value })} />
                     </div>
                     <div className="space-y-1">
+                      <Label htmlFor={`state-${key}`} className="text-xs">Display state</Label>
+                      <Select
+                        value={draft.display_state ?? 'normal'}
+                        onValueChange={(value) => setField(key, { display_state: value })}
+                        disabled={maintenance}
+                      >
+                        <SelectTrigger id={`state-${key}`} className="h-9 text-xs" aria-label={`Display state for ${row.name}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DISPLAY_STATES.map((state) => (
+                            <SelectItem key={state} value={state}>
+                              {DISPLAY_STATE_META[state].label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
                       <Label htmlFor={`days-${key}`} className="text-xs">Production days</Label>
                       <Input id={`days-${key}`} type="number" min={0} value={draft.estimated_production_days ?? ''} disabled={maintenance} onChange={(e) => setField(key, { estimated_production_days: e.target.value })} />
                     </div>
@@ -382,6 +411,21 @@ export function Wrappers() {
             <div className="space-y-1">
               <Label htmlFor="new-order" className="text-xs">Display order</Label>
               <Input id="new-order" type="number" value={newWrapper.display_order} onChange={(e) => setNewWrapper({ ...newWrapper, display_order: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="new-state" className="text-xs">Display state</Label>
+              <Select value={newWrapper.display_state} onValueChange={(value) => setNewWrapper({ ...newWrapper, display_state: value })}>
+                <SelectTrigger id="new-state" className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DISPLAY_STATES.map((state) => (
+                    <SelectItem key={state} value={state}>
+                      {DISPLAY_STATE_META[state].label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <Label htmlFor="new-days" className="text-xs">Production days</Label>

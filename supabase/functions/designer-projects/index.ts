@@ -172,8 +172,16 @@ Deno.serve(async (req) => {
     const templateSlug = typeof body.templateSlug === 'string' ? body.templateSlug : ''
     if (!templateSlug) return errorResponse('A paper must be chosen', 400)
 
-    const { data: template } = await sb.from('templates').select('id, slug, name').eq('slug', templateSlug).eq('enabled', true).maybeSingle()
+    // The admin's merchandising settings are re-checked at the seal: a paper
+    // hidden (`enabled = false`) or set aside (`display_state = not_available`)
+    // while the letter was being written cannot be submitted — the same rule
+    // the `designer-templates` payload enforces when the chooser renders.
+    // Keep SELECTABLE_STATES in step with DISPLAY_STATE_META in
+    // src/services/catalog.js.
+    const SELECTABLE_STATES = ['normal', 'new']
+    const { data: template } = await sb.from('templates').select('id, slug, name, display_state').eq('slug', templateSlug).eq('enabled', true).is('deleted_at', null).maybeSingle()
     if (!template) return errorResponse('This paper is not offered', 400)
+    if (!SELECTABLE_STATES.includes(template.display_state ?? 'normal')) return errorResponse('This paper is resting for now — choose another to continue', 400)
 
     const payload = sanitizePayload(body.draft, designer.designerId)
     if (!payload) return errorResponse('The words are not written yet', 400)
@@ -186,7 +194,7 @@ Deno.serve(async (req) => {
     // studio does not offer for this paper.
     const wrapperType = typeof body.wrapperType === 'string' ? body.wrapperType.trim().slice(0, 30) : ''
     if (wrapperType) {
-      const { data: wrapperRow } = await sb.from('wrapper_types').select('id').eq('key', wrapperType).eq('active', true).maybeSingle()
+      const { data: wrapperRow } = await sb.from('wrapper_types').select('id, display_state').eq('key', wrapperType).eq('active', true).maybeSingle()
       const { data: option } = wrapperRow
         ? await sb
           .from('template_wrapper_options')
@@ -197,6 +205,7 @@ Deno.serve(async (req) => {
           .maybeSingle()
         : { data: null }
       if (!wrapperRow || !option) return errorResponse('This way of sending it is not available', 400)
+      if (!SELECTABLE_STATES.includes(wrapperRow.display_state ?? 'normal')) return errorResponse('This way of sending it is resting for now — choose another', 400)
     }
 
     const receiverName = typeof body.receiverName === 'string'
