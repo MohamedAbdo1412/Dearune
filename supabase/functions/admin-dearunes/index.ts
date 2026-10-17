@@ -97,6 +97,52 @@ async function activeSale(sb: ReturnType<typeof adminClient>, projectId: string)
   return (data ?? null) as Row | null
 }
 
+// A physical Dearune owns physical units — one row per bottle, each with its own
+// canonical id. Opening them is idempotent (never shrinks, never re-uses an id),
+// so it is safe to call on every path that confirms a sale: a retry after a blip
+// heals a unit that was never opened, and can never mint a second id for the
+// same bottle.
+//
+// The RPC returns EVERY unit for the project, so the ones this call actually
+// created are found by comparing unit_index against the count taken beforehand —
+// that keeps the creation events precise instead of re-logging old units.
+async function openPhysicalUnits(
+  sb: ReturnType<typeof adminClient>,
+  project: Row,
+  actor: string,
+): Promise<{ units: Row[]; error: string | null }> {
+  const wrapper = asText(project.wrapper_type, 30)
+  if (!wrapper || wrapper === 'digital') return { units: [], error: null }
+
+  const { count } = await sb
+    .from('physical_products')
+    .select('id', { count: 'exact', head: true })
+    .eq('project_id', project.id as string)
+  const before = count ?? 0
+
+  const { data, error } = await sb.rpc('ensure_physical_products', {
+    p_project_id: String(project.id),
+    p_units: 1,
+    p_actor: actor,
+  })
+  if (error) {
+    console.error('[admin-dearunes] ensure_physical_products failed', error.message)
+    return { units: [], error: error.message }
+  }
+
+  const units = (data ?? []) as Row[]
+  for (const unit of units) {
+    if (Number(unit.unit_index) <= before) continue
+    await sb.from('physical_product_events').insert({
+      physical_product_id: String(unit.id),
+      actor_type: 'system',
+      action: 'operations.opened',
+      detail: { source: 'sale', reference: unit.reference },
+    })
+  }
+  return { units, error: null }
+}
+
 async function logEvent(
   sb: ReturnType<typeof adminClient>,
   projectId: string,
@@ -199,7 +245,16 @@ Deno.serve(async (req) => {
     if (settings.maintenance) return errorResponse('Maintenance mode is on — new sales are paused', 409)
     if (!settings.salesOpen) return errorResponse('New sales are turned off in Settings', 409)
     if (project.paid_at) {
-      return jsonResponse({ ok: true, alreadyPaid: true, sale: await activeSale(sb, projectId) })
+      // Already sold — but a physical unit may never have been opened (an
+      // older sale, or a call that failed part-way). Retrying is the heal.
+      const { units, error: unitError } = await openPhysicalUnits(sb, project, admin.id)
+      return jsonResponse({
+        ok: true,
+        alreadyPaid: true,
+        sale: await activeSale(sb, projectId),
+        units,
+        ...(unitError ? { unitWarning: 'The physical unit could not be opened — try again' } : {}),
+      })
     }
 
     const chosenWrapper = asText(body.wrapperType, 30) || asText(project.wrapper_type, 30)
@@ -243,7 +298,16 @@ Deno.serve(async (req) => {
     if (claimError) return errorResponse('Could not record the sale', 500)
     if (!claimed) {
       const fresh = await loadProject(sb, projectId)
-      if (fresh?.paid_at) return jsonResponse({ ok: true, alreadyPaid: true, sale: await activeSale(sb, projectId) })
+      if (fresh?.paid_at) {
+        const { units, error: unitError } = await openPhysicalUnits(sb, fresh, admin.id)
+        return jsonResponse({
+          ok: true,
+          alreadyPaid: true,
+          sale: await activeSale(sb, projectId),
+          units,
+          ...(unitError ? { unitWarning: 'The physical unit could not be opened — try again' } : {}),
+        })
+      }
       return errorResponse('This Dearune could not be marked sold', 409)
     }
 
@@ -295,7 +359,25 @@ Deno.serve(async (req) => {
       wrapper_type: chosenWrapper,
     })
 
-    return jsonResponse({ ok: true, sale: saleRow }, 201)
+    // 3. A physical Dearune now needs a physical unit — the Operations record
+    //    that carries the canonical `DR` + 11 digits id, the manufacturing
+    //    steps and the QR paper. Digital Dearunes have none. Idempotent: if
+    //    the unit already exists the call changes nothing, so a retry after a
+    //    network blip cannot mint a second id for one bottle.
+    const { units, error: unitError } = await openPhysicalUnits(
+      sb,
+      { id: projectId, wrapper_type: chosenWrapper },
+      admin.id,
+    )
+    if (unitError) {
+      // The sale is already on the ledger and cannot be rolled back from here,
+      // so this must never pass as a plain success. Saying so lets the studio
+      // try again — and the already-paid path below opens the missing unit
+      // without inventing a second id.
+      return errorResponse('The sale was recorded, but its physical unit could not be opened — please try again', 500)
+    }
+
+    return jsonResponse({ ok: true, sale: saleRow, units }, 201)
   }
 
   // -- Reverse a sale (maintenance only) ------------------------------------

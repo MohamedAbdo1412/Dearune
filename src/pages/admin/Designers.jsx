@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Check, ChevronDown, Copy, Loader2Icon, Plus, RotateCcw, ShieldOff, ShieldCheck, UserPlus } from 'lucide-react'
+import { Check, ChevronDown, Copy, Download, Loader2Icon, Plus, RotateCcw, ShieldOff, ShieldCheck, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { activateDesigner, createDesigner, fetchDesigners, resetPasscode, revokeDesigner } from '@/services/designers'
 import { fetchDearunes } from '@/services/dearunes'
 import { fetchSales, sumSales } from '@/services/sales'
+import { downloadShippingCsv, fetchShipments } from '@/services/shipping'
 import { fetchTemplates } from '@/services/templates'
 import { projectStage, PROJECT_STAGE_LABELS, PROJECT_STAGE_ORDER } from '@/services/constants'
 import { formatDateTime, formatMoney } from '@/services/format'
@@ -62,6 +63,7 @@ export function Designers() {
   const [credentials, setCredentials] = useState(null)
   const [actingId, setActingId] = useState(null)
   const [newPasscode, setNewPasscode] = useState(null)
+  const [exportingShipments, setExportingShipments] = useState(false)
 
   const reload = async () => {
     try {
@@ -170,6 +172,25 @@ export function Designers() {
     })
   }
 
+  // The shipping manifest: every Dearune with delivery details on file.
+  const exportShipments = async () => {
+    if (exportingShipments) return
+    setExportingShipments(true)
+    try {
+      const shipments = await fetchShipments()
+      if (!shipments.length) {
+        toast.error('No delivery details have been entered yet')
+        return
+      }
+      downloadShippingCsv(shipments)
+      toast.success('Shipping CSV downloaded')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not build the shipping CSV')
+    } finally {
+      setExportingShipments(false)
+    }
+  }
+
   // Same figures as Sold Logs: every completed row in the ledger, legacy
   // carry-over included, voided excluded, summed in EGP only.
   const totalSold = sumSales(sales, 'EGP')
@@ -220,13 +241,19 @@ export function Designers() {
             ))}
           </TabsList>
         </Tabs>
-        <div className="relative w-full md:w-72">
-          <Input
-            placeholder="Search designer, code, recipient, reference…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-3"
-          />
+        <div className="flex flex-wrap items-center gap-2 md:justify-end">
+          <Button variant="outline" size="sm" onClick={() => void exportShipments()} disabled={exportingShipments}>
+            {exportingShipments ? <Loader2Icon className="size-4 animate-spin" /> : <Download className="size-4" />}
+            Shipping CSV
+          </Button>
+          <div className="relative w-full md:w-72">
+            <Input
+              placeholder="Search designer, code, recipient, reference…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-3"
+            />
+          </div>
         </div>
       </div>
 

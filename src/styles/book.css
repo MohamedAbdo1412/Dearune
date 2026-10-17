@@ -779,7 +779,7 @@
 }
 
 .d-input::placeholder {
-  color: var(--ink-ghost);
+  color: #6f5c46;
   letter-spacing: 0.14em;
   font-size: 0.98rem;
   font-style: italic;
@@ -1896,6 +1896,76 @@
   box-shadow: 0 8px 20px -14px var(--brass-glow);
 }
 
+/* an arbitrary-text key: left-set, untracked, with a reveal eye in the well.
+   The digit-set rule above (.lock-field input, wide tracking + centered) is
+   for six-number codes; a password is ordinary text and reads better as such. */
+.lock-field input::placeholder {
+  color: #6f5c46;
+  letter-spacing: 0.03em;
+  font-style: italic;
+}
+
+.d-input-wrap {
+  position: relative;
+}
+
+.lock-well {
+  position: relative;
+  display: block;
+}
+
+.lock-well input {
+  width: 100%;
+  padding-right: 46px;
+  padding-left: 14px;
+  text-align: left;
+  letter-spacing: 0.01em;
+  text-indent: 0;
+  font-family: var(--font-text);
+  font-size: 1.12rem;
+}
+
+.lock-eye {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.lock-eye:hover {
+  color: var(--ink);
+  background: rgba(74, 56, 37, 0.08);
+}
+
+.lock-eye:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.lock-eye:focus-visible {
+  outline: 2px solid var(--brass-deep);
+  outline-offset: 1px;
+}
+
+.lock-hint {
+  font-size: 0.84rem;
+  font-style: italic;
+  color: var(--ink-faint);
+  text-align: center;
+  margin-top: 2px;
+}
+
 /* ------------------------------------------------------------ entry wells
    The legacy legibility pass for the numeric entries (designer code/passcode
    and the memorial lock keys): the wells sit a touch deeper so the engraved
@@ -1909,7 +1979,7 @@
 }
 
 .d-input::placeholder {
-  color: rgba(122, 100, 70, 0.72);
+  color: #6f5c46;
 }
 
 .d-input:focus,

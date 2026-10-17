@@ -14,11 +14,15 @@ import { SaleDetail } from '@/pages/admin/SaleDetail'
 import { Templates } from '@/pages/admin/Templates'
 import { Wrappers } from '@/pages/admin/Wrappers'
 import { Settings } from '@/pages/admin/Settings'
+import { Operations } from '@/pages/admin/Operations'
 import { NotFound } from '@/pages/NotFound'
 import { MemorialQa } from '@/pages/QaMemorial'
 import { CatalogQa } from '@/pages/QaCatalog'
 
 const CreateBook = lazy(() => import('@/pages/create/CreateBook'))
+// The review step carries the PDF generator and the spreadsheet writer, so it
+// is only fetched when someone actually goes to print.
+const OperationsPrint = lazy(() => import('@/pages/admin/OperationsPrint'))
 
 function RequireAdmin({ children }) {
   const location = useLocation()
@@ -111,6 +115,21 @@ export default function App() {
         <Route path="designers/:designerId/messages/:projectId" element={<MessageDetail />} />
         <Route path="sold" element={<SoldLogs />} />
         <Route path="sold/:saleId" element={<SaleDetail />} />
+        <Route path="operations" element={<Operations />} />
+        <Route
+          path="operations/print"
+          element={
+            <Suspense
+              fallback={
+                <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
+                  Preparing the papers…
+                </div>
+              }
+            >
+              <OperationsPrint />
+            </Suspense>
+          }
+        />
         <Route path="templates" element={<Templates />} />
         <Route path="wrappers" element={<Wrappers />} />
         <Route path="settings" element={<Settings />} />

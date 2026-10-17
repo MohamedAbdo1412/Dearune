@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { Fleuron } from '@/components/book/ornaments'
 import { formatCountdown } from '@/services/draft'
 
 export default function DesignerAccessStage({ busy, error, cooldown, onAccess, onCooldownEnd }) {
   const [code, setCode] = useState('')
   const [passcode, setPasscode] = useState('')
+  const [revealed, setRevealed] = useState(false)
   const [remaining, setRemaining] = useState(null)
 
   useEffect(() => {
@@ -69,7 +71,7 @@ export default function DesignerAccessStage({ busy, error, cooldown, onAccess, o
       <div className="bk-fields">
         <div className="d-field">
           <label className="d-label" htmlFor="bk-code">
-            Designer code <small>the six numbers </small>
+            Designer code <small>the six numbers</small>
           </label>
           <input
             id="bk-code"
@@ -90,19 +92,34 @@ export default function DesignerAccessStage({ busy, error, cooldown, onAccess, o
           <label className="d-label" htmlFor="bk-pass">
             Passcode <small>also six digits</small>
           </label>
-          <input
-            id="bk-pass"
-            className={`d-input d-input--coded${error ? ' error' : ''}`}
-            value={passcode}
-            onChange={(e) => digits.test(e.target.value) && setPasscode(e.target.value)}
-            inputMode="numeric"
-            type="password"
-            pattern="[0-9]{6}"
-            maxLength="6"
-            autoComplete="off"
-            placeholder="······"
-            disabled={busy}
-          />
+          <div className="d-input-wrap">
+            <input
+              id="bk-pass"
+              className={`d-input d-input--coded${error ? ' error' : ''}`}
+              value={passcode}
+              onChange={(e) => digits.test(e.target.value) && setPasscode(e.target.value)}
+              inputMode="numeric"
+              type={revealed ? 'text' : 'password'}
+              pattern="[0-9]{6}"
+              maxLength="6"
+              autoComplete="off"
+              placeholder="0 0 0 0 0 0"
+              disabled={busy}
+              aria-describedby="bk-code-hint"
+            />
+            <button
+              type="button"
+              className="lock-eye"
+              onClick={() => setRevealed((v) => !v)}
+              disabled={busy}
+              aria-pressed={revealed}
+              aria-controls="bk-pass"
+              aria-label={revealed ? 'Hide the passcode' : 'Show the passcode'}
+              title={revealed ? 'Hide the passcode' : 'Show the passcode'}
+            >
+              {revealed ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
+            </button>
+          </div>
         </div>
 
         <div className="board-feedback">

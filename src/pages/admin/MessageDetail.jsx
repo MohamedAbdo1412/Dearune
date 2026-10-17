@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, BookOpen, Loader2Icon, Save, Truck } from 'lucide-react'
+import { ArrowLeft, BookOpen, FileText, Loader2Icon, Printer, Save, Truck } from 'lucide-react'
 import { toast } from 'sonner'
 import { currentAccessToken } from '@/lib/supabase'
 import { fetchDearune, fetchDearuneEvents, fetchDearuneShipping, fetchSalesForProject, saveDearuneShipping, setDearuneWrapper } from '@/services/dearunes'
@@ -8,6 +8,7 @@ import { fetchDesigners } from '@/services/designers'
 import { fetchTemplates } from '@/services/templates'
 import { isDigital } from '@/services/constants'
 import { findWrapper, wrapperLabel } from '@/services/wrappers'
+import { buildReceiptPdf, buildShippingPdf, downloadPdf } from '@/services/pdf'
 import { formatDate, formatDateTime, formatMoney } from '@/services/format'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { ProjectBadge } from '@/components/stage-badge'
@@ -91,6 +92,7 @@ export function MessageDetail() {
   const [shipForm, setShipForm] = useState(EMPTY_SHIP)
   const [savingShip, setSavingShip] = useState(false)
   const [savingWrapper, setSavingWrapper] = useState(false)
+  const [printing, setPrinting] = useState(null)
   const [showLetter, setShowLetter] = useState(false)
 
   const reload = useCallback(async () => {
@@ -221,6 +223,68 @@ export function MessageDetail() {
     }
   }
 
+  // README feature: the admin generates the shipping label + receipt PDFs.
+  // Both read the values on screen, so what is printed is what is shown.
+  const printShippingLabel = async () => {
+    const line1 = shipForm.address_line1.trim()
+    const city = shipForm.city.trim()
+    if (!line1 || !city) {
+      toast.error('An address and a city are needed before the label can be printed')
+      return
+    }
+    setPrinting('label')
+    try {
+      const bytes = await buildShippingPdf({
+        shipping: {
+          addressLine1: line1,
+          addressLine2: shipForm.address_line2.trim() || undefined,
+          city,
+          stateProvince: shipForm.state_province.trim() || undefined,
+          postalCode: shipForm.postal_code.trim(),
+          country: shipForm.country.trim(),
+          specialInstructions: shipForm.special_instructions.trim() || undefined,
+        },
+        recipientName: shipForm.recipient_name.trim() || project.title || 'Recipient',
+        orderId: String(project.reference ?? project.id),
+        templateName: String(paper?.name ?? project.template_slug),
+        wrapperType: String(wrapperName(catalog, project.wrapper_type)),
+        customerName: String(designer?.name ?? '—'),
+        createdDate: project.created_at ?? project.submitted_at,
+        dueDate: project.manufactured_at ?? project.paid_at,
+      })
+      downloadPdf(bytes, `dearune-${project.reference ?? project.id.slice(0, 8)}-shipping-label.pdf`)
+      toast.success('Shipping label downloaded')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not build the shipping label')
+    } finally {
+      setPrinting(null)
+    }
+  }
+
+  const printReceipt = async () => {
+    if (!activeSale) return
+    setPrinting('receipt')
+    try {
+      const bytes = await buildReceiptPdf({
+        orderId: String(project.reference ?? project.id),
+        createdDate: activeSale.sold_at,
+        recipientName: shipForm.recipient_name.trim() || project.title || 'Recipient',
+        templateName: String(paper?.name ?? project.template_slug),
+        wrapperType: String(wrapperName(catalog, activeSale.wrapper_type ?? project.wrapper_type)),
+        publicId: String(project.public_id ?? '—'),
+        price: Number(activeSale.selling_price) || 0,
+        currency: activeSale.currency ?? 'EGP',
+        customerEmail: undefined,
+      })
+      downloadPdf(bytes, `dearune-${project.reference ?? project.id.slice(0, 8)}-receipt.pdf`)
+      toast.success('Receipt downloaded')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not build the receipt')
+    } finally {
+      setPrinting(null)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -333,9 +397,13 @@ export function MessageDetail() {
                   {' · '}{wrapperName(catalog, activeSale.wrapper_type)}
                   {activeSale.designer_name ? ` · ${activeSale.designer_name}` : ''}
                 </p>
-                <p className="text-xs">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+                  <Button size="sm" variant="outline" onClick={() => void printReceipt()} disabled={printing !== null}>
+                    {printing === 'receipt' ? <Loader2Icon className="size-4 animate-spin" /> : <FileText className="size-4" />}
+                    Receipt (PDF)
+                  </Button>
                   <Link className="underline" to={`/admin/sold/${activeSale.id}`}>See it in Sold Logs</Link>
-                </p>
+                </div>
               </div>
             )}
 
@@ -436,7 +504,11 @@ export function MessageDetail() {
               <Label htmlFor="ship-notes">Special instructions</Label>
               <Textarea id="ship-notes" className="min-h-[60px]" value={shipForm.special_instructions} onChange={(e) => setShipForm({ ...shipForm, special_instructions: e.target.value })} />
             </div>
-            <div className="flex justify-end sm:col-span-2">
+            <div className="flex flex-wrap justify-end gap-2 sm:col-span-2">
+              <Button size="sm" variant="outline" onClick={() => void printShippingLabel()} disabled={printing !== null}>
+                {printing === 'label' ? <Loader2Icon className="size-4 animate-spin" /> : <Printer className="size-4" />}
+                Shipping label (PDF)
+              </Button>
               <Button size="sm" onClick={() => void saveShipping()} disabled={savingShip}>
                 {savingShip ? <Loader2Icon className="size-4 animate-spin" /> : <Save className="size-4" />}
                 Save delivery details

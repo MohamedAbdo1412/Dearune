@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
-import { Loader2Icon, ShieldCheck } from 'lucide-react'
+import { Loader2Icon, ShieldCheck, Eye, EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { Brand } from '@/components/brand'
@@ -15,6 +15,7 @@ export function AdminLogin() {
   const from = location.state?.from ?? '/admin/overview'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [revealed, setRevealed] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const submit = async (event) => {
@@ -59,11 +60,43 @@ export function AdminLogin() {
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <Input
+                id="email"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                className="h-10"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={revealed ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  placeholder="Your administrator password"
+                  className="h-10 pr-10"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setRevealed((v) => !v)}
+                  aria-pressed={revealed}
+                  aria-controls="password"
+                  aria-label={revealed ? 'Hide password' : 'Show password'}
+                  title={revealed ? 'Hide password' : 'Show password'}
+                  className="absolute right-1 top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {revealed ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
+                </button>
+              </div>
             </div>
             <Button className="w-full" type="submit" disabled={busy}>
               {busy ? <Loader2Icon className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { Sparkles } from 'lucide-react'
-import { fetchPublicMessage, publicMediaUrl, isAdminSession } from '@/services/messages'
+import { fetchPublicMessage, publicMediaUrl, projectMediaUrl, isAdminSession } from '@/services/messages'
 import { Brand } from '@/components/brand'
 import { formatDate } from '@/services/format'
 
@@ -106,8 +106,12 @@ export function PublicMessage() {
   const wrapper = String(order.wrapper_type ?? '')
   const media = (payload.media ?? []).map((item) => ({
     ...item,
-    url: item.drive_file_id ? publicMediaUrl(item.drive_file_id, { publicId, token }) : '',
-    kind: String(item.media_type ?? 'file'),
+    url: item.drive_file_id
+      ? publicMediaUrl(item.drive_file_id, { publicId, token })
+      : item.path
+        ? projectMediaUrl(item.path, { publicId, token })
+        : String(item.url ?? ''),
+    kind: String(item.media_type ?? item.kind ?? 'file'),
     originalName: item.original_filename ? String(item.original_filename) : null,
   }))
 

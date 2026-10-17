@@ -27,6 +27,129 @@ export const STAGE_LABELS = {
   deleted: 'Deleted',
 }
 
+// ---------------------------------------------------------------------------
+// Operations — the manufacturing vocabulary for a single physical unit
+// ---------------------------------------------------------------------------
+// The canonical business identifier of one physical Dearune. It is allocated
+// by the database (`physical_products.reference`) and is never rewritten:
+//   DR70700897645 — literal "DR" plus exactly eleven decimal digits.
+export const PHYSICAL_ID_PATTERN = /^DR\d{11}$/
+
+// Every step a unit walks, in the order the workshop performs them. `on_hold`
+// and `cancelled` are escape hatches, not steps, so they are kept out of the
+// linear order but still listed here so nothing can silently accept a status
+// this app does not know.
+export const OPERATIONS_STEP_ORDER = [
+  'pending_verification',
+  'information_verified',
+  'ready_to_print',
+  'printing',
+  'printed',
+  'qr_verified',
+  'manufacturing',
+  'quality_control',
+  'qc_passed',
+  'ready_for_packaging',
+  'packed',
+  'ready_for_shipment',
+  'shipped',
+  'delivered',
+]
+
+export const OPERATIONS_EXIT_STATUSES = ['on_hold', 'cancelled']
+
+export const OPERATIONS_STATUS_ORDER = [...OPERATIONS_STEP_ORDER, ...OPERATIONS_EXIT_STATUSES]
+
+export const OPERATIONS_STATUS_LABELS = {
+  pending_verification: 'Pending Verification',
+  information_verified: 'Information Verified',
+  ready_to_print: 'Ready to Print',
+  printing: 'Printing',
+  printed: 'Printed',
+  qr_verified: 'QR Verified',
+  manufacturing: 'Manufacturing / Assembly',
+  quality_control: 'Quality Control',
+  qc_passed: 'QC Passed',
+  ready_for_packaging: 'Ready for Packaging',
+  packed: 'Packed',
+  ready_for_shipment: 'Ready for Shipment',
+  shipped: 'Shipped / Handed to Bosta',
+  delivered: 'Delivered',
+  on_hold: 'On Hold',
+  cancelled: 'Cancelled',
+}
+
+// Short labels for the dense list view.
+export const OPERATIONS_STATUS_SHORT = {
+  pending_verification: 'Pending',
+  information_verified: 'Verified',
+  ready_to_print: 'To print',
+  printing: 'Printing',
+  printed: 'Printed',
+  qr_verified: 'QR ok',
+  manufacturing: 'Assembly',
+  quality_control: 'QC',
+  qc_passed: 'QC passed',
+  ready_for_packaging: 'To pack',
+  packed: 'Packed',
+  ready_for_shipment: 'To ship',
+  shipped: 'Shipped',
+  delivered: 'Delivered',
+  on_hold: 'On hold',
+  cancelled: 'Cancelled',
+}
+
+export function isOperationsStatus(value) {
+  return OPERATIONS_STATUS_ORDER.includes(value)
+}
+
+// What the next step is, or null at the end of the line. Mirrors — but does
+// not replace — the database's own transition guard, which is the authority.
+export function nextOperationsStatus(status) {
+  const index = OPERATIONS_STEP_ORDER.indexOf(status)
+  if (index < 0 || index === OPERATIONS_STEP_ORDER.length - 1) return null
+  return OPERATIONS_STEP_ORDER[index + 1]
+}
+
+// The intended step order position. Escape hatches sort after everything so a
+// held or cancelled unit never looks "further along" than it is.
+export function operationsRank(status) {
+  const index = OPERATIONS_STEP_ORDER.indexOf(status)
+  return index < 0 ? OPERATIONS_STEP_ORDER.length : index
+}
+
+export function isOperationsTerminal(status) {
+  return status === 'delivered' || status === 'cancelled'
+}
+
+// "Sold As" is a DERIVED label, never a second stored identifier. One
+// canonical id, one derived display form.
+export function soldAsId(reference) {
+  const value = String(reference ?? '').trim()
+  return PHYSICAL_ID_PATTERN.test(value) ? `SOL-${value}` : ''
+}
+
+// Deliberate bridge between the detailed workshop steps and the Dearune's own
+// coarse stage. Operations may advance the Dearune's stamps (made / shipped /
+// arrived) but never invents a stage the Dearune's own rules would reject.
+export function operationsProjectStage(status) {
+  switch (status) {
+    case 'manufacturing':
+    case 'quality_control':
+    case 'qc_passed':
+    case 'ready_for_packaging':
+    case 'packed':
+    case 'ready_for_shipment':
+      return 'made'
+    case 'shipped':
+      return 'shipped'
+    case 'delivered':
+      return 'arrived'
+    default:
+      return null
+  }
+}
+
 export const PUBLIC_SITE_URL = import.meta.env.VITE_PUBLIC_SITE_URL?.replace(/\/+$/, '') ?? ''
 
 export function orderStage(order, publishedAt = null) {

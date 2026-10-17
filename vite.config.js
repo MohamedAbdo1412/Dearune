@@ -12,6 +12,9 @@ export default defineConfig(({ mode }) => {
   const supabaseUrl = env.VITE_SUPABASE_URL
   return {
     plugins: [react(), tailwindcss()],
+    // The Bosta upload workbook is a real asset handed to the courier as-is;
+    // without this Vite tries to parse its bytes as JavaScript.
+    assetsInclude: ['**/*.xlsx'],
     resolve: {
       alias: {
         '@': srcDir,

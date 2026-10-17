@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { Fleuron } from '@/components/book/ornaments'
 import { playKeyInsert, playKeyTurn } from '@/services/sound'
 
@@ -35,15 +36,53 @@ function Key({ turning, set }) {
   )
 }
 
+function KeyField({ id, label, placeholder, hintId, value, onChange, revealed, onReveal, showText, hideText, disabled }) {
+  return (
+    <label className="lock-field" htmlFor={id}>
+      <span className="lock-label">{label}</span>
+      <span className="lock-well">
+        <input
+          id={id}
+          type={revealed ? 'text' : 'password'}
+          dir="ltr"
+          autoComplete="new-password"
+          spellCheck="false"
+          value={value}
+          maxLength={64}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          aria-describedby={hintId}
+          disabled={disabled}
+        />
+        <button
+          type="button"
+          className="lock-eye"
+          onClick={onReveal}
+          disabled={disabled}
+          aria-pressed={revealed}
+          aria-controls={id}
+          aria-label={revealed ? hideText : showText}
+          title={revealed ? hideText : showText}
+        >
+          {revealed ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
+        </button>
+      </span>
+    </label>
+  )
+}
+
 export default function MemorialPasswordStage({ draft, onSet, onNext }) {
   const lang = draft.language === 'ar' ? 'ar' : 'en'
   const t = (en, ar) => (lang === 'ar' ? ar : en)
   const [first, setFirst] = useState('')
   const [second, setSecond] = useState('')
+  const [revealFirst, setRevealFirst] = useState(false)
+  const [revealSecond, setRevealSecond] = useState(false)
   const [turning, setTurning] = useState(false)
   const [alert, setAlert] = useState('')
 
   const alreadySet = !!draft.passwordSet && !turning
+  const hintId = 'memorial-lock-hint'
 
   const seal = () => {
     setAlert('')
@@ -94,30 +133,39 @@ export default function MemorialPasswordStage({ draft, onSet, onNext }) {
         </p>
 
         <div className="lock-fields">
-          <label className="lock-field">
-            <span className="lock-label">{t('password', 'كلمة السر')}</span>
-            <input
-              type="password"
-              dir="ltr"
-              autoComplete="off"
-              value={first}
-              maxLength={64}
-              onChange={(e) => setFirst(e.target.value)}
-              placeholder="· · · ·"
-            />
-          </label>
-          <label className="lock-field">
-            <span className="lock-label">{t('turn it again', 'أعدها مرة أخرى')}</span>
-            <input
-              type="password"
-              dir="ltr"
-              autoComplete="off"
-              value={second}
-              maxLength={64}
-              onChange={(e) => setSecond(e.target.value)}
-              placeholder="· · · ·"
-            />
-          </label>
+          <KeyField
+            id="memorial-lock-first"
+            label={t('password', 'كلمة السر')}
+            placeholder={t('four characters or more', 'أربعة أحرف فأكثر')}
+            hintId={hintId}
+            value={first}
+            onChange={setFirst}
+            revealed={revealFirst}
+            onReveal={() => setRevealFirst((v) => !v)}
+            showText={t('Show the password', 'إظهار كلمة السر')}
+            hideText={t('Hide the password', 'إخفاء كلمة السر')}
+            disabled={turning}
+          />
+          <KeyField
+            id="memorial-lock-second"
+            label={t('repeat the password', 'أعدي كلمة السر')}
+            placeholder={t('type it once more', 'اكتبيها مرة أخرى')}
+            hintId={hintId}
+            value={second}
+            onChange={setSecond}
+            revealed={revealSecond}
+            onReveal={() => setRevealSecond((v) => !v)}
+            showText={t('Show it once more', 'إظهارها مرة أخرى')}
+            hideText={t('Hide it once more', 'إخفاؤها مرة أخرى')}
+            disabled={turning}
+          />
+        </div>
+
+        <div className="lock-hint" id={hintId}>
+          {t(
+            'Four characters or more. You will need it to open this side of the book.',
+            'أربعة أحرف فأكثر. ستحتاجينها لفتح هذا الجانب من الكتاب.',
+          )}
         </div>
 
         {alert ? (

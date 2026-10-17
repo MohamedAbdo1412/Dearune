@@ -35,8 +35,12 @@ export default function ReceiverStage({ initial, onNext }) {
             maxLength={80}
             autoComplete="off"
             onChange={(e) => setName(e.target.value)}
-            placeholder="…"
+            placeholder="Amélie Dubois"
+            aria-describedby="bk-receiver-note"
           />
+          <div className="field-note" id="bk-receiver-note">
+            It is printed and engraved exactly as you write it here.
+          </div>
         </div>
         {alert ? (
           <div className="field-note--warn" role="alert">

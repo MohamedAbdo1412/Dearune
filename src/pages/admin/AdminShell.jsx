@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { ReceiptText, Settings2, Users, LogOut, Wrench, LayoutDashboard, Palette, Package } from 'lucide-react'
+import { ReceiptText, Settings2, Users, LogOut, Wrench, LayoutDashboard, Palette, Package, Factory } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { Brand } from '@/components/brand'
@@ -29,6 +29,7 @@ export function AdminShell() {
         <nav className="mt-8 flex flex-1 flex-col gap-1">
           {[
             { to: '/admin/overview', label: 'Dashboard', icon: LayoutDashboard },
+            { to: '/admin/operations', label: 'Operations', icon: Factory },
             { to: '/admin/designers', label: 'Designers', icon: Users },
             { to: '/admin/templates', label: 'Templates', icon: Palette },
             { to: '/admin/wrappers', label: 'Wrappers', icon: Package },
