@@ -54,7 +54,9 @@ const download = (bytes, filename, mime) => {
 const productionFilename = (count) =>
   `Dearune-Production-Papers-${new Date().toISOString().slice(0, 10)}-${count}units.pdf`
 
-export function OperationsPrint() {
+// Default-exported on purpose: this page is loaded with `lazy()` in App.jsx,
+// and React resolves a lazy component from the module's `default` export.
+export default function OperationsPrint() {
   const [params] = useSearchParams()
   const ids = useMemo(
     () => (params.get('ids') ?? '').split(',').map((id) => id.trim()).filter(Boolean),

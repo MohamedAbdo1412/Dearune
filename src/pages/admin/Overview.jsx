@@ -53,7 +53,7 @@ export function Overview() {
       }
       if (supabase) {
         const [d, t, e] = await Promise.all([
-          supabase.from('designers').select('id', { count: 'exact', head: true }).eq('revoked_at', null),
+          supabase.from('designers').select('id', { count: 'exact', head: true }).is('revoked_at', null),
           supabase.from('templates').select('id', { count: 'exact', head: true }).is('deleted_at', null),
           supabase
             .from('project_events')
