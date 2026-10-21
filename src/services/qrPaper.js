@@ -6,14 +6,13 @@ import { validateOperationForPaper } from './operations'
 
 // The artwork's own layers and the fonts, resolved by the bundler so every
 // asset is emitted and fingerprinted instead of guessed at runtime.
+// (`deco-front-c` and `deco-back-c` have been removed as requested.)
 import paperTextureUrl from '@/assets/productionDocuments/qr-paper/paper-texture.png'
 import decoFrontAUrl from '@/assets/productionDocuments/qr-paper/deco-front-a.png'
 import decoFrontBUrl from '@/assets/productionDocuments/qr-paper/deco-front-b.png'
-import decoFrontCUrl from '@/assets/productionDocuments/qr-paper/deco-front-c.png'
 import decoFrontDUrl from '@/assets/productionDocuments/qr-paper/deco-front-d.png'
 import decoBackAUrl from '@/assets/productionDocuments/qr-paper/deco-back-a.png'
 import decoBackBUrl from '@/assets/productionDocuments/qr-paper/deco-back-b.png'
-import decoBackCUrl from '@/assets/productionDocuments/qr-paper/deco-back-c.png'
 import serifUrl from '@/assets/fonts/LibreBaskerville-Bold.ttf'
 import serifRegularUrl from '@/assets/fonts/LibreBaskerville-Regular.ttf'
 import sansUrl from '@/assets/fonts/AtkinsonHyperlegible-Regular.ttf'
@@ -21,30 +20,20 @@ import sansItalicUrl from '@/assets/fonts/AtkinsonHyperlegible-Italic.ttf'
 import sansBoldUrl from '@/assets/fonts/AtkinsonHyperlegible-Bold.ttf'
 
 // ---------------------------------------------------------------------------
-// The QR production paper.
+// The QR production paper (2-up 90° rotated layout).
 // ---------------------------------------------------------------------------
-// The studio's artwork ships as `The Memorial Massege QR.pdf`: two oversized
-// pages (1860.75 × 2630.25 pt) carrying the antique paper texture, the Dearune
-// lockup, the detachable Operations strip and an example QR. It is a design
-// proof, not a product: its page is ~3.125× A4, it spells the title MESSEGE,
-// and it prints one hard-coded sample on every copy.
-//
-// This generator keeps that artwork and only replaces what has to change:
+// Each unit produces two consecutive A4 pages (front + back), carrying TWO
+// 90°-rotated designs per page (top half + bottom half) matching the updated
+// studio layout (`rotated new design.pdf`):
 //
 //   * every page is rebuilt at TRUE A4 (210 × 297 mm) so it prints without
-//     scaling, and the artwork is re-placed 1:1 from the extracted layers
-//     (texture + the four decorative cut-outs) in the original proportions;
-//   * the title is drawn correctly — THE MEMORIAL MESSAGE;
-//   * the QR is generated per unit and encodes THAT customer's memorial
-//     destination, so no two papers can share a code;
-//   * the canonical id is printed in every position the sample occupied, so
-//     the strip can never disagree with the database about which unit it is;
-//   * the detachable strip stays on BOTH pages and is entirely dynamic:
-//     date/time, designer name, designer id, customer number and the id.
-//
-// All artwork positions below are in the SOURCE page's own units, copied
-// straight out of the artwork so the layout is reproducible and testable
-// rather than eyeballed.
+//     scaling, with two rotated designs stacked vertically per page;
+//   * `deco-front-c` and `deco-back-c` are removed;
+//   * full color control is provided via `COLORS` (and `options.colors`),
+//     preserving the warm antique brown lockup/masthead, pure black strip
+//     typography, red `Note !` warning block + underline, and blue accent ID;
+//   * both rotated designs on each unit page receive the complete dynamic
+//     information (QR code, Operations strip fields, and all 5 Order IDs).
 // ---------------------------------------------------------------------------
 
 // Source page geometry (the artwork's MediaBox).
@@ -64,82 +53,160 @@ export const ax = (x) => x * SX
 export const ay = (y) => (y - SOURCE.bottom) * SY
 export const asize = (size) => size * SY
 
-// Ink and paper. The artwork is a warm near-black on white.
-const INK = rgb(0.106, 0.071, 0.051)
-
-// ---- the artwork's own text runs ------------------------------------------
-// `face` is which bundled family reproduces the run; `targetWidth` is the
-// width the artwork's own glyphs occupy, used to keep a re-drawn run the same
-// size on the page instead of letting a different cut overflow the design.
-const FACE = { serif: 'serif', serifRegular: 'serifRegular', sans: 'sans', sansItalic: 'sansItalic', sansBold: 'sansBold' }
-
-export const STATIC_RUNS = [
-  // Front page — the lockup
-  { page: 'front', face: FACE.serif, text: 'D', x: 554.34, y: 623.49, size: 237.51, width: 186.44 },
-  { page: 'front', face: FACE.serif, text: 'U', x: 489.87, y: 570.97, size: 244.19, width: 180.7 },
-  { page: 'front', face: FACE.serif, text: 'D E A R U N E', x: 770.43, y: 629.22, size: 55.17, width: 371.64 },
-  { page: 'front', face: FACE.serifRegular, text: 'S O M E   W O R D S   A R E   M E A N T   T O   L A S T .', x: 776.88, y: 592.96, size: 24.15, width: 591.42 },
-  // Front page — the masthead. Corrected spelling: MESSEGE → MESSAGE.
-  { page: 'front', face: FACE.serif, text: 'D E A R U N E', x: 688.5, y: 2175.16, size: 71.8, width: 483.73 },
-  { page: 'front', face: FACE.serif, text: 'T H E   M E M O R I A L   M E S S A G E', x: 277.29, y: 2074.66, size: 71.8, width: 1306.16 },
+// Vertical offset (in source units) between the bottom design slot and the top
+// design slot on each A4 page.
+export const SLOT_OFFSET_Y = 1320.28
+export const UNIT_SLOTS = [
+  { key: 'top', offsetY: SLOT_OFFSET_Y },
+  { key: 'bottom', offsetY: 0 },
 ]
 
-// The detachable strip, identical on both pages. `static` runs are reprinted
-// exactly; `dynamic` runs are the ones the studio actually has to read.
+// ---- Color palette & color control ----------------------------------------
+// Edit `COLORS` directly or pass `options.colors` to `buildQrPaperPdf` /
+// `buildQrPaperPreview` (supports pdf-lib `rgb(...)`, hex strings like
+// `'#342717'`, `[r, g, b]` arrays, or `{ r, g, b }` objects).
+export const COLORS = {
+  ink: rgb(0.2039, 0.1529, 0.0902),      // #342717 — warm antique brown (front lockup & masthead)
+  brand: rgb(0.2039, 0.1529, 0.0902),    // #342717 — front lockup & masthead text
+  strip: rgb(0, 0, 0),                   // #000000 — Operations heading & strip monogram
+  fields: rgb(0, 0, 0),                  // #000000 — dynamic strip field lines
+  note: rgb(1, 0, 0),                    // #ff0000 — red "Note !" & removal instructions
+  orderId: rgb(0, 0, 0),                 // #000000 — black ORDER ID & reference runs
+  accentId: rgb(0, 0.0118, 1),           // #0003ff — blue inverted reference ID run
+  qrBackground: rgb(1, 1, 1),            // #ffffff — white card behind the QR code
+}
+
+export const INK = COLORS.ink
+
+export function resolveColor(value, fallback = INK) {
+  if (!value) return fallback
+  if (typeof value === 'object' && value.type === 'RGB') return value
+  if (typeof value === 'string') {
+    const hex = value.trim().replace(/^#/, '')
+    if (/^[0-9a-fA-F]{3}$/.test(hex)) {
+      const r = parseInt(hex[0] + hex[0], 16) / 255
+      const g = parseInt(hex[1] + hex[1], 16) / 255
+      const b = parseInt(hex[2] + hex[2], 16) / 255
+      return rgb(r, g, b)
+    }
+    if (/^[0-9a-fA-F]{6}$/.test(hex)) {
+      const r = parseInt(hex.slice(0, 2), 16) / 255
+      const g = parseInt(hex.slice(2, 4), 16) / 255
+      const b = parseInt(hex.slice(4, 6), 16) / 255
+      return rgb(r, g, b)
+    }
+  }
+  if (Array.isArray(value) && value.length >= 3) {
+    const scale = value.some((n) => n > 1) ? 255 : 1
+    return rgb(value[0] / scale, value[1] / scale, value[2] / scale)
+  }
+  if (typeof value === 'object' && 'r' in value && 'g' in value && 'b' in value) {
+    const scale = value.r > 1 || value.g > 1 || value.b > 1 ? 255 : 1
+    return rgb(value.r / scale, value.g / scale, value.b / scale)
+  }
+  return fallback
+}
+
+export function resolvePalette(overrides = {}) {
+  return {
+    ink: resolveColor(overrides.ink ?? overrides.brand, COLORS.ink),
+    brand: resolveColor(overrides.brand ?? overrides.ink, COLORS.brand),
+    strip: resolveColor(overrides.strip, COLORS.strip),
+    fields: resolveColor(overrides.fields ?? overrides.strip, COLORS.fields),
+    note: resolveColor(overrides.note, COLORS.note),
+    orderId: resolveColor(overrides.orderId ?? overrides.strip, COLORS.orderId),
+    accentId: resolveColor(overrides.accentId, COLORS.accentId),
+    qrBackground: resolveColor(overrides.qrBackground, COLORS.qrBackground),
+  }
+}
+
+// ---- The artwork's own text runs (base slot; top slot adds SLOT_OFFSET_Y) -
+const FACE = {
+  serif: 'serif',
+  serifRegular: 'serifRegular',
+  sans: 'sans',
+  sansItalic: 'sansItalic',
+  sansBold: 'sansBold',
+}
+
+export const STATIC_RUNS = [
+  // Front page — the lockup (rotated -90°)
+  { page: 'front', face: FACE.serif, text: 'D', x: 431.31, y: 929.62, size: 168.52, width: 132.29, rotate: -90, colorKey: 'brand' },
+  { page: 'front', face: FACE.serif, text: 'U', x: 394.03, y: 975.37, size: 173.26, width: 128.21, rotate: -90, colorKey: 'brand' },
+  { page: 'front', face: FACE.serif, text: 'D E A R U N E', x: 435.38, y: 776.3, size: 39.15, width: 263.7, rotate: -90, colorKey: 'brand' },
+  { page: 'front', face: FACE.serifRegular, text: 'S O M E   W O R D S   A R E   M E A N T   T O   L A S T .', x: 409.64, y: 771.73, size: 17.13, width: 419.64, rotate: -90, colorKey: 'brand' },
+  // Front page — the masthead (rotated -90°)
+  { page: 'front', face: FACE.serif, text: 'D E A R U N E', x: 1532.28, y: 834.44, size: 50.95, width: 343.23, rotate: -90, colorKey: 'brand' },
+  { page: 'front', face: FACE.serif, text: 'T H E   M E M O R I A L   M E S S A G E', x: 1460.98, y: 1127.36, size: 50.95, width: 929.07, rotate: -90, colorKey: 'brand' },
+]
+
+// The detachable strip, identical on both pages and repeated for both slots.
 export const STRIP_RUNS = [
-  { face: FACE.sansBold, text: 'Operations', x: 220.34, y: 215.6, size: 41.99, width: 218.8 },
-  { face: FACE.sansBold, text: 'Note !', x: 1008.03, y: 229.83, size: 26.74, width: 76.64 },
-  { face: FACE.sansItalic, text: 'please remove this', x: 1008.03, y: 193.08, size: 26.74, width: 241.25 },
-  { face: FACE.sansItalic, text: 'section before', x: 1016.58, y: 156.33, size: 26.74, width: 181.72 },
-  { face: FACE.sansItalic, text: 'manufacturing and', x: 1008.03, y: 119.58, size: 26.74, width: 236.6 },
-  { face: FACE.sansItalic, text: 'put it in the bottle neck', x: 1016.58, y: 82.83, size: 26.74, width: 301.71 },
-  { face: FACE.sansItalic, text: 'till shipping', x: 1008.03, y: 46.08, size: 26.74, width: 153.01 },
+  { face: FACE.sansBold, text: 'Operations', x: 141.89, y: 1166.62, size: 29.8, width: 155.25, rotate: -90, colorKey: 'strip' },
+  {
+    face: FACE.sansBold,
+    text: 'Note !',
+    x: 151.98,
+    y: 607.72,
+    size: 18.97,
+    width: 54.38,
+    rotate: -90,
+    colorKey: 'note',
+    underline: { x: 149.32, y: 553.34, width: 1.6, height: 54.38 },
+  },
+  { face: FACE.sansItalic, text: 'please remove this', x: 125.9, y: 607.72, size: 18.97, width: 171.18, rotate: -90, colorKey: 'note' },
+  { face: FACE.sansItalic, text: 'section before', x: 99.83, y: 601.65, size: 18.97, width: 128.94, rotate: -90, colorKey: 'note' },
+  { face: FACE.sansItalic, text: 'manufacturing and', x: 73.75, y: 607.72, size: 18.97, width: 167.88, rotate: -90, colorKey: 'note' },
+  { face: FACE.sansItalic, text: 'put it in the bottle neck', x: 47.68, y: 601.65, size: 18.97, width: 214.08, rotate: -90, colorKey: 'note' },
+  { face: FACE.sansItalic, text: 'till shipping', x: 21.6, y: 607.72, size: 18.97, width: 108.57, rotate: -90, colorKey: 'note' },
   // Strip monogram
-  { face: FACE.serif, text: 'D', x: 1667.91, y: 95.42, size: 138.94, width: 109.07 },
-  { face: FACE.serif, text: 'U', x: 1630.2, y: 64.69, size: 142.85, width: 105.71 },
+  { face: FACE.serif, text: 'D', x: 56.62, y: 139.5, size: 98.59, width: 77.39, rotate: -90, colorKey: 'strip' },
+  { face: FACE.serif, text: 'U', x: 34.81, y: 166.26, size: 101.36, width: 75.01, rotate: -90, colorKey: 'strip' },
 ]
 
 // The four field lines. `label` is fixed; the value is bound per unit.
 export const STRIP_FIELDS = [
-  { key: 'date', label: 'Date & Time', x: 220.36, y: 180.21, size: 25.66, maxWidth: 740 },
-  { key: 'designerName', label: 'Designer Name', x: 220.36, y: 144.46, size: 25.66, maxWidth: 740 },
-  { key: 'customerNumber', label: 'Customer Number', x: 220.36, y: 108.72, size: 25.66, maxWidth: 740 },
-  { key: 'designerId', label: 'Designer ID', x: 220.36, y: 72.97, size: 25.66, maxWidth: 740 },
+  { key: 'date', label: 'Date & Time', x: 116.78, y: 1166.6, size: 18.21, maxWidth: 525, rotate: -90, colorKey: 'fields' },
+  { key: 'designerName', label: 'Designer Name', x: 91.42, y: 1166.6, size: 18.21, maxWidth: 525, rotate: -90, colorKey: 'fields' },
+  { key: 'customerNumber', label: 'Customer Number', x: 66.05, y: 1166.6, size: 18.21, maxWidth: 525, rotate: -90, colorKey: 'fields' },
+  { key: 'designerId', label: 'Designer ID', x: 40.69, y: 1166.6, size: 18.21, maxWidth: 525, rotate: -90, colorKey: 'fields' },
 ]
 
-// The canonical id appears in FIVE places on each page — the same five the
-// artwork used for its sample. Every one of them is dynamic.
+// The canonical id appears in FIVE places per design slot (ten per page).
 export const ID_RUNS = [
-  { kind: 'order', x: 220.26, y: 29.52, size: 38.11, maxWidth: 700 },
-  { kind: 'vertical', x: 56.77, y: 23.02, size: 20.68, rotate: 90 },
-  { kind: 'vertical', x: 972.86, y: 23.02, size: 20.68, rotate: 90 },
-  { kind: 'vertical', x: 1543.69, y: 280.15, size: 20.68, rotate: -90 },
-  { kind: 'plain', x: 1603.22, y: 236.37, size: 20.68, maxWidth: 700 },
+  { kind: 'order', x: 9.85, y: 1166.67, size: 27.04, maxWidth: 504, rotate: -90, colorKey: 'orderId' },
+  { kind: 'vertical', x: 5.24, y: 1282.67, size: 14.67, maxWidth: 153.6, rotate: 0, colorKey: 'orderId' },
+  { kind: 'vertical', x: 14.18, y: 631.04, size: 14.67, maxWidth: 153.6, rotate: 0, colorKey: 'orderId' },
+  { kind: 'vertical', x: 158.6, y: 227.64, size: 14.67, maxWidth: 153.6, rotate: 180, colorKey: 'accentId' },
+  { kind: 'plain', x: 156.63, y: 185.4, size: 14.67, maxWidth: 153.6, rotate: -90, colorKey: 'orderId' },
 ]
 
-// The QR, measured from the artwork (module box, centred on the page).
-export const QR_BOX = { x: 627.35, y: 1142.6, size: 606.05 }
+// White backing card and QR module box in source units (base slot; top slot adds SLOT_OFFSET_Y).
+export const QR_CARD_BOX = { x: 740.32, y: 391.56, size: 542.5 }
+export const QR_BOX = { x: 796.51, y: 447.75, size: 430.12, rotate: -90 }
 
-// The artwork's own image layers, in source units.
+// The artwork's decorative image layers in source units (without `deco-front-c` and `deco-back-c`).
 export const IMAGE_LAYERS = {
   front: [
-    { src: 'deco-front-c', x: 489.6, y: 511.92, width: 187.2, height: 244.32 },
-    { src: 'deco-front-a', x: 87.06, y: 155.15, width: 98.25, height: 98.25 },
-    { src: 'deco-front-b', x: 1354.52, y: 162.82, width: 116.02, height: 102.72 },
-    { src: 'deco-front-d', x: 1629.84, y: 30.0, width: 109.92, height: 143.28 },
+    { src: 'deco-front-a', x: 98.97, y: 1191.43, width: 69.75, height: 69.75, rotate: -90 },
+    { src: 'deco-front-b', x: 104.44, y: 279.55, width: 72.89, height: 82.32, rotate: -90 },
+    { src: 'deco-front-d', x: 10.08, y: 88.56, width: 102.0, height: 78.0, rotate: -90 },
   ],
   back: [
-    { src: 'deco-back-a', x: 87.06, y: 155.15, width: 98.25, height: 98.25 },
-    { src: 'deco-back-b', x: 1354.52, y: 162.82, width: 116.02, height: 102.72 },
-    { src: 'deco-back-c', x: 1629.84, y: 30.0, width: 109.92, height: 143.28 },
+    { src: 'deco-back-a', x: 98.97, y: 1191.43, width: 69.75, height: 69.75, rotate: -90 },
+    { src: 'deco-back-b', x: 104.44, y: 279.55, width: 72.89, height: 82.32, rotate: -90 },
   ],
 }
 
-export const PAPER_TEXTURE_RECT = { x: 0, y: 295, width: 1860.75, height: 2343.03 }
+// Paper texture bounding box per slot (starts at x=197.25 so the left Operations strip stays clean white).
+export const PAPER_TEXTURE_RECT = { x: 197.25, y: 2.96, width: 1663.5, height: 1320.0, rotate: -90 }
 
-// ---- formatting ------------------------------------------------------------
+// ---- Formatting -----------------------------------------------------------
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
 
 // "14 September 2026 - 17:30" — the shape the artwork prints.
 export function formatProductionDate(date) {
@@ -148,7 +215,6 @@ export function formatProductionDate(date) {
   const pad = (n) => String(n).padStart(2, '0')
   return `${value.getDate()} ${MONTHS[value.getMonth()]} ${value.getFullYear()} - ${pad(value.getHours())}:${pad(value.getMinutes())}`
 }
-
 
 export function spacedId(reference) {
   return String(reference ?? '').split('').join(' ')
@@ -173,11 +239,8 @@ export function paperValues(operation, { dateLabel = '' } = {}) {
   }
 }
 
-// ---- pdf assembly ----------------------------------------------------------
+// ---- PDF assembly ---------------------------------------------------------
 
-// The bundler hands us URLs. In the browser they are fetchable; in a Node test
-// run they are project-relative paths, so the loader is injectable and the
-// suite supplies a filesystem one. Production never passes an override.
 export async function fetchAsset(url) {
   const response = await fetch(url)
   if (!response.ok) throw new Error(`Could not load an artwork asset (${response.status})`)
@@ -185,33 +248,98 @@ export async function fetchAsset(url) {
 }
 
 // Draw `text` at `size`, but never let it run past `maxWidth` or fall short of
-// the artwork's own `width`. A different cut of the same family is fine; a
-// line that spills over the strip is not.
+// the artwork's own `width`.
 export function fitSize(font, text, size, { width = 0, maxWidth = 0 } = {}) {
   const natural = font.widthOfTextAtSize(text, size)
   if (!natural) return size
   if (maxWidth && natural > maxWidth) return Math.max(4, (size * maxWidth) / natural)
   if (width) {
     const ratio = width / natural
-    // Only correct a real difference; matching a target to the pixel would
-    // distort the design for no visible gain.
     if (ratio > 0.9 && ratio < 1.12) return size
     return Math.max(4, size * Math.min(1.2, Math.max(0.82, ratio)))
   }
   return size
 }
 
+// Draw an image inside a visual bounding box `{ x, y, width, height, rotate }`
+// (in source coordinates), compensating for pdf-lib's rotation pivot so a -90°
+// rotated asset lands squarely inside `[x, x + width] × [y, y + height]`.
+function drawBoxedImage(page, image, box, offsetY = 0) {
+  if (!image) return
+  const x0 = ax(box.x)
+  const y0 = ay(box.y + offsetY)
+  const w = ax(box.width ?? box.size)
+  const h = asize(box.height ?? box.size)
+  const angle = box.rotate ?? 0
+
+  if (angle === -90 || angle === 270) {
+    page.drawImage(image, {
+      x: x0,
+      y: y0 + h,
+      width: h,
+      height: w,
+      rotate: degrees(-90),
+    })
+  } else if (angle === 90 || angle === -270) {
+    page.drawImage(image, {
+      x: x0 + w,
+      y: y0,
+      width: h,
+      height: w,
+      rotate: degrees(90),
+    })
+  } else if (angle === 180 || angle === -180) {
+    page.drawImage(image, {
+      x: x0 + w,
+      y: y0 + h,
+      width: w,
+      height: h,
+      rotate: degrees(180),
+    })
+  } else {
+    page.drawImage(image, {
+      x: x0,
+      y: y0,
+      width: w,
+      height: h,
+      rotate: angle ? degrees(angle) : undefined,
+    })
+  }
+}
+
 function drawRun(page, fonts, run, text, options = {}) {
   const font = fonts[run.face]
-  const size = asize(fitSize(font, text, run.size, { width: options.useWidth ? run.width : 0, maxWidth: run.maxWidth ?? 0 }))
+  const size = asize(
+    fitSize(font, text, run.size, {
+      width: options.useWidth ? run.width : 0,
+      maxWidth: run.maxWidth ?? 0,
+    }),
+  )
+  const offsetY = options.offsetY ?? 0
+  const palette = options.palette ?? COLORS
+  const color = resolveColor(
+    run.color ?? (run.colorKey ? palette[run.colorKey] : undefined) ?? palette.ink,
+    INK,
+  )
+
   page.drawText(text, {
     x: ax(run.x),
-    y: ay(run.y),
+    y: ay(run.y + offsetY),
     size,
     font,
-    color: INK,
+    color,
     rotate: run.rotate ? degrees(run.rotate) : undefined,
   })
+
+  if (run.underline) {
+    page.drawRectangle({
+      x: ax(run.underline.x),
+      y: ay(run.underline.y + offsetY),
+      width: ax(run.underline.width),
+      height: asize(run.underline.height),
+      color,
+    })
+  }
 }
 
 const ASSET_URLS = {
@@ -223,11 +351,9 @@ const ASSET_URLS = {
   texture: paperTextureUrl,
   'deco-front-a': decoFrontAUrl,
   'deco-front-b': decoFrontBUrl,
-  'deco-front-c': decoFrontCUrl,
   'deco-front-d': decoFrontDUrl,
   'deco-back-a': decoBackAUrl,
   'deco-back-b': decoBackBUrl,
-  'deco-back-c': decoBackCUrl,
 }
 
 export { ASSET_URLS }
@@ -252,34 +378,30 @@ async function loadAssets(doc, load) {
 
   const texture = await doc.embedPng(await load(ASSET_URLS.texture))
   const deco = {}
-  for (const name of ['deco-front-a', 'deco-front-b', 'deco-front-c', 'deco-front-d', 'deco-back-a', 'deco-back-b', 'deco-back-c']) {
-    deco[name] = await doc.embedPng(await load(ASSET_URLS[name]))
+  for (const name of ['deco-front-a', 'deco-front-b', 'deco-front-d', 'deco-back-a', 'deco-back-b']) {
+    if (!ASSET_URLS[name]) continue
+    try {
+      deco[name] = await doc.embedPng(await load(ASSET_URLS[name]))
+    } catch {
+      // Optional decorative layer omitted if unavailable.
+    }
   }
 
   return { fonts, texture, deco }
 }
 
-function drawArtwork(page, assets, side) {
-  page.drawImage(assets.texture, {
-    x: ax(PAPER_TEXTURE_RECT.x),
-    y: ay(PAPER_TEXTURE_RECT.y),
-    width: ax(PAPER_TEXTURE_RECT.width),
-    height: asize(PAPER_TEXTURE_RECT.height),
-  })
+function drawArtworkSlot(page, assets, side, offsetY = 0) {
+  drawBoxedImage(page, assets.texture, PAPER_TEXTURE_RECT, offsetY)
   for (const layer of IMAGE_LAYERS[side]) {
-    page.drawImage(assets.deco[layer.src], {
-      x: ax(layer.x),
-      y: ay(layer.y),
-      width: ax(layer.width),
-      height: asize(layer.height),
-    })
+    drawBoxedImage(page, assets.deco[layer.src], layer, offsetY)
   }
 }
 
-// The detachable Operations strip. Printed identically on both pages so the
-// two halves of one unit can never disagree.
-function drawStrip(page, assets, values) {
-  for (const run of STRIP_RUNS) drawRun(page, assets.fonts, run, run.text, { useWidth: true })
+// The detachable Operations strip, drawn for a given design slot (`offsetY`).
+function drawStripSlot(page, assets, values, { offsetY = 0, palette = COLORS } = {}) {
+  for (const run of STRIP_RUNS) {
+    drawRun(page, assets.fonts, run, run.text, { useWidth: true, offsetY, palette })
+  }
 
   for (const field of STRIP_FIELDS) {
     const value =
@@ -288,7 +410,13 @@ function drawStrip(page, assets, values) {
         : field.key === 'customerNumber' ? values.customerNumber
         : values.designerId
     // A missing value is shown as an obvious dash, never as a plausible lie.
-    drawRun(page, assets.fonts, { ...field, face: FACE.sans }, `${field.label} : ${value || '—'}`)
+    drawRun(
+      page,
+      assets.fonts,
+      { ...field, face: FACE.sans },
+      `${field.label} : ${value || '—'}`,
+      { offsetY, palette },
+    )
   }
 
   for (const run of ID_RUNS) {
@@ -296,46 +424,76 @@ function drawStrip(page, assets, values) {
       run.kind === 'order' ? values.idLine
         : run.kind === 'vertical' ? values.spacedId
         : values.reference
-    drawRun(page, assets.fonts, { ...run, face: FACE.serif }, text)
+    drawRun(page, assets.fonts, { ...run, face: FACE.serif }, text, { offsetY, palette })
   }
 }
 
-async function drawQr(page, doc, operation) {
+async function embedQrForOperation(doc, operation) {
   const content = qrContent({ publicId: operation.publicId, token: operation.publicToken })
   const dataUrl = await qrDataUrl(content, 1024)
   const bytes = Uint8Array.from(atob(dataUrl.split(',')[1]), (c) => c.charCodeAt(0))
   const image = await doc.embedPng(bytes)
-  const size = ax(QR_BOX.size)
-  page.drawImage(image, {
-    x: ax(QR_BOX.x),
-    y: ay(QR_BOX.y),
-    width: size,
-    height: size,
-  })
-  return content
+  return { content, image }
 }
 
-// One unit → exactly two consecutive pages: the front, then its back.
-async function drawUnit(doc, assets, operation, { dateLabel }) {
-  const values = paperValues(operation, { dateLabel })
+function drawQrSlot(page, qrImage, { offsetY = 0, palette = COLORS } = {}) {
+  page.drawRectangle({
+    x: ax(QR_CARD_BOX.x),
+    y: ay(QR_CARD_BOX.y + offsetY),
+    width: ax(QR_CARD_BOX.size),
+    height: asize(QR_CARD_BOX.size),
+    color: palette.qrBackground,
+  })
+  drawBoxedImage(page, qrImage, QR_BOX, offsetY)
+}
+
+// One unit → two consecutive A4 pages (front + back), each carrying two
+// 90°-rotated designs (top slot + bottom slot) with all dynamic information
+// placed in both slots.
+async function drawUnit(doc, assets, operation, { dateLabel, palette, bottomOperation } = {}) {
+  const topValues = paperValues(operation, { dateLabel })
+  const bottomValues = bottomOperation
+    ? paperValues(bottomOperation, { dateLabel })
+    : topValues
+
+  const topQr = await embedQrForOperation(doc, operation)
+  const bottomQr = bottomOperation
+    ? await embedQrForOperation(doc, bottomOperation)
+    : topQr
+
+  const slotConfigs = [
+    { offsetY: UNIT_SLOTS[0].offsetY, values: topValues, qr: topQr },
+    { offsetY: UNIT_SLOTS[1].offsetY, values: bottomValues, qr: bottomQr },
+  ]
+
   const front = doc.addPage([A4.width, A4.height])
-  drawArtwork(front, assets, 'front')
-  for (const run of STATIC_RUNS) drawRun(front, assets.fonts, run, run.text, { useWidth: true })
-  drawStrip(front, assets, values)
-  const qrUrl = await drawQr(front, doc, operation)
+  for (const slot of slotConfigs) {
+    drawArtworkSlot(front, assets, 'front', slot.offsetY)
+    for (const run of STATIC_RUNS) {
+      drawRun(front, assets.fonts, run, run.text, {
+        useWidth: true,
+        offsetY: slot.offsetY,
+        palette,
+      })
+    }
+    drawStripSlot(front, assets, slot.values, { offsetY: slot.offsetY, palette })
+    drawQrSlot(front, slot.qr.image, { offsetY: slot.offsetY, palette })
+  }
 
   const back = doc.addPage([A4.width, A4.height])
-  drawArtwork(back, assets, 'back')
-  drawStrip(back, assets, values)
+  for (const slot of slotConfigs) {
+    drawArtworkSlot(back, assets, 'back', slot.offsetY)
+    drawStripSlot(back, assets, slot.values, { offsetY: slot.offsetY, palette })
+  }
 
-  return { qrUrl, values }
+  return { qrUrl: topQr.content, values: topValues }
 }
 
 /**
  * Produce the printable production papers.
  *
  * @param {Array} operations  `physical_products` rows (or `toOperation` shapes)
- * @param {{ dateLabel?: string, requireValid?: boolean }} [options]
+ * @param {{ dateLabel?: string, requireValid?: boolean, colors?: object, loadAsset?: Function }} [options]
  * @returns {Promise<{ bytes: Uint8Array, pageCount: number, items: Array }>}
  */
 export async function buildQrPaperPdf(operations, options = {}) {
@@ -363,13 +521,14 @@ export async function buildQrPaperPdf(operations, options = {}) {
 
   const assets = await loadAssets(doc, options.loadAsset ?? fetchAsset)
   const dateLabel = options.dateLabel || formatProductionDate(new Date())
+  const palette = resolvePalette(options.colors)
 
   const items = []
   for (const row of rows) {
     // The rows the screens hold are already normalised; a raw DB row is
     // normalised here so the generator works from either.
     const operation = row.designerName !== undefined ? row : normalise(row)
-    const result = await drawUnit(doc, assets, operation, { dateLabel })
+    const result = await drawUnit(doc, assets, operation, { dateLabel, palette })
     items.push({
       id: operation.id,
       reference: operation.reference,
