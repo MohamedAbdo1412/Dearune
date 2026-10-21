@@ -129,7 +129,7 @@ export default function OperationsPrint() {
   // A live preview of the real paper, built from the exact values the PDF will
   // use — including this unit's own QR destination.
   useEffect(() => {
-    if (!activeKey) {
+    if (!review.items || review.items.length === 0) {
       setPreviewUrl(null)
       setPreviewError(null)
       return undefined
@@ -139,9 +139,8 @@ export default function OperationsPrint() {
     setPreviewError(null)
     const timer = window.setTimeout(async () => {
       try {
-        const item = reviewRef.current.items.find((entry) => entry.operation.id === activeKey)
-        if (!item) return
-        const { bytes } = await buildQrPaperPreview(item.merged, { dateLabel })
+        const operations = review.items.map((item) => item.merged)
+        const { bytes } = await buildQrPaperPdf(operations, { dateLabel, requireValid: false })
         if (cancelled) return
         const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
         if (previewRef.current) URL.revokeObjectURL(previewRef.current)
@@ -160,7 +159,7 @@ export default function OperationsPrint() {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [activeKey, dateLabel, draftKey])
+  }, [dateLabel, draftKey, review.items])
 
   const setDraftField = (id, field, value) => {
     setDrafts((prev) => ({ ...prev, [id]: { ...(prev[id] ?? {}), [field]: value } }))

@@ -229,12 +229,13 @@ export function operationsIdLine(reference) {
 // strings can be asserted before a file is ever produced.
 export function paperValues(operation, { dateLabel = '' } = {}) {
   const reference = String(operation?.reference ?? '')
+  const designerName = operation?.designerName || ''
   return {
     reference,
     spacedId: spacedId(reference),
     idLine: operationsIdLine(reference),
     date: dateLabel || formatProductionDate(new Date()),
-    designerName: operation?.designerName || '',
+    designerName,
     designerId: operation?.designerCode || '',
     customerNumber: operation?.customerPhone || '',
   }
@@ -451,24 +452,22 @@ function drawQrSlot(page, qrImage, { offsetY = 0, palette = COLORS } = {}) {
 // One unit → two consecutive A4 pages (front + back), each carrying two
 // 90°-rotated designs (top slot + bottom slot) with all dynamic information
 // placed in both slots.
-async function drawUnit(doc, assets , assets_back, operation, { dateLabel, palette, bottomOperation } = {}) {
+async function drawUnit(doc, assets, assets_back, operation, { dateLabel, palette, bottomOperation } = {}) {
+  const hasBottom = Boolean(bottomOperation)
   const topValues = paperValues(operation, { dateLabel })
-  const bottomValues = bottomOperation
-    ? paperValues(bottomOperation, { dateLabel })
-    : topValues
+  const bottomValues = hasBottom ? paperValues(bottomOperation, { dateLabel }) : null
 
   const topQr = await embedQrForOperation(doc, operation)
-  const bottomQr = bottomOperation
-    ? await embedQrForOperation(doc, bottomOperation)
-    : topQr
+  const bottomQr = hasBottom ? await embedQrForOperation(doc, bottomOperation) : null
 
   const slotConfigs = [
-    { offsetY: UNIT_SLOTS[0].offsetY, values: topValues, qr: topQr },
-    { offsetY: UNIT_SLOTS[1].offsetY, values: bottomValues, qr: bottomQr },
+    { offsetY: UNIT_SLOTS[0].offsetY, values: topValues, qr: topQr, has: true },
+    { offsetY: UNIT_SLOTS[1].offsetY, values: bottomValues, qr: bottomQr, has: hasBottom },
   ]
 
   const front = doc.addPage([A4.width, A4.height])
   for (const slot of slotConfigs) {
+    if (!slot.has) continue
     drawArtworkSlot(front, assets, 'front', slot.offsetY)
     for (const run of STATIC_RUNS) {
       drawRun(front, assets.fonts, run, run.text, {
@@ -478,11 +477,14 @@ async function drawUnit(doc, assets , assets_back, operation, { dateLabel, palet
       })
     }
     drawStripSlot(front, assets, slot.values, { offsetY: slot.offsetY, palette })
-    drawQrSlot(front, slot.qr.image, { offsetY: slot.offsetY, palette })
+    if (slot.qr?.image) {
+      drawQrSlot(front, slot.qr.image, { offsetY: slot.offsetY, palette })
+    }
   }
 
   const back = doc.addPage([A4.width, A4.height])
   for (const slot of slotConfigs) {
+    if (!slot.has) continue
     drawArtworkSlot(back, assets_back, 'back', slot.offsetY)
     drawStripSlot(back, assets_back, slot.values, { offsetY: slot.offsetY, palette })
   }
@@ -525,12 +527,12 @@ export async function buildQrPaperPdf(operations, options = {}) {
   const dateLabel = options.dateLabel || formatProductionDate(new Date())
   const palette = resolvePalette(options.colors)
 
+  const normalized = rows.map((row) => (row.designerName !== undefined ? row : normalise(row)))
   const items = []
-  for (const row of rows) {
-    // The rows the screens hold are already normalised; a raw DB row is
-    // normalised here so the generator works from either.
-    const operation = row.designerName !== undefined ? row : normalise(row)
-    const result = await drawUnit(doc, assets , assets_back, operation, { dateLabel, palette })
+  for (let i = 0; i < normalized.length; i += 2) {
+    const operation = normalized[i]
+    const bottomOperation = normalized[i + 1] ?? null
+    const result = await drawUnit(doc, assets, assets_back, operation, { dateLabel, palette, bottomOperation })
     items.push({
       id: operation.id,
       reference: operation.reference,
@@ -539,6 +541,16 @@ export async function buildQrPaperPdf(operations, options = {}) {
       qrContent: result.qrUrl,
       values: result.values,
     })
+    if (bottomOperation) {
+      items.push({
+        id: bottomOperation.id,
+        reference: bottomOperation.reference,
+        status: bottomOperation.status,
+        statusLabel: OPERATIONS_STATUS_LABELS[bottomOperation.status] ?? bottomOperation.status,
+        qrContent: null,
+        values: paperValues(bottomOperation, { dateLabel }),
+      })
+    }
   }
 
   const bytes = await doc.save()

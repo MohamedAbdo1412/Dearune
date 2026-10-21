@@ -166,6 +166,14 @@ export async function invokeFunction(name, { method = 'GET', token = null, admin
   // Raw path: used when a custom JWT is attached (the SDK would stamp its own
   // Authorization header) or when the client was not created.
   let firstError = null
+  if (import.meta.env.DEV) {
+    try {
+      return await requestJson(`/functions/v1/${name}`)
+    } catch (devErr) {
+      if (devErr.answered) throw devErr
+      firstError = devErr
+    }
+  }
   try {
     return await requestJson(directUrl)
   } catch (rawError) {

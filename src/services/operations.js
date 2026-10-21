@@ -79,6 +79,7 @@ export async function fetchOperationEvents(operationId) {
 export function toOperation(row) {
   const reference = String(row?.reference ?? '')
   const unitIndex = Number(row?.unit_index ?? 1)
+  const designerName = row?.designer_name ?? ''
   return {
     id: row.id,
     reference,
@@ -109,10 +110,10 @@ export function toOperation(row) {
     qrReady: Boolean(row.qr_ready),
 
     designerId: row.designer_id ?? null,
-    designerName: row.designer_name ?? '',
+    designerName,
     designerCode: row.designer_code ?? '',
 
-    recipientName: row.recipient_name ?? '',
+    recipientName: designerName || row.recipient_name || '',
     customerPhone: row.customer_phone ?? '',
     trackingCode: row.tracking_code ?? '',
     provider: row.provider ?? '',
@@ -265,7 +266,7 @@ export function updateOperation(productId, fields = {}) {
 }
 
 export function archiveOperations(productIds) {
-  return act('archive', { productIds })
+  return act('archive', { productIds, productId: Array.isArray(productIds) && productIds.length === 1 ? productIds[0] : undefined })
 }
 
 export function restoreOperations(productIds) {

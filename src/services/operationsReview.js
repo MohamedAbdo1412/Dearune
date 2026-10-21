@@ -27,6 +27,9 @@ export function mergeDraft(operation, draft) {
   for (const { key } of REVIEW_FIELDS) {
     if (draft[key] !== undefined) merged[key] = draft[key]
   }
+  if (merged.designerName !== undefined) {
+    merged.recipientName = merged.designerName || merged.recipientName || ''
+  }
   return merged
 }
 
