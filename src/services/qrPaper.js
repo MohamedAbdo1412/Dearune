@@ -8,6 +8,7 @@ import { validateOperationForPaper } from './operations'
 // asset is emitted and fingerprinted instead of guessed at runtime.
 // (`deco-front-c` and `deco-back-c` have been removed as requested.)
 import paperTextureUrl from '@/assets/productionDocuments/qr-paper/paper-texture.png'
+import paperTextureUrlBack from '@/assets/productionDocuments/qr-paper/paper-texture-back.png'
 import decoFrontAUrl from '@/assets/productionDocuments/qr-paper/deco-front-a.png'
 import decoFrontBUrl from '@/assets/productionDocuments/qr-paper/deco-front-b.png'
 import decoFrontDUrl from '@/assets/productionDocuments/qr-paper/deco-front-d.png'
@@ -131,13 +132,13 @@ const FACE = {
 
 export const STATIC_RUNS = [
   // Front page — the lockup (rotated -90°)
-  { page: 'front', face: FACE.serif, text: 'D', x: 431.31, y: 929.62, size: 168.52, width: 132.29, rotate: -90, colorKey: 'brand' },
-  { page: 'front', face: FACE.serif, text: 'U', x: 394.03, y: 975.37, size: 173.26, width: 128.21, rotate: -90, colorKey: 'brand' },
-  { page: 'front', face: FACE.serif, text: 'D E A R U N E', x: 435.38, y: 776.3, size: 39.15, width: 263.7, rotate: -90, colorKey: 'brand' },
-  { page: 'front', face: FACE.serifRegular, text: 'S O M E   W O R D S   A R E   M E A N T   T O   L A S T .', x: 409.64, y: 771.73, size: 17.13, width: 419.64, rotate: -90, colorKey: 'brand' },
+  { page: 'front', face: FACE.serif, text: '', x: 431.31, y: 929.62, size: 168.52, width: 132.29, rotate: -90, colorKey: 'brand' },
+  { page: 'front', face: FACE.serif, text: '', x: 394.03, y: 975.37, size: 173.26, width: 128.21, rotate: -90, colorKey: 'brand' },
+  { page: 'front', face: FACE.serif, text: '', x: 435.38, y: 776.3, size: 39.15, width: 263.7, rotate: -90, colorKey: 'brand' },
+  { page: 'front', face: FACE.serifRegular, text: ' .', x: 409.64, y: 771.73, size: 17.13, width: 419.64, rotate: -90, colorKey: 'brand' },
   // Front page — the masthead (rotated -90°)
-  { page: 'front', face: FACE.serif, text: 'D E A R U N E', x: 1532.28, y: 834.44, size: 50.95, width: 343.23, rotate: -90, colorKey: 'brand' },
-  { page: 'front', face: FACE.serif, text: 'T H E   M E M O R I A L   M E S S A G E', x: 1460.98, y: 1127.36, size: 50.95, width: 929.07, rotate: -90, colorKey: 'brand' },
+  { page: 'front', face: FACE.serif, text: '', x: 1532.28, y: 834.44, size: 50.95, width: 343.23, rotate: -90, colorKey: 'brand' },
+  { page: 'front', face: FACE.serif, text: '', x: 1460.98, y: 1127.36, size: 50.95, width: 929.07, rotate: -90, colorKey: 'brand' },
 ]
 
 // The detachable strip, identical on both pages and repeated for both slots.
@@ -349,6 +350,7 @@ const ASSET_URLS = {
   sansItalic: sansItalicUrl,
   sansBold: sansBoldUrl,
   texture: paperTextureUrl,
+  textureBack : paperTextureUrlBack,
   'deco-front-a': decoFrontAUrl,
   'deco-front-b': decoFrontBUrl,
   'deco-front-d': decoFrontDUrl,
@@ -377,6 +379,7 @@ async function loadAssets(doc, load) {
   }
 
   const texture = await doc.embedPng(await load(ASSET_URLS.texture))
+  const textureBack = await doc.embedPng(await load(ASSET_URLS.textureBack))
   const deco = {}
   for (const name of ['deco-front-a', 'deco-front-b', 'deco-front-d', 'deco-back-a', 'deco-back-b']) {
     if (!ASSET_URLS[name]) continue
@@ -387,11 +390,15 @@ async function loadAssets(doc, load) {
     }
   }
 
-  return { fonts, texture, deco }
+  return { fonts, texture, deco ,textureBack }
 }
 
 function drawArtworkSlot(page, assets, side, offsetY = 0) {
-  drawBoxedImage(page, assets.texture, PAPER_TEXTURE_RECT, offsetY)
+  const texture =
+    side === 'back' ? assets.textureBack : assets.texture
+
+  drawBoxedImage(page, texture, PAPER_TEXTURE_RECT, offsetY)
+
   for (const layer of IMAGE_LAYERS[side]) {
     drawBoxedImage(page, assets.deco[layer.src], layer, offsetY)
   }
@@ -437,20 +444,14 @@ async function embedQrForOperation(doc, operation) {
 }
 
 function drawQrSlot(page, qrImage, { offsetY = 0, palette = COLORS } = {}) {
-  page.drawRectangle({
-    x: ax(QR_CARD_BOX.x),
-    y: ay(QR_CARD_BOX.y + offsetY),
-    width: ax(QR_CARD_BOX.size),
-    height: asize(QR_CARD_BOX.size),
-    color: palette.qrBackground,
-  })
+  
   drawBoxedImage(page, qrImage, QR_BOX, offsetY)
 }
 
 // One unit → two consecutive A4 pages (front + back), each carrying two
 // 90°-rotated designs (top slot + bottom slot) with all dynamic information
 // placed in both slots.
-async function drawUnit(doc, assets, operation, { dateLabel, palette, bottomOperation } = {}) {
+async function drawUnit(doc, assets , assets_back, operation, { dateLabel, palette, bottomOperation } = {}) {
   const topValues = paperValues(operation, { dateLabel })
   const bottomValues = bottomOperation
     ? paperValues(bottomOperation, { dateLabel })
@@ -482,8 +483,8 @@ async function drawUnit(doc, assets, operation, { dateLabel, palette, bottomOper
 
   const back = doc.addPage([A4.width, A4.height])
   for (const slot of slotConfigs) {
-    drawArtworkSlot(back, assets, 'back', slot.offsetY)
-    drawStripSlot(back, assets, slot.values, { offsetY: slot.offsetY, palette })
+    drawArtworkSlot(back, assets_back, 'back', slot.offsetY)
+    drawStripSlot(back, assets_back, slot.values, { offsetY: slot.offsetY, palette })
   }
 
   return { qrUrl: topQr.content, values: topValues }
@@ -493,7 +494,7 @@ async function drawUnit(doc, assets, operation, { dateLabel, palette, bottomOper
  * Produce the printable production papers.
  *
  * @param {Array} operations  `physical_products` rows (or `toOperation` shapes)
- * @param {{ dateLabel?: string, requireValid?: boolean, colors?: object, loadAsset?: Function }} [options]
+ * @param {{ dateLabel?: string, requireValid?: boolean, colors?: object, loadAsset?: Function , loadAssetBack?: Function }} [options]
  * @returns {Promise<{ bytes: Uint8Array, pageCount: number, items: Array }>}
  */
 export async function buildQrPaperPdf(operations, options = {}) {
@@ -520,6 +521,7 @@ export async function buildQrPaperPdf(operations, options = {}) {
   doc.setCreator('Dearune Operations')
 
   const assets = await loadAssets(doc, options.loadAsset ?? fetchAsset)
+  const assets_back = await loadAssets(doc, options.loadAssetBack ?? fetchAsset)
   const dateLabel = options.dateLabel || formatProductionDate(new Date())
   const palette = resolvePalette(options.colors)
 
@@ -528,7 +530,7 @@ export async function buildQrPaperPdf(operations, options = {}) {
     // The rows the screens hold are already normalised; a raw DB row is
     // normalised here so the generator works from either.
     const operation = row.designerName !== undefined ? row : normalise(row)
-    const result = await drawUnit(doc, assets, operation, { dateLabel, palette })
+    const result = await drawUnit(doc, assets , assets_back, operation, { dateLabel, palette })
     items.push({
       id: operation.id,
       reference: operation.reference,
