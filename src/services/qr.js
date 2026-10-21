@@ -4,9 +4,9 @@ import { publicMessageUrl } from './constants'
 export async function qrDataUrl(content, size = 256) {
   return QRCode.toDataURL(content, {
     width: size,
-    margin: 0,
+    margin: 4,
     errorCorrectionLevel: 'M',
-    color: { dark: '#1c1210', light: '#ffffff' },
+    color: { dark: '#342717', light: '#ffffff' },
   })
 }
 

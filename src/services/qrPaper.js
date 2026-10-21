@@ -110,15 +110,15 @@ export const STRIP_FIELDS = [
 // The canonical id appears in FIVE places on each page — the same five the
 // artwork used for its sample. Every one of them is dynamic.
 export const ID_RUNS = [
-  { kind: 'order', x: 220.26, y: 29.52, size: 38.11, maxWidth: 760 },
+  { kind: 'order', x: 220.26, y: 29.52, size: 38.11, maxWidth: 700 },
   { kind: 'vertical', x: 56.77, y: 23.02, size: 20.68, rotate: 90 },
-  { kind: 'vertical', x: 952.86, y: 23.02, size: 20.68, rotate: 90 },
-  { kind: 'vertical', x: 1543.69, y: 239.15, size: 20.68, rotate: -90 },
+  { kind: 'vertical', x: 972.86, y: 23.02, size: 20.68, rotate: 90 },
+  { kind: 'vertical', x: 1543.69, y: 280.15, size: 20.68, rotate: -90 },
   { kind: 'plain', x: 1603.22, y: 236.37, size: 20.68, maxWidth: 700 },
 ]
 
 // The QR, measured from the artwork (module box, centred on the page).
-export const QR_BOX = { x: 627.54, y: 1129.56, size: 606.05 }
+export const QR_BOX = { x: 627.35, y: 1142.6, size: 606.05 }
 
 // The artwork's own image layers, in source units.
 export const IMAGE_LAYERS = {
@@ -135,7 +135,7 @@ export const IMAGE_LAYERS = {
   ],
 }
 
-export const PAPER_TEXTURE_RECT = { x: 0, y: -3.42, width: 1860.75, height: 2641.5 }
+export const PAPER_TEXTURE_RECT = { x: 0, y: 295, width: 1860.75, height: 2343.03 }
 
 // ---- formatting ------------------------------------------------------------
 
@@ -149,14 +149,13 @@ export function formatProductionDate(date) {
   return `${value.getDate()} ${MONTHS[value.getMonth()]} ${value.getFullYear()} - ${pad(value.getHours())}:${pad(value.getMinutes())}`
 }
 
-// "DR70700897645" → "D R 7 0 7 0 0 8 9 7 6 4 5". The artwork letter-spaces
-// the id with real spaces, so a token-for-token replacement keeps the design.
+
 export function spacedId(reference) {
   return String(reference ?? '').split('').join(' ')
 }
 
 export function operationsIdLine(reference) {
-  return `O D E R I D : ${spacedId(reference)}`
+  return `ORDER ID : ${spacedId(reference)}`
 }
 
 // Everything that differs between two units' papers. Pure, so the exact
