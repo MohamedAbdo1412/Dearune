@@ -12,6 +12,7 @@ touching the live archive. The admin session is faked by seeding
 | script | what it proves |
 | --- | --- |
 | `admin-mobile.mjs` | No page of the admin dashboard scrolls sideways at 320, 375 or 768 px — including the Operations table, the unit sheet, the hold dialog and the nav drawer. |
+| `pwa-install.mjs` | The built site is served the way Cloudflare serves it, and a real browser proves the manifest, the service worker at the site root, the untouched `/api/*`, deep links, and the install action (native prompt, dismissal, and the hand-written steps for a browser that never offers one). Needs `npm run build` first. |
 | `qa-scanner.mjs` | The QA desk writes nothing; the three identifiers are shown apart and copy correctly; the token is never rendered; every camera failure path says its own thing. |
 | `qa-real-qr.mjs` | A genuine Dearune QR (built with the same `qrcode` call and the same content format the printed paper uses) fed to Chromium's file-backed fake camera resolves to the right record — and so does the same QR uploaded as a picture. |
 | `admin-shots.mjs` | Regenerates the screenshots in `shots/admin/`. |

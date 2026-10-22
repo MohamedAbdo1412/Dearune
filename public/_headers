@@ -1,0 +1,16 @@
+# Cloudflare Workers static assets (wrangler.jsonc -> assets.directory: ./dist).
+# The manifest must arrive as a manifest, or Android refuses the install.
+# Vite fingerprints everything it writes to /assets, so those files are safe to
+# keep for a year; everything else keeps Cloudflare's default revalidation.
+/manifest.webmanifest
+  Content-Type: application/manifest+json
+  Cache-Control: public, max-age=0, must-revalidate
+
+/sw.js
+  Cache-Control: no-cache
+
+/registerSW.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

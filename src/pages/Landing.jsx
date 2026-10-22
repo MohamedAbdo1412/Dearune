@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, Menu, X } from 'lucide-react'
+import { InstallAppAction } from '@/components/install-app'
 import '@/styles/landing.css'
 
 const NAV = [
@@ -129,6 +130,7 @@ export function Landing() {
                 </a>
               </div>
               <p className="hero-note">Every Dearune is written by hand, one at a time.</p>
+              <InstallAppAction />
             </div>
 
             <figure className="hero-mount">

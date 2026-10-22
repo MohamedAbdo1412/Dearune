@@ -1,0 +1,15 @@
+i want a prompt for editing the pdf of production contents in dearune in operations
+opencode made a reconstruction of the pdf of my design changed the fonts changed the sizes of many things i dont want this all , all i want from him is to put the qr in the exactly dimnsion and size i tell him now and to change the text in the operation section without reconstructions or idiot problems he gives me ,
+the template pdf located in assets/productionDocuments
+the main messege body is w2481p and h3125.3p and starts at x = 0 , y = 0 and the operations section is w2481p and h381.7p and starts at x = 0 , y = 3125.3p&#x20;
+the qr located in x = 787.4 and y = 1142.6p and width = 906.2 h = 906.2 and with padding inside this box with 2 px with white background and the main color of the qr must be #342717
+this is the qr that should only be over written without complexity
+also the operations section has many texts we have talked about&#x20;
+&#x20; **DR70700897645**  and replace it with the new order id\
+14 September 2026 - 17:30 and replace it with the new date and time\
+mohamed saeed and replace it with the new designer name\
+01022869672 and replace it with designer number\
+666666 and replace it with the designer id &#x20;
+he must replace any of those without thinking much or without locating them exactly&#x20;
+no changing of the font no making problems no assembly then re assembly&#x20;
+write a prompt for open code to edit this operations pdf feature and to change it for this pipeline without any complex shitty
