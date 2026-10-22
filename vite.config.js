@@ -5,6 +5,8 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { defineConfig } from 'vite'
 
+import { DEARUNE_APPS } from './src/pwa/apps.js'
+
 const srcDir = fileURLToPath(new URL('./src', import.meta.url))
 
 // The Dearune brand colours, taken from the site's own tokens
@@ -12,6 +14,67 @@ const srcDir = fileURLToPath(new URL('./src', import.meta.url))
 // production/logo.png: warm paper, printer's ink.
 const DEARUNE_PAPER = '#fbf4e4'
 const DEARUNE_INK = '#32281e'
+
+// Which app the browser is looking at, and which manifest describes it.
+//
+// A document points at one manifest, and that manifest is what Chrome offers
+// to install. The three apps therefore take the manifest over while their
+// own section is open, and give the website's manifest back on the way out.
+//
+// This is decided by a small inline script that runs while the page is still
+// being parsed — before the app boots and before the browser has fetched any
+// manifest — so Chrome is never offered one app while another one is on the
+// screen. The list of sections is written here from the same registry the
+// site and the build script use, so it can never drift.
+function dearuneAppManifest() {
+  const apps = DEARUNE_APPS.map((app) => ({
+    id: app.id,
+    scope: app.scope,
+    manifest: app.manifestPath,
+  }))
+
+  const source = `(function () {
+  var apps = ${JSON.stringify(apps)};
+  var path = window.location.pathname;
+  var found = null;
+  for (var i = 0; i < apps.length; i++) {
+    var app = apps[i];
+    if (path === app.scope || path.indexOf(app.scope + '/') === 0) { found = app; break; }
+  }
+  document.documentElement.setAttribute('data-dearune-app', found ? found.id : '');
+  var link = document.querySelector('link[rel~="manifest"]');
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'manifest';
+    document.head.appendChild(link);
+  }
+  if (found && link.getAttribute('href') !== found.manifest) {
+    link.setAttribute('href', found.manifest);
+  }
+})();`
+
+  return {
+    name: 'dearune:app-manifest',
+    // After the PWA plugin, so the script lands after the manifest link it
+    // rewrites; and in the post group, so it is not turned into a module.
+    enforce: 'post',
+    transformIndexHtml: {
+      // The PWA plugin writes the manifest link with a post-ordered hook, so
+      // this one has to be post-ordered too — otherwise the script would run
+      // before the link exists and the page would end up with two manifests.
+      order: 'post',
+      handler() {
+        return [
+          {
+            tag: 'script',
+            children: source,
+            injectTo: 'head',
+          },
+        ]
+      },
+    },
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -110,6 +173,7 @@ export default defineConfig(({ mode }) => {
           ],
         },
       }),
+      dearuneAppManifest(),
     ],
     // The Bosta upload workbook is a real asset handed to the courier as-is;
     // without this Vite tries to parse its bytes as JavaScript.

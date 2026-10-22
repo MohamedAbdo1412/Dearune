@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Dearune">
+  <defs>
+    <radialGradient id="paper" cx="50%" cy="38%" r="78%">
+      <stop offset="0%" stop-color="#f8efdb"/>
+      <stop offset="100%" stop-color="#e6d4ae"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#paper)"/>
+  <rect x="24" y="24" width="464" height="464" rx="34" fill="none" stroke="#a27c3d" stroke-width="8"/>
+  <rect x="42" y="42" width="428" height="428" rx="24" fill="none" stroke="#32281e" stroke-width="3" opacity="0.28"/>
+  <g transform="translate(56 56) scale(4)">
+
+  <g fill="#32281e">
+    <rect x="10" y="13" width="80" height="17" rx="3"/>
+    <rect x="17" y="30" width="66" height="41" rx="3"/>
+  </g>
+  <rect x="43" y="13" width="14" height="58" fill="#7c3834"/>
+  <circle cx="50" cy="32" r="11" fill="#f1e3c4"/>
+  <circle cx="50" cy="32" r="11" fill="none" stroke="#32281e" stroke-width="2.4"/>
+  <g transform="translate(4 74)">
+    <rect x="0" y="0" width="22" height="22" rx="5" fill="#7c3834"/>
+    <g transform="translate(5 4)">
+      <path fill="#f1e3c4" fill-rule="evenodd" d="
+        M 0 0 H 5.2 C 9.4 0 12 2.8 12 7 C 12 11.2 9.4 14 5.2 14 H 0 Z
+        M 3.4 2.6 V 11.4 H 5 C 7.4 11.4 8.6 9.9 8.6 7 C 8.6 4.1 7.4 2.6 5 2.6 Z"/>
+    </g>
+  </g>
+  </g>
+</svg>

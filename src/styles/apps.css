@@ -1,0 +1,299 @@
+/* ==========================================================================
+   Dearune Apps — the launcher. The studio's three small apps, presented the
+   way Dearune presents everything else: a sheet of antique paper, ink rules,
+   a brass edge and a wine seal. Not a dashboard — a page of a book.
+   ========================================================================== */
+
+@import '@fontsource-variable/fraunces/wght.css';
+@import '@fontsource/eb-garamond/400.css';
+@import '@fontsource/eb-garamond/400-italic.css';
+
+.apps-page {
+  --paper-0: #fbf4e4;
+  --paper-1: #f6edda;
+  --paper-2: #efe2c6;
+  --paper-3: #e5d4b2;
+  --ink: #32281e;
+  --ink-soft: #5b4a3a;
+  --ink-faint: #6f5c46;
+  --brass: #a27c3d;
+  --brass-deep: #7c5c2a;
+  --wine: #7c3834;
+  --wine-deep: #5a241f;
+
+  --font-display: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+  --font-text: 'EB Garamond', Georgia, serif;
+
+  position: relative;
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: clamp(1.25rem, 3.5vw, 2.25rem) clamp(0.9rem, 3vw, 2rem) clamp(1.75rem, 4vw, 2.75rem);
+  color: var(--ink);
+  font-family: var(--font-text);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  overflow-wrap: break-word;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 16rem),
+    var(--paper-1);
+  border: 1px solid rgba(50, 40, 30, 0.16);
+  border-radius: 3px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.65) inset,
+    0 20px 44px -30px rgba(50, 40, 30, 0.55);
+}
+
+/* -------------------------------------------------------------- the header */
+
+.apps-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.9rem 1.15rem;
+  padding-bottom: 1.35rem;
+  border-bottom: 1px solid rgba(50, 40, 30, 0.2);
+}
+
+.apps-mark {
+  flex: none;
+  width: 60px;
+  height: 60px;
+  border-radius: 12px;
+  box-shadow: 0 10px 22px -14px rgba(50, 40, 30, 0.85);
+}
+
+.apps-headings {
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+.apps-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.85rem, 6vw, 2.6rem);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.012em;
+}
+
+.apps-lede {
+  margin: 0.5rem 0 0;
+  max-width: 48ch;
+  color: var(--ink-soft);
+  font-size: 1.06rem;
+}
+
+/* --------------------------------------------------------------- the cards */
+
+.apps-grid {
+  list-style: none;
+  margin: clamp(1.25rem, 3vw, 1.85rem) 0 0;
+  padding: 0;
+  display: grid;
+  gap: clamp(0.9rem, 2.4vw, 1.35rem);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 38rem) {
+  .apps-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 58rem) {
+  .apps-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.apps-card {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: clamp(1.1rem, 2.6vw, 1.4rem);
+  background: linear-gradient(180deg, var(--paper-0), var(--paper-1));
+  border: 1px solid rgba(50, 40, 30, 0.2);
+  border-radius: 3px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.75) inset,
+    0 16px 32px -28px rgba(50, 40, 30, 0.7);
+}
+
+/* The inner rule: the double border of a printed card. */
+.apps-card::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border: 1px solid rgba(162, 124, 61, 0.45);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.apps-card-icon {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 13px;
+  box-shadow: 0 10px 22px -14px rgba(50, 40, 30, 0.9);
+}
+
+.apps-card-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.apps-card-text {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 1rem;
+}
+
+.apps-card-route {
+  margin: 0;
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  font-size: 0.76rem;
+  letter-spacing: 0.03em;
+  color: var(--ink-faint);
+}
+
+.apps-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  margin-top: auto;
+  padding-top: 0.65rem;
+}
+
+/* -------------------------------------------------------------- the actions */
+
+.apps-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.58rem 0.95rem;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  font-family: var(--font-text);
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 0.22s ease,
+    border-color 0.22s ease,
+    color 0.22s ease,
+    transform 0.22s ease;
+}
+
+.apps-btn:focus-visible {
+  outline: 2px solid var(--brass-deep);
+  outline-offset: 2px;
+}
+
+.apps-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.apps-btn-ink {
+  background: var(--ink);
+  color: var(--paper-0);
+}
+
+.apps-btn-ink:hover,
+.apps-btn-ink:focus-visible {
+  background: var(--wine-deep);
+  color: var(--paper-0);
+}
+
+.apps-btn-wine {
+  background: transparent;
+  color: var(--wine);
+  border-color: rgba(124, 56, 52, 0.45);
+}
+
+.apps-btn-wine:hover,
+.apps-btn-wine:focus-visible {
+  background: var(--wine);
+  border-color: var(--wine);
+  color: var(--paper-0);
+}
+
+.apps-btn-quiet {
+  background: transparent;
+  color: var(--ink);
+  border-color: rgba(50, 40, 30, 0.25);
+  font-size: 0.92rem;
+  padding: 0.45rem 0.8rem;
+}
+
+.apps-btn-quiet:hover,
+.apps-btn-quiet:focus-visible {
+  border-color: var(--brass-deep);
+  color: var(--brass-deep);
+}
+
+.apps-installed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.94rem;
+  color: var(--wine);
+}
+
+/* ------------------------------------------------------ the install note */
+
+.apps-install {
+  width: 100%;
+}
+
+.apps-install-note {
+  margin-top: 0.7rem;
+  padding: 0.85rem 0.95rem 0.95rem;
+  background: rgba(124, 56, 52, 0.07);
+  border-left: 2px solid var(--wine);
+  border-radius: 2px;
+}
+
+.apps-install-lead {
+  margin: 0 0 0.5rem;
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+
+.apps-install-steps {
+  margin: 0 0 0.8rem;
+  padding-left: 1.15rem;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.97rem;
+}
+
+.apps-install-steps li::marker {
+  color: var(--wine);
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------- the foot */
+
+.apps-foot {
+  margin: clamp(1.5rem, 3.5vw, 2.1rem) 0 0;
+  padding-top: 1.15rem;
+  border-top: 1px solid rgba(50, 40, 30, 0.18);
+  max-width: 62ch;
+  color: var(--ink-faint);
+  font-style: italic;
+  font-size: 0.99rem;
+}

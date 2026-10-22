@@ -2,7 +2,13 @@
 # The manifest must arrive as a manifest, or Android refuses the install.
 # Vite fingerprints everything it writes to /assets, so those files are safe to
 # keep for a year; everything else keeps Cloudflare's default revalidation.
+
 /manifest.webmanifest
+  Content-Type: application/manifest+json
+  Cache-Control: public, max-age=0, must-revalidate
+
+# The three apps have their own manifests, and they are served the same way.
+/manifests/*.webmanifest
   Content-Type: application/manifest+json
   Cache-Control: public, max-age=0, must-revalidate
 
@@ -11,6 +17,22 @@
 
 /registerSW.js
   Cache-Control: public, max-age=0, must-revalidate
+
+# Each app's own worker, bound to its own section. The Service-Worker-Allowed
+# header is what lets a worker at the root of the site stand in front of one
+# section only; without it the browser would refuse the registration.
+# The workers are never cached, so a new deployment is picked up at once.
+/sw-qa.js
+  Cache-Control: no-cache
+  Service-Worker-Allowed: /admin/qa
+
+/sw-operations.js
+  Cache-Control: no-cache
+  Service-Worker-Allowed: /admin/operations
+
+/sw-designer.js
+  Cache-Control: no-cache
+  Service-Worker-Allowed: /admin/designers
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable

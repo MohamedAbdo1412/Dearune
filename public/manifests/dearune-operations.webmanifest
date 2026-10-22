@@ -1,0 +1,44 @@
+{
+  "id": "/admin/operations",
+  "name": "Dearune Operations",
+  "short_name": "Dearune Ops",
+  "description": "Manage orders, production stages, manufacturing information and operational documents.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "/admin/operations",
+  "scope": "/admin/operations",
+  "display": "standalone",
+  "background_color": "#fbf4e4",
+  "theme_color": "#32281e",
+  "categories": [
+    "business",
+    "productivity",
+    "utilities"
+  ],
+  "icons": [
+    {
+      "src": "/app-icons/dearune-operations-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/app-icons/dearune-operations-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/app-icons/dearune-operations-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/app-icons/dearune-operations-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

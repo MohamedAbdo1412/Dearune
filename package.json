@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "test": "vitest run",
     "preview": "vite preview",
-    "icons": "node scripts/generate-brand-icons.mjs"
+    "icons": "node scripts/generate-brand-icons.mjs",
+    "app-assets": "node scripts/generate-app-icons.mjs && node scripts/generate-app-pwa.mjs"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "^5.3.0",

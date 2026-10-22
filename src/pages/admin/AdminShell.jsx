@@ -12,6 +12,7 @@ import {
   Package,
   Factory,
   ScanLine,
+  Smartphone,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
@@ -20,6 +21,8 @@ import { cn } from '@/lib/utils'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { appForPath } from '@/pwa/apps'
+import { AppInstallPrompt } from '@/components/app-install'
 
 // The admin shell: the frame every admin screen sits in.
 //
@@ -30,6 +33,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 
 const NAV_ITEMS = [
   { to: '/admin/overview', label: 'Dashboard', icon: LayoutDashboard },
+  // The three installable apps. The section they open is the same section.
+  { to: '/admin/apps', label: 'Apps', icon: Smartphone },
   { to: '/admin/operations', label: 'Operations', icon: Factory },
   { to: '/admin/designers', label: 'Designers', icon: Users },
   { to: '/admin/templates', label: 'Templates', icon: Palette },
@@ -77,6 +82,7 @@ export function AdminShell() {
   const maintenance = Boolean(settings?.maintenance_mode)
 
   const current = NAV_ITEMS.find((item) => location.pathname.startsWith(item.to))
+  const currentApp = appForPath(location.pathname)
 
   return (
     <div className="flex min-h-screen flex-col bg-muted/40 lg:flex-row">
@@ -151,6 +157,9 @@ export function AdminShell() {
           </div>
         )}
         <main className="min-h-0 min-w-0 flex-1 p-4 md:p-6 lg:p-8">
+          {/* While the reader is inside one of the three apps, and the browser
+              is willing to install it, the offer appears here. */}
+          {currentApp ? <AppInstallPrompt app={currentApp} /> : null}
           <Outlet context={{ maintenance }} />
         </main>
       </div>
