@@ -103,8 +103,8 @@ export function Settings() {
           <CardDescription>These change what the studio, designers, and visitors can do right now.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
               <Label htmlFor="maint">Maintenance mode</Label>
               <p className="text-sm text-muted-foreground">
                 Pauses the studio. Blocks new sales, irreversible production steps, and designer publishing while active.
@@ -112,8 +112,8 @@ export function Settings() {
             </div>
             <Switch id="maint" checked={form.maintenanceMode} onCheckedChange={(v) => setForm({ ...form, maintenanceMode: v })} />
           </div>
-          <div className="flex items-center justify-between gap-4 border-t pt-6">
-            <div>
+          <div className="flex items-start justify-between gap-4 border-t pt-6">
+            <div className="min-w-0">
               <Label htmlFor="new-orders">Allow new orders</Label>
               <p className="text-sm text-muted-foreground">
                 When off, the admin can still work existing orders, but the front desk cannot record new sales.
@@ -132,8 +132,8 @@ export function Settings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="min-w-0">
               <Label htmlFor="storage-provider">Designer draft storage</Label>
               <p className="text-sm text-muted-foreground">
                 Supabase keeps drafts in the private <code>designer-drafts</code> bucket and hands out short-lived
@@ -142,7 +142,7 @@ export function Settings() {
               </p>
             </div>
             <Select value={form.storageProvider} onValueChange={(v) => setForm({ ...form, storageProvider: v })}>
-              <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
+              <SelectTrigger id="storage-provider" className="w-full sm:w-52"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="supabase">Supabase</SelectItem>
                 <SelectItem value="google_drive">Google Drive</SelectItem>

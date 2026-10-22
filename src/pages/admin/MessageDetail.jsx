@@ -306,9 +306,9 @@ export function MessageDetail() {
             {digital ? 'digital' : 'physical'}
             {' · handed over '}{formatDateTime(project.configured_at ?? project.submitted_at)}
           </p>
-          <p className="text-xs text-muted-foreground">receipt · {project.public_id}</p>
+          <p className="text-xs text-muted-foreground">receipt · <span className="break-all font-mono">{project.public_id}</span></p>
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:items-end">
           <DearuneActions project={project} maintenance={maintenance} onChanged={() => void reload()} detail catalog={catalog} />
           <Button size="sm" variant="outline" onClick={() => setShowLetter((v) => !v)}>
             <BookOpen className="size-4" />
@@ -426,21 +426,21 @@ export function MessageDetail() {
             <CardDescription>Opening starts the two-year reading window; closing and reopening never resets it.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">State</span>
-              <span className="font-medium">{project.message_active ? 'Open' : 'Sealed'}</span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="shrink-0 text-muted-foreground">State</span>
+              <span className="min-w-0 text-right font-medium">{project.message_active ? 'Open' : 'Sealed'}</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">First opened</span>
-              <span>{project.first_activated_at ? formatDateTime(project.first_activated_at) : 'never'}</span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="shrink-0 text-muted-foreground">First opened</span>
+              <span className="min-w-0 break-words text-right">{project.first_activated_at ? formatDateTime(project.first_activated_at) : 'never'}</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Reads until</span>
-              <span>{expiresAt ? formatDate(expiresAt) : '—'}</span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="shrink-0 text-muted-foreground">Reads until</span>
+              <span className="min-w-0 break-words text-right">{expiresAt ? formatDate(expiresAt) : '—'}</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Terms accepted</span>
-              <span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="shrink-0 text-muted-foreground">Terms accepted</span>
+              <span className="min-w-0 break-words text-right">
                 {project.policies_accepted_at ? `${project.policy_version || 'version unknown'} · ${formatDate(project.policies_accepted_at)}` : '—'}
               </span>
             </div>

@@ -226,8 +226,8 @@ export function SaleDetail() {
 function Row({ label, value }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right">{value}</span>
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="min-w-0 break-words text-right">{value}</span>
     </div>
   )
 }

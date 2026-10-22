@@ -296,7 +296,7 @@ export function Operations() {
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-1 flex-wrap items-center gap-2">
-          <div className="relative min-w-56 flex-1 lg:max-w-72">
+          <div className="relative w-full sm:min-w-56 sm:flex-1 lg:max-w-72">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search id, Sold As, customer, designer…"
@@ -307,7 +307,7 @@ export function Operations() {
           </div>
 
           <Select value={sortKey} onValueChange={setSortKey}>
-            <SelectTrigger className="w-44">
+            <SelectTrigger className="w-full sm:w-44">
               <SelectValue placeholder="Sort" />
             </SelectTrigger>
             <SelectContent>
@@ -320,7 +320,7 @@ export function Operations() {
           </Select>
 
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-52">
+            <SelectTrigger className="w-full sm:w-52">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
@@ -351,7 +351,7 @@ export function Operations() {
           <span className="text-sm text-muted-foreground">
             {selectedRows.length} selected
           </span>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
             {showArchived && selectedRows.some((row) => row.archived) && (
               <Button size="sm" variant="outline" disabled={bulkBusy || maintenance} onClick={() => void restoreSelected()}>
                 {bulkBusy ? <Loader2Icon className="size-4 animate-spin" /> : <Undo2 className="size-4" />}
@@ -397,74 +397,48 @@ export function Operations() {
               </p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">
+            <>
+              {/* On a phone the table would need a sideways scroll to be read,
+                  so the same rows are laid out as cards instead. */}
+              <div className="space-y-2 md:hidden">
+                <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Checkbox
                       checked={allSelected}
                       onCheckedChange={toggleAll}
                       aria-label="Select every visible unit"
                     />
-                  </TableHead>
-                  <TableHead>Unit</TableHead>
-                  <TableHead className="hidden md:table-cell">Customer</TableHead>
-                  <TableHead className="hidden lg:table-cell">Designer</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="hidden sm:table-cell">Updated</TableHead>
-                  <TableHead className="w-12" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+                    Select all
+                  </label>
+                  <span className="text-xs text-muted-foreground">{selectedRows.length} selected</span>
+                </div>
                 {visible.map((row) => {
                   const next = nextOperationsStatus(row.status)
                   return (
-                    <TableRow key={row.id} data-state={selected.has(row.id) ? 'selected' : undefined}>
-                      <TableCell>
+                    <div key={row.id} className="rounded-lg border bg-background p-3">
+                      <div className="flex items-start gap-3">
                         <Checkbox
                           checked={selected.has(row.id)}
                           onCheckedChange={() => toggle(row.id)}
                           aria-label={`Select ${row.reference}`}
+                          className="mt-1"
                         />
-                      </TableCell>
-                      <TableCell>
-                        <button
-                          type="button"
-                          onClick={() => void openDetail(row)}
-                          className="text-left"
-                          aria-label={`Open ${row.reference}`}
-                        >
-                          <span className="block font-mono text-sm">{row.reference}</span>
-                          <span className="block text-xs text-muted-foreground">
-                            {row.soldAs}
-                            {' · '}unit {row.unitIndex}
-                            {row.archived ? ' · archived' : ''}
-                          </span>
-                        </button>
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell">
-                        <span className="block truncate text-sm">{row.recipientName || '—'}</span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {row.customerPhone || 'no number on file'}
-                        </span>
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell">
-                        <span className="block truncate text-sm">{row.designerName || '—'}</span>
-                        <span className="block truncate text-xs text-muted-foreground">{row.designerCode}</span>
-                      </TableCell>
-                      <TableCell>
-                        <OperationsBadge status={row.status} label={OPERATIONS_STATUS_SHORT[row.status] ?? row.status} />
-                        {row.status === 'on_hold' && row.onHoldReason && (
-                          <span className="mt-1 block max-w-56 truncate text-xs text-muted-foreground">
-                            {row.onHoldReason}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="hidden text-xs tabular-nums text-muted-foreground sm:table-cell">
-                        {formatDateTime(row.updatedAt)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={() => void openDetail(row)}
+                            className="block w-full text-left"
+                            aria-label={`Open ${row.reference}`}
+                          >
+                            <span className="block break-all font-mono text-sm">{row.reference}</span>
+                            <span className="mt-0.5 block text-xs text-muted-foreground">
+                              {row.soldAs}
+                              {' · '}unit {row.unitIndex}
+                              {row.archived ? ' · archived' : ''}
+                            </span>
+                          </button>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
                           {next && !row.archived && !isOperationsTerminal(row.status) && (
                             <Button
                               size="sm"
@@ -491,12 +465,137 @@ export function Operations() {
                             <span className="sr-only">Open unit</span>
                           </Button>
                         </div>
-                      </TableCell>
-                    </TableRow>
+                      </div>
+
+                      <div className="mt-2 space-y-1.5 border-t pt-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <OperationsBadge status={row.status} label={OPERATIONS_STATUS_SHORT[row.status] ?? row.status} />
+                          <span className="text-xs text-muted-foreground">updated {formatDateTime(row.updatedAt)}</span>
+                        </div>
+                        {row.status === 'on_hold' && row.onHoldReason && (
+                          <p className="text-xs text-muted-foreground">{row.onHoldReason}</p>
+                        )}
+                        <p className="min-w-0 break-words text-sm">
+                          <span className="text-muted-foreground">Customer · </span>
+                          {row.recipientName || '—'}
+                          <span className="block text-xs text-muted-foreground">
+                            {row.customerPhone || 'no number on file'}
+                          </span>
+                        </p>
+                        <p className="min-w-0 break-words text-sm">
+                          <span className="text-muted-foreground">Designer · </span>
+                          {row.designerName || '—'}
+                          <span className="block text-xs text-muted-foreground">{row.designerCode}</span>
+                        </p>
+                      </div>
+                    </div>
                   )
                 })}
-              </TableBody>
-            </Table>
+              </div>
+
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={allSelected}
+                          onCheckedChange={toggleAll}
+                          aria-label="Select every visible unit"
+                        />
+                      </TableHead>
+                      <TableHead>Unit</TableHead>
+                      <TableHead className="hidden md:table-cell">Customer</TableHead>
+                      <TableHead className="hidden lg:table-cell">Designer</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="hidden sm:table-cell">Updated</TableHead>
+                      <TableHead className="w-12" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visible.map((row) => {
+                      const next = nextOperationsStatus(row.status)
+                      return (
+                        <TableRow key={row.id} data-state={selected.has(row.id) ? 'selected' : undefined}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selected.has(row.id)}
+                              onCheckedChange={() => toggle(row.id)}
+                              aria-label={`Select ${row.reference}`}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <button
+                              type="button"
+                              onClick={() => void openDetail(row)}
+                              className="text-left"
+                              aria-label={`Open ${row.reference}`}
+                            >
+                              <span className="block font-mono text-sm">{row.reference}</span>
+                              <span className="block text-xs text-muted-foreground">
+                                {row.soldAs}
+                                {' · '}unit {row.unitIndex}
+                                {row.archived ? ' · archived' : ''}
+                              </span>
+                            </button>
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            <span className="block truncate text-sm">{row.recipientName || '—'}</span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {row.customerPhone || 'no number on file'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            <span className="block truncate text-sm">{row.designerName || '—'}</span>
+                            <span className="block truncate text-xs text-muted-foreground">{row.designerCode}</span>
+                          </TableCell>
+                          <TableCell>
+                            <OperationsBadge status={row.status} label={OPERATIONS_STATUS_SHORT[row.status] ?? row.status} />
+                            {row.status === 'on_hold' && row.onHoldReason && (
+                              <span className="mt-1 block max-w-56 truncate text-xs text-muted-foreground">
+                                {row.onHoldReason}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden text-xs tabular-nums text-muted-foreground sm:table-cell">
+                            {formatDateTime(row.updatedAt)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-end gap-1">
+                              {next && !row.archived && !isOperationsTerminal(row.status) && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={actingId === row.id || maintenance}
+                                  onClick={() => void advance(row)}
+                                  title={`Move to ${OPERATIONS_STATUS_LABELS[next]}`}
+                                >
+                                  {actingId === row.id ? (
+                                    <Loader2Icon className="size-4 animate-spin" />
+                                  ) : (
+                                    <PlayCircle className="size-4" />
+                                  )}
+                                  <span className="sr-only">{`Move to ${OPERATIONS_STATUS_LABELS[next]}`}</span>
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                title="Open unit"
+                                onClick={() => void openDetail(row)}
+                              >
+                                <ChevronRight className="size-4" />
+                                <span className="sr-only">Open unit</span>
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

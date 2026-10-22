@@ -20,9 +20,9 @@ export function DearuneList({ projects, catalog, maintenance, onChanged, basePat
       {projects.map((project) => (
         <div
           key={project.id}
-          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2.5 transition-colors hover:border-primary/40"
+          className="flex flex-col gap-2 rounded-lg border bg-background px-3 py-2.5 transition-colors hover:border-primary/40 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
         >
-          <Link to={`${basePath}/${project.id}`} className="flex min-w-0 flex-1 items-center gap-2">
+          <Link to={`${basePath}/${project.id}`} className="flex min-w-0 items-center gap-2">
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">
                 <span className="font-mono text-xs text-muted-foreground">{project.reference ?? project.id.slice(0, 8)}</span>
@@ -40,7 +40,7 @@ export function DearuneList({ projects, catalog, maintenance, onChanged, basePat
             <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
           </Link>
 
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:shrink-0 sm:justify-end">
             <span className="hidden text-xs tabular-nums text-muted-foreground sm:block">
               {project.paid_at ? formatMoney(project.sale_price, project.currency ?? 'EGP') : 'not sold'}
             </span>

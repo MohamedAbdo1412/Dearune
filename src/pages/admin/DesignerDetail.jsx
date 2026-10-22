@@ -113,8 +113,8 @@ export function DesignerDetail() {
           <Link to="/admin/designers" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft className="size-4" /> Designers
           </Link>
-          <h1 className="mt-1 flex items-center gap-3 font-heading text-2xl">
-            {designer.name}
+          <h1 className="mt-1 flex flex-wrap items-center gap-3 font-heading text-2xl">
+            <span className="break-words">{designer.name}</span>
             <code className="rounded bg-muted px-2 py-0.5 font-mono text-sm">{designer.code}</code>
             {designer.revoked_at ? <Badge variant="destructive">Revoked</Badge> : <Badge variant="outline" className="text-emerald-700 dark:text-emerald-400">Active</Badge>}
           </h1>
@@ -122,7 +122,7 @@ export function DesignerDetail() {
             Joined {formatDateTime(designer.created_at)} · {designer.last_login_at ? `last seen ${formatDateTime(designer.last_login_at)}` : 'never signed in'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" variant="outline" disabled={acting} onClick={() => void act('reset-passcode')}>
             {acting ? <Loader2Icon className="size-4 animate-spin" /> : <RotateCcw className="size-4" />} Reset passcode
           </Button>
@@ -138,7 +138,7 @@ export function DesignerDetail() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Card>
           <CardContent className="py-4">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Dearunes</p>

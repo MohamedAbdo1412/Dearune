@@ -249,7 +249,7 @@ export function Wrappers() {
             return (
               <Card key={key} className={row.active ? '' : 'opacity-70'}>
                 <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <CardTitle className="flex items-center gap-2 font-heading text-lg">
                         <span className="truncate">{row.name}</span>
@@ -258,7 +258,7 @@ export function Wrappers() {
                       <CardDescription className="font-mono text-xs">{row.key}</CardDescription>
                       <p className="mt-1 text-[11px] text-muted-foreground">{getCatalogItemState(row).summary}</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-2">
                       <span className="text-xs text-muted-foreground">{row.active ? 'Enabled' : 'Hidden'}</span>
                       <Switch
                         checked={row.active}
@@ -363,8 +363,8 @@ export function Wrappers() {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between">
-                    <p className="text-[11px] text-muted-foreground">Prices here are the fallback; Templates can override per paper.</p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="min-w-0 text-[11px] text-muted-foreground">Prices here are the fallback; Templates can override per paper.</p>
                     <Button size="sm" variant="outline" disabled={busy || maintenance} onClick={() => void save(row)}>
                       {busy ? <Loader2Icon className="size-4 animate-spin" /> : <Save className="size-4" />}
                       Save

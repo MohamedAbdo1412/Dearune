@@ -98,7 +98,7 @@ export function Overview() {
             {templateCount !== null ? ` · ${templateCount} ${templateCount === 1 ? 'paper' : 'papers'}` : ''}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Link to="/admin/designers">
             <Button variant="outline" size="sm">
               <Users className="size-4" />
@@ -174,16 +174,16 @@ export function Overview() {
                 <Link
                   key={p.id}
                   to={`/admin/designers/${p.designer_id}/messages/${p.id}`}
-                  className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2.5 transition-colors hover:border-primary/40"
+                  className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg border bg-background px-3 py-2.5 transition-colors hover:border-primary/40"
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
                       <span className="font-mono text-xs text-muted-foreground">{p.reference ?? p.id.slice(0, 8)}</span>
                       {' · '}{p.title || 'Untitled'}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">{formatDateTime(p.created_at)}</p>
                   </div>
-                  <div className="flex shrink-0 items-center gap-3">
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
                     <span className="text-xs tabular-nums text-muted-foreground">{p.paid_at ? formatMoney(p.sale_price, p.currency ?? 'EGP') : 'not sold'}</span>
                     <ProjectBadge project={p} />
                     <ArrowUpRight className="size-4 text-muted-foreground" />

@@ -161,7 +161,7 @@ export function SoldLogs() {
                       {sale.legacy_order_id && !snapshot.reference ? ' · legacy order' : ''}
                     </p>
                   </div>
-                  <div className="flex shrink-0 items-center gap-3">
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
                     <span className={`text-sm tabular-nums ${sale.status === 'voided' ? 'text-muted-foreground line-through' : 'font-medium'}`}>
                       {formatMoney(sale.selling_price, sale.currency)}
                     </span>

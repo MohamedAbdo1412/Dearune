@@ -15,6 +15,7 @@ import { Templates } from '@/pages/admin/Templates'
 import { Wrappers } from '@/pages/admin/Wrappers'
 import { Settings } from '@/pages/admin/Settings'
 import { Operations } from '@/pages/admin/Operations'
+import { QaScanner } from '@/pages/admin/QaScanner'
 import { NotFound } from '@/pages/NotFound'
 import { MemorialQa } from '@/pages/QaMemorial'
 import { CatalogQa } from '@/pages/QaCatalog'
@@ -116,6 +117,9 @@ export default function App() {
         <Route path="sold" element={<SoldLogs />} />
         <Route path="sold/:saleId" element={<SaleDetail />} />
         <Route path="operations" element={<Operations />} />
+        {/* The QA desk — the admin-only scanner. The public /qa/* benches above
+            are visual pages and stay out of the admin menu. */}
+        <Route path="qa" element={<QaScanner />} />
         <Route
           path="operations/print"
           element={

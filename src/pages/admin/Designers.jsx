@@ -36,9 +36,9 @@ function CopyField({ label, value }) {
   }
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/40 px-3 py-2">
-      <div>
+      <div className="min-w-0">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="font-mono text-sm">{value}</p>
+        <p className="break-all font-mono text-sm">{value}</p>
       </div>
       <Button variant="ghost" size="icon" onClick={() => void copy()}>
         {copied ? <Check className="size-4 text-emerald-600" /> : <Copy className="size-4" />}
@@ -232,8 +232,8 @@ export function Designers() {
       </div>
 
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <Tabs value={stage} onValueChange={setStage}>
-          <TabsList className="flex-wrap">
+        <Tabs value={stage} onValueChange={setStage} className="min-w-0 overflow-x-auto">
+          <TabsList className="w-max">
             {STAGE_TABS.map((value) => (
               <TabsTrigger key={value} value={value} className="capitalize">
                 {value === 'all' ? 'All' : PROJECT_STAGE_LABELS[value]}
@@ -297,7 +297,7 @@ export function Designers() {
                       </div>
                     </button>
 
-                    <div className="flex shrink-0 items-center gap-1">
+                    <div className="flex w-full shrink-0 flex-wrap items-center gap-1 sm:w-auto">
                       {d.revoked_at ? <Badge variant="destructive">Revoked</Badge> : <Badge variant="outline" className="text-emerald-700 dark:text-emerald-400">Active</Badge>}
                       <Button asChild size="sm" variant="ghost" title="Open designer page">
                         <Link to={`/admin/designers/${d.id}`}>Open</Link>

@@ -228,7 +228,7 @@ export function Templates() {
                       onValueChange={(value) => void saveTemplateRow(t, { display_state: value })}
                       disabled={maintenance || savingTemplateId === t.id}
                     >
-                      <SelectTrigger className="h-8 w-[172px] text-xs" aria-label={`Display state for ${t.name}`}>
+                      <SelectTrigger className="h-8 w-full text-xs sm:w-[172px]" aria-label={`Display state for ${t.name}`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -239,14 +239,14 @@ export function Templates() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <Label htmlFor={`order-${t.id}`} className="text-xs text-muted-foreground">
                         Order
                       </Label>
                       <Input
                         id={`order-${t.id}`}
                         type="number"
-                        className="h-8 w-16 text-xs"
+                        className="h-8 w-20 text-xs"
                         value={orderDraft[t.id] ?? ''}
                         disabled={maintenance}
                         onChange={(e) => setOrderDraft((current) => ({ ...current, [t.id]: e.target.value }))}
@@ -336,12 +336,12 @@ export function Templates() {
                             <p className="text-[10px] text-muted-foreground">empty = base {Number(wrapper.production_cost ?? 0)}</p>
                           </div>
 
-                          <div className="text-right">
+                          <div className="text-left md:text-right">
                             <p className="text-sm font-semibold tabular-nums">{value.enabled ? `${price} ${currency}` : '—'}</p>
                             <p className="text-[10px] text-muted-foreground">{value.enabled ? `margin ${margin}%` : 'not offered'}</p>
                           </div>
 
-                          <div className="flex justify-end">
+                          <div className="flex justify-start md:justify-end">
                             <Button
                               size="sm"
                               variant="outline"
