@@ -16,9 +16,23 @@ import { Wrappers } from '@/pages/admin/Wrappers'
 import { Settings } from '@/pages/admin/Settings'
 import { Operations } from '@/pages/admin/Operations'
 import { QaScanner } from '@/pages/admin/QaScanner'
+import { Users } from '@/pages/admin/Users'
+import { UserDetail } from '@/pages/admin/UserDetail'
+import { Inbox } from '@/pages/admin/Inbox'
+import { Financial } from '@/pages/admin/Financial'
 import { NotFound } from '@/pages/NotFound'
 import { MemorialQa } from '@/pages/QaMemorial'
 import { CatalogQa } from '@/pages/QaCatalog'
+import { WorkerGate } from '@/pages/worker/WorkerGate'
+import { WorkerPermissionGate } from '@/pages/worker/WorkerAccessDenied'
+import { WorkerLogin } from '@/pages/worker/WorkerLogin'
+import { WorkerHome } from '@/pages/worker/WorkerHome'
+import { WorkerOperations } from '@/pages/worker/WorkerOperations'
+import { WorkerDesigners } from '@/pages/worker/WorkerDesigners'
+import { WorkerQa } from '@/pages/worker/WorkerQa'
+import { WorkerFinancial } from '@/pages/worker/WorkerFinancial'
+import { WorkerMessages } from '@/pages/worker/WorkerMessages'
+import { WorkerAccount } from '@/pages/worker/WorkerAccount'
 import { syncAppForPath } from '@/pwa/app-runtime'
 
 const CreateBook = lazy(() => import('@/pages/create/CreateBook'))
@@ -56,12 +70,25 @@ function RequireAdmin({ children }) {
         setState('denied')
         return
       }
-      const { data: row } = await db
-        .from('admin_users')
-        .select('id')
-        .eq('id', data.session.user.id)
-        .maybeSingle()
-      if (active) setState(row ? 'ok' : 'denied')
+      const userId = data.session.user.id
+      const [adminResult, workerResult] = await Promise.all([
+        db.from('admin_users').select('id').eq('id', userId).maybeSingle(),
+        db.from('workers').select('id, status').eq('id', userId).maybeSingle(),
+      ])
+      if (!active) return
+      if (adminResult.data) {
+        setState('ok')
+        return
+      }
+      if (workerResult.data?.status === 'active') {
+        setState('worker')
+        return
+      }
+      if (workerResult.data && workerResult.data.status !== 'active') {
+        setState('denied')
+        return
+      }
+      setState('denied')
     }
     void check()
     const sub = db?.auth.onAuthStateChange(() => {
@@ -79,6 +106,9 @@ function RequireAdmin({ children }) {
         Checking session…
       </div>
     )
+  }
+  if (state === 'worker') {
+    return <Navigate to="/worker/home" replace />
   }
   if (state === 'denied') {
     return <Navigate to="/admin/login" replace state={{ from: location.pathname }} />
@@ -168,6 +198,50 @@ export default function App() {
           }
         />
         <Route path="settings" element={<Settings />} />
+        <Route path="users" element={<Users />} />
+        <Route path="users/:workerId" element={<UserDetail />} />
+        <Route path="inbox" element={<Inbox />} />
+        <Route path="inbox/:workerId" element={<Inbox />} />
+        <Route path="financial" element={<Financial />} />
+      </Route>
+      <Route path="/worker/login" element={<WorkerLogin />} />
+      <Route path="/worker" element={<WorkerGate />}>
+        <Route index element={<Navigate to="/worker/home" replace />} />
+        <Route path="home" element={<WorkerHome />} />
+        <Route
+          path="operations"
+          element={
+            <WorkerPermissionGate permission="operations.view">
+              <WorkerOperations />
+            </WorkerPermissionGate>
+          }
+        />
+        <Route
+          path="designers"
+          element={
+            <WorkerPermissionGate permission="designers.view">
+              <WorkerDesigners />
+            </WorkerPermissionGate>
+          }
+        />
+        <Route
+          path="qa"
+          element={
+            <WorkerPermissionGate permission="qa.view">
+              <WorkerQa />
+            </WorkerPermissionGate>
+          }
+        />
+        <Route
+          path="financial"
+          element={
+            <WorkerPermissionGate permission="financial.view">
+              <WorkerFinancial />
+            </WorkerPermissionGate>
+          }
+        />
+        <Route path="messages" element={<WorkerMessages />} />
+        <Route path="account" element={<WorkerAccount />} />
       </Route>
       <Route path="*" element={<NotFound />} />
       </Routes>

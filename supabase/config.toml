@@ -39,3 +39,9 @@ verify_jwt = false
 
 [functions.admin-operations]
 verify_jwt = false
+
+[functions.admin-workers]
+verify_jwt = false
+
+[functions.worker-designers]
+verify_jwt = false

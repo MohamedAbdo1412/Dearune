@@ -42,13 +42,17 @@ export async function requireDesigner(req: Request): Promise<{ designerId: strin
   return designer
 }
 
-export async function requireAdmin(req: Request): Promise<{ id: string } | null> {
+/**
+ * Resolve the authenticated Supabase user id from the bearer token.
+ *
+ * supabase-js's getUser() fails inside the edge runtime (the response is not
+ * JSON), so callers use a raw fetch against /auth/v1/user with the injected
+ * anon key. Every privileged function goes through this exact check.
+ */
+async function sessionUserId(req: Request): Promise<string | null> {
   const token = bearerToken(req)
   if (!token) return null
   const url = requireEnv('SUPABASE_URL')
-  // Verify the session by calling the Auth service directly. supabase-js's
-  // getUser() fails inside the edge runtime (the response is not JSON), so we
-  // use a raw fetch against /auth/v1/user with the injected anon key.
   const res = await fetch(`${url}/auth/v1/user`, {
     headers: { apikey: requireEnv('SUPABASE_ANON_KEY'), authorization: `Bearer ${token}` },
   })
@@ -59,10 +63,66 @@ export async function requireAdmin(req: Request): Promise<{ id: string } | null>
   } catch {
     return null
   }
-  if (!payload?.id) return null
-  const { data: adminRow } = await adminClient().from('admin_users').select('id').eq('id', payload.id).maybeSingle()
+  return payload?.id ?? null
+}
+
+export async function requireAdmin(req: Request): Promise<{ id: string } | null> {
+  const id = await sessionUserId(req)
+  if (!id) return null
+  const { data: adminRow } = await adminClient().from('admin_users').select('id').eq('id', id).maybeSingle()
   if (!adminRow) return null
-  return { id: payload.id }
+  return { id }
+}
+
+export type WorkerContext = {
+  id: string
+  email: string
+  displayName: string
+  permissions: string[]
+}
+
+/**
+ * Resolve a worker and (optionally) require one permission.
+ *
+ * This is deliberately a live lookup: the worker row's status and the
+ * permission rows are read on every call, so suspending an account or
+ * revoking a permission takes effect immediately. It fails closed (null) for
+ * a missing worker, an inactive/suspended account, a missing permission, or
+ * any error while reading either table. A worker is never treated as an
+ * administrator here; admins use `requireAdmin`.
+ */
+export async function requireWorker(req: Request, permission?: string): Promise<WorkerContext | null> {
+  const id = await sessionUserId(req)
+  if (!id) return null
+
+  try {
+    const sb = adminClient()
+    const { data: worker, error } = await sb
+      .from('workers')
+      .select('id, email, display_name, status')
+      .eq('id', id)
+      .maybeSingle()
+    if (error || !worker || worker.status !== 'active') return null
+
+    const { data: rows, error: permError } = await sb
+      .from('worker_permissions')
+      .select('permission_id')
+      .eq('worker_id', id)
+    if (permError) return null
+
+    const permissions = (rows ?? []).map((row) => String(row.permission_id))
+    if (permission && !permissions.includes(permission)) return null
+
+    return {
+      id: String(worker.id),
+      email: String(worker.email ?? ''),
+      displayName: String(worker.display_name ?? ''),
+      permissions,
+    }
+  } catch {
+    // Fail closed: an unexpected error is never a reason to grant access.
+    return null
+  }
 }
 
 export async function requireAdminOrDesigner(req: Request): Promise<{ role: 'admin'; adminId: string } | { role: 'designer'; designerId: string; code: string } | null> {

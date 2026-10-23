@@ -4,6 +4,7 @@ import {
   ReceiptText,
   Settings2,
   Users,
+  UsersRound,
   LogOut,
   Wrench,
   LayoutDashboard,
@@ -13,12 +14,16 @@ import {
   Factory,
   ScanLine,
   Smartphone,
+  MessageCircle,
+  Wallet,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { Brand } from '@/components/brand'
 import { cn } from '@/lib/utils'
 import { useAppSettings } from '@/hooks/use-app-settings'
+import { useAdminInboxUnread } from '@/hooks/use-admin-inbox-unread'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { appForPath } from '@/pwa/apps'
@@ -40,16 +45,19 @@ const NAV_ITEMS = [
   { to: '/admin/templates', label: 'Templates', icon: Palette },
   { to: '/admin/wrappers', label: 'Wrappers', icon: Package },
   { to: '/admin/sold', label: 'Sold Logs', icon: ReceiptText },
+  { to: '/admin/financial', label: 'Financial', icon: Wallet },
   { to: '/admin/qa', label: 'QA', icon: ScanLine },
+  { to: '/admin/users', label: 'Users', icon: UsersRound },
+  { to: '/admin/inbox', label: 'Inbox', icon: MessageCircle, badge: 'inbox' },
   { to: '/admin/settings', label: 'Settings', icon: Settings2 },
 ]
 
-function NavLinks({ onNavigate }) {
+function NavLinks({ onNavigate, inboxCount }) {
   return (
     <nav className="flex flex-col gap-1">
       {NAV_ITEMS.map((item) => (
         <NavLink
-          key={item.label}
+          key={item.to}
           to={item.to}
           onClick={onNavigate}
           className={({ isActive }) =>
@@ -60,7 +68,13 @@ function NavLinks({ onNavigate }) {
           }
         >
           <item.icon className="size-4 shrink-0" />
-          {item.label}
+          <span className="flex-1">{item.label}</span>
+          {item.badge === 'inbox' && inboxCount > 0 ? (
+            <Badge className="h-5 min-w-5 justify-center rounded-full bg-primary px-1.5 text-[0.62rem] text-primary-foreground">
+              {inboxCount > 99 ? '99+' : inboxCount}
+              <span className="sr-only"> unread</span>
+            </Badge>
+          ) : null}
         </NavLink>
       ))}
     </nav>
@@ -72,6 +86,7 @@ export function AdminShell() {
   const location = useLocation()
   const { settings } = useAppSettings()
   const [menuOpen, setMenuOpen] = useState(false)
+  const { count: inboxCount } = useAdminInboxUnread()
 
   const signOut = async () => {
     if (supabase) await supabase.auth.signOut()
@@ -93,8 +108,8 @@ export function AdminShell() {
           <p className="mt-1 px-0.5 text-xs uppercase tracking-[0.2em] text-muted-foreground">Admin</p>
         </div>
 
-        <div className="mt-8 flex flex-1 flex-col">
-          <NavLinks />
+        <div className="mt-8 flex flex-1 flex-col overflow-y-auto">
+          <NavLinks inboxCount={inboxCount} />
         </div>
 
         <div className="border-t pt-4">
@@ -124,7 +139,7 @@ export function AdminShell() {
             </SheetHeader>
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
               <p className="mb-3 px-0.5 text-xs uppercase tracking-[0.2em] text-muted-foreground">Admin</p>
-              <NavLinks onNavigate={() => setMenuOpen(false)} />
+              <NavLinks inboxCount={inboxCount} onNavigate={() => setMenuOpen(false)} />
               <div className="mt-auto border-t pt-4">
                 <button
                   onClick={() => void signOut()}

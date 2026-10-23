@@ -31,6 +31,28 @@ export function AdminLogin() {
       if (error) throw error
       const { data: row } = await supabase.from('admin_users').select('id, display_name').eq('id', data.user.id).maybeSingle()
       if (!row) {
+        // An authenticated non-admin could be a worker. Send workers to the
+        // Worker Dashboard instead of bouncing them to a dead admin session.
+        const { data: worker } = await supabase
+          .from('workers')
+          .select('id, status')
+          .eq('id', data.user.id)
+          .maybeSingle()
+        if (worker && worker.status === 'active') {
+          toast.info('Signing in to the Worker Dashboard')
+          navigate('/worker/home', { replace: true })
+          return
+        }
+        if (worker && worker.status === 'suspended') {
+          await supabase.auth.signOut()
+          toast.error('This worker account is suspended. Ask your studio administrator to reactivate it.')
+          return
+        }
+        if (worker && worker.status !== 'active') {
+          await supabase.auth.signOut()
+          toast.error('This worker account is inactive. Ask your studio administrator to reactivate it.')
+          return
+        }
         await supabase.auth.signOut()
         toast.error('This account is not an administrator')
         return
