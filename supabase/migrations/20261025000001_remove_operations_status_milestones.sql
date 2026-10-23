@@ -20,7 +20,7 @@ do $$
 declare
   r record;
 begin
-  for r in select pp.id, pp.status, pp.project_id, p.paid_at, p.manufactured_at, p.shipped_at, p.arrived_at
+  for r in select pp.id, pp.status, pp.project_id, pp.updated_at, p.paid_at, p.manufactured_at, p.shipped_at, p.arrived_at
            from public.physical_products pp
            join public.projects p on p.id = pp.project_id
   loop
