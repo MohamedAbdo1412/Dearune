@@ -38,14 +38,16 @@ import {
   OPERATIONS_STATUS_SHORT,
   nextOperationsStatus,
 } from '@/services/constants'
-import {
+import { 
   archiveWorkerOperations,
   ensureWorkerOperations,
   fetchWorkerOperations,
   setWorkerOperationStatus,
   updateWorkerOperation,
   updateWorkerOperationContact,
+  updateWorkerOperationDesigner,
 } from '@/services/workerOperations'
+import { fetchWorkerDesigners } from '@/services/workerDesigners'
 
 const ALL = 'all'
 
@@ -130,8 +132,8 @@ export function WorkerOperations() {
   const canCreate = hasPermission(permissions, 'operations.create')
   const canAssign = hasPermission(permissions, 'operations.assign') || hasPermission(permissions, 'operations.edit')
   const canViewDetails = hasPermission(permissions, 'operations.view_details') || hasPermission(permissions, 'operations.view')
-  const _canPrint = hasPermission(permissions, 'operations.print')
-  const _canExport = hasPermission(permissions, 'operations.export')
+  const canPrint = hasPermission(permissions, 'operations.print')
+  const canExport = hasPermission(permissions, 'operations.export')
 
   const [rows, setRows] = useState(null)
   const [error, setError] = useState('')
@@ -147,6 +149,9 @@ export function WorkerOperations() {
   const [phone, setPhone] = useState('')
   const [holdReason, setHoldReason] = useState('')
   const [cancelReason, setCancelReason] = useState('')
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [designers, setDesigners] = useState([])
+  const [designerId, setDesignerId] = useState('')
 
   const load = useCallback(async () => {
     setError('')
@@ -291,6 +296,7 @@ export function WorkerOperations() {
   }
 
   const addUnit = async (row) => {
+    if (!canCreate && !canManage) return
     setBusyId(row.id)
     try {
       const count = projectUnits.get(row.project_id) ?? 1
@@ -303,6 +309,35 @@ export function WorkerOperations() {
       setBusyId('')
     }
   }
+
+  const openAssign = useCallback(async (row) => {
+    if (!canAssign) return
+    setDesignerId(row.designer_id || '')
+    setAssignOpen(true)
+    if (designers.length === 0) {
+      try {
+        const list = await fetchWorkerDesigners()
+        setDesigners(Array.isArray(list) ? list : [])
+      } catch {
+        // ignore
+      }
+    }
+  }, [canAssign, designers.length])
+
+  const saveAssign = useCallback(async () => {
+    if (!detail || !canAssign || !designerId) return
+    setBusyId(detail.id)
+    try {
+      await updateWorkerOperationDesigner(detail.project_id, designerId)
+      toast.success('Designer assigned')
+      setAssignOpen(false)
+      await load()
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : messageOf(caught))
+    } finally {
+      setBusyId('')
+    }
+  }, [canAssign, detail, designerId, load])
 
   if (rows === null) {
     return (
@@ -553,7 +588,15 @@ export function WorkerOperations() {
                 <dl className="grid gap-4 text-sm sm:grid-cols-2">
                   <div>
                     <dt className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Designer</dt>
-                    <dd className="mt-1">{detail.designer_name || 'Unassigned'} {detail.designer_code ? `· ${detail.designer_code}` : ''}</dd>
+                    <dd className="mt-1 flex items-center justify-between gap-2">
+                      <span>{detail.designer_name || 'Unassigned'} {detail.designer_code ? `· ${detail.designer_code}` : ''}</span>
+                      {canAssign ? (
+                        <Button size="sm" variant="ghost" onClick={() => openAssign(detail)}>
+                          <UserRound className="size-4" aria-hidden />
+                          Assign
+                        </Button>
+                      ) : null}
+                    </dd>
                   </div>
                   <div>
                     <dt className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Created</dt>
@@ -728,6 +771,39 @@ export function WorkerOperations() {
             >
               {busyId ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
               {statusDialog?.status === 'on_hold' ? 'Place on hold' : 'Cancel unit'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign designer</DialogTitle>
+            <DialogDescription>Change the designer attached to this Dearune. This uses your designer access.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="worker-assign-designer">Designer</Label>
+            <Select value={designerId} onValueChange={setDesignerId}>
+              <SelectTrigger id="worker-assign-designer">
+                <SelectValue placeholder="Select a designer" />
+              </SelectTrigger>
+              <SelectContent>
+                {designers.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.name} · {d.code}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssignOpen(false)} disabled={Boolean(busyId)}>
+              Cancel
+            </Button>
+            <Button onClick={saveAssign} disabled={Boolean(busyId) || !designerId}>
+              {busyId ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>

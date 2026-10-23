@@ -102,6 +102,8 @@ export function WorkerDesigners() {
   const canCreate = hasPermission(permissions, 'designers.create')
   const canEdit = hasPermission(permissions, 'designers.edit')
   const canManage = hasPermission(permissions, 'designers.manage')
+  const canAssign = hasPermission(permissions, 'designers.assign')
+  const canViewDetails = hasPermission(permissions, 'designers.view_details') || hasPermission(permissions, 'designers.view')
 
   const [designers, setDesigners] = useState(null)
   const [error, setError] = useState('')
