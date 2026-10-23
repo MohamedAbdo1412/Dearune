@@ -3,16 +3,15 @@
 -- ============================================================================
 
 -- Insert new permissions
-insert into public.permissions (id, module, label, summary, description, sort_order, sensitive)
+insert into public.permissions (id, module, label, description, sort_order, sensitive)
 values
-  ('operations.mark_sold', 'operations', 'Mark as sold', 'Sold', 'Mark a Dearune/unit as sold (milestone).', 25, false),
-  ('operations.mark_manufactured', 'operations', 'Mark manufactured/completed', 'Manufactured', 'Record manufacturing completion milestone.', 26, false),
-  ('operations.mark_shipped', 'operations', 'Mark shipped', 'Shipped', 'Record shipment milestone.', 27, false),
-  ('operations.mark_delivered', 'operations', 'Mark delivered', 'Delivered', 'Record delivery milestone.', 28, false)
+  ('operations.mark_sold', 'operations', 'Mark as sold', 'Mark a Dearune/unit as sold (milestone).', 25, false),
+  ('operations.mark_manufactured', 'operations', 'Mark manufactured/completed', 'Record manufacturing completion milestone.', 26, false),
+  ('operations.mark_shipped', 'operations', 'Mark shipped', 'Record shipment milestone.', 27, false),
+  ('operations.mark_delivered', 'operations', 'Mark delivered', 'Record delivery milestone.', 28, false)
 on conflict (id) do update set
   module = excluded.module,
   label = excluded.label,
-  summary = excluded.summary,
   description = excluded.description,
   sort_order = excluded.sort_order;
 

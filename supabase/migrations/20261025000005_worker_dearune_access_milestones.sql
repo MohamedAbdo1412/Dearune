@@ -52,7 +52,7 @@ begin
   if v_worker_id is null then
     raise exception 'worker.unauthenticated';
   end if;
-  if not public.worker_has_permission(v_worker_id, 'designers.view') and not public.worker_has_permission(v_worker_id, 'operations.view') then
+  if not public.worker_has_permission('designers.view') and not public.worker_has_permission('operations.view') then
     raise exception 'worker.forbidden';
   end if;
 
@@ -166,7 +166,7 @@ declare
 begin
   v_worker_id := public.current_worker_id();
   if v_worker_id is null then raise exception 'worker.unauthenticated'; end if;
-  if not public.worker_has_permission(v_worker_id, 'operations.mark_manufactured') then raise exception 'worker.forbidden'; end if;
+  if not public.worker_has_permission('operations.mark_manufactured') then raise exception 'worker.forbidden'; end if;
 
   select * into v_project from public.projects where id = p_project_id;
   if not found then raise exception 'dearune.not_found'; end if;
@@ -217,7 +217,7 @@ declare
 begin
   v_worker_id := public.current_worker_id();
   if v_worker_id is null then raise exception 'worker.unauthenticated'; end if;
-  if not public.worker_has_permission(v_worker_id, 'operations.mark_shipped') then raise exception 'worker.forbidden'; end if;
+  if not public.worker_has_permission('operations.mark_shipped') then raise exception 'worker.forbidden'; end if;
 
   select * into v_project from public.projects where id = p_project_id;
   if not found then raise exception 'dearune.not_found'; end if;
@@ -279,7 +279,7 @@ declare
 begin
   v_worker_id := public.current_worker_id();
   if v_worker_id is null then raise exception 'worker.unauthenticated'; end if;
-  if not public.worker_has_permission(v_worker_id, 'operations.mark_delivered') then raise exception 'worker.forbidden'; end if;
+  if not public.worker_has_permission('operations.mark_delivered') then raise exception 'worker.forbidden'; end if;
 
   select * into v_project from public.projects where id = p_project_id;
   if not found then raise exception 'dearune.not_found'; end if;
