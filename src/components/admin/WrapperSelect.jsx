@@ -1,6 +1,6 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { wrapperLabel } from '@/services/wrappers'
-import { WRAPPER_LABELS, WRAPPER_TYPES } from '@/services/constants'
+import { WRAPPER_LABELS } from '@/services/constants'
 
 // The studio's wrapper choices as one select, fed by the CATALOG (never a
 // hardcoded list): admins pick from `catalog.wrappers`, and a Dearune that
@@ -34,10 +34,11 @@ export function WrapperSelect({ wrappers = [], currentKey = '', value, onChange,
   )
 }
 
-// The wrappers this select should offer: the catalog when it is loaded, or
-// the four legacy keys so a failed catalog fetch never blocks a sale.
+// The wrappers this select should offer: the catalog only. No hardcoded fallback.
 export function wrappersForSelect(catalog) {
-  const wrappers = catalog?.wrappers
-  if (Array.isArray(wrappers) && wrappers.length > 0) return wrappers
-  return WRAPPER_TYPES.map((key) => ({ key, name: WRAPPER_LABELS[key] ?? key }))
+  const wrappers = catalog?.wrappers ?? []
+  return wrappers
+    .filter((w) => w.active !== false)
+    .map((w) => ({ key: w.key, name: w.name, kind: w.kind, ...w }))
+    .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
 }

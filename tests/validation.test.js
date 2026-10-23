@@ -24,9 +24,10 @@ describe('createOrderSchema', () => {
     expect(createOrderSchema.safeParse({ ...base, recipientName: '' }).success).toBe(false)
   })
 
-  it('only accepts known wrapper types and real template uuids', () => {
+  it('accepts any non-empty wrapper type (validated against catalog server-side)', () => {
     expect(createOrderSchema.safeParse({ ...base, wrapperType: 'sealed_letter' }).success).toBe(true)
-    expect(createOrderSchema.safeParse({ ...base, wrapperType: 'carrier_pigeon' }).success).toBe(false)
+    expect(createOrderSchema.safeParse({ ...base, wrapperType: 'carrier_pigeon' }).success).toBe(true)
+    expect(createOrderSchema.safeParse({ ...base, wrapperType: '' }).success).toBe(false)
     expect(createOrderSchema.safeParse({ ...base, templateId: 'not-a-uuid' }).success).toBe(false)
   })
 

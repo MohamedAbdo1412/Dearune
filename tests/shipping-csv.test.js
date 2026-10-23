@@ -10,6 +10,8 @@ const shipment = (overrides = {}) => ({
   wrapper: 'Sealed letter',
   addressLine1: '12, Shariaa "Sample"',
   addressLine2: '',
+  governorate: 'Cairo Governorate',
+  district: 'Heliopolis',
   city: 'Cairo',
   stateProvince: '',
   postalCode: '11511',
@@ -33,7 +35,7 @@ describe('shipmentCsv', () => {
 
   it('quotes values that contain commas or quotes, and leaves blanks blank', () => {
     const line = shipmentCsv([shipment()]).split('\r\n')[1]
-    expect(line).toContain('"12, Shariaa ""Sample""",,Cairo,,11511,Egypt,')
+    expect(line).toContain('"12, Shariaa ""Sample""",,Cairo Governorate,Heliopolis,Cairo,,11511,Egypt,')
     expect(line).toContain('"Leave at the door, ring twice"')
     expect(line).not.toContain('—')
   })

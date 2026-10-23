@@ -2,7 +2,8 @@ import { z } from 'zod'
 
 export const emailSchema = z.string().trim().email().max(254).or(z.literal('').transform(() => null)).nullable()
 
-export const wrapperTypeSchema = z.enum(['digital', 'open_letter', 'sealed_letter', 'open_card'])
+// Keep schema flexible for catalog-driven wrappers; still allow legacy keys
+export const wrapperTypeSchema = z.string().trim().min(1).max(64)
 
 export const createOrderSchema = z.object({
   customerFirstName: z.string().trim().max(80).optional().nullable(),

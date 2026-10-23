@@ -22,62 +22,23 @@ import { requireAdmin } from '../_shared/auth.ts'
 //
 // Actions
 //   ensure        Make sure a Dearune's physical units exist (idempotent).
-//                 Also how the studio adds a second unit for a Dearune that
-//                 was sold as two bottles — existing units are untouched.
-//   set-status    Advance / hold / cancel ONE unit.
-//   update        Correct a unit's own notes and its On Hold / Cancelled
-//                 reason. Never touches the id.
-//   archive       Hide units from the default Operations view. Never deletes,
-//                 never renumbers, and never happens on export.
+//   update        Correct a unit's own notes. Never touches the id.
+//   archive       Hide units from the default Operations view.
 //   restore       Bring them back, unchanged.
-//   update-contact  Correct the delivery phone against its real owner, the
-//                 Dearune's `shipping` row.
-//   update-designer Correct the Designer name / ID against its real owner, the
-//                 `designers` row.
+//   update-contact  Correct the delivery phone against its real owner.
+//   update-designer Correct the Designer name / ID against its real owner.
 
 type Row = Record<string, unknown>
 
 const MAX_UNITS = 50
 
-const STEPS = [
-  'pending_verification',
-  'information_verified',
-  'ready_to_print',
-  'printing',
-  'printed',
-  'qr_verified',
-  'manufacturing',
-  'quality_control',
-  'qc_passed',
-  'ready_for_packaging',
-  'packed',
-  'ready_for_shipment',
-  'shipped',
-  'delivered',
-] as const
+const STEPS: readonly string[] = []
+const EXITS: readonly string[] = []
 
-const EXITS = ['on_hold', 'cancelled'] as const
+type Step = string
+type Exit = string
 
-type Step = (typeof STEPS)[number]
-type Exit = (typeof EXITS)[number]
-
-// Kept identical to `physical_products_guard` in 20261017000001_operations.sql.
-const NEXT: Record<Step, Step | null> = {
-  pending_verification: 'information_verified',
-  information_verified: 'ready_to_print',
-  ready_to_print: 'printing',
-  printing: 'printed',
-  printed: 'qr_verified',
-  qr_verified: 'manufacturing',
-  manufacturing: 'quality_control',
-  quality_control: 'qc_passed',
-  qc_passed: 'ready_for_packaging',
-  ready_for_packaging: 'packed',
-  packed: 'ready_for_shipment',
-  ready_for_shipment: 'shipped',
-  shipped: 'delivered',
-  delivered: null,
-}
+const NEXT: Record<string, string | null> = {}
 
 function asText(value: unknown, max = 500): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : ''
@@ -100,38 +61,22 @@ function isStatus(value: string): value is Step | Exit {
   return isStep(value) || (EXITS as readonly string[]).includes(value)
 }
 
-// Can `from` move to `to`? Mirrors the database trigger exactly.
 export function transitionAllowed(from: string, to: string): boolean {
-  if (from === to) return true
-  if (to === 'on_hold' || to === 'cancelled') return from !== 'delivered' && from !== 'cancelled'
-  if (from === 'on_hold') return isStep(to)
-  if (!isStep(from) || !isStep(to)) return false
-  return NEXT[from] === to
+  return false
 }
 
-// The detailed workshop step bridges to the Dearune's own coarse stamp, but
-// only in one direction and only for the stamps the Dearune's own rules allow
-// (made needs a sale, shipped needs made, arrived needs shipped).
 function projectStampFor(status: string): 'manufactured_at' | 'shipped_at' | 'arrived_at' | null {
-  switch (status) {
-    case 'manufacturing':
-    case 'quality_control':
-    case 'qc_passed':
-    case 'ready_for_packaging':
-    case 'packed':
-    case 'ready_for_shipment':
-      return 'manufactured_at'
-    case 'shipped':
-      return 'shipped_at'
-    case 'delivered':
-      return 'arrived_at'
-    default:
-      return null
-  }
+  return null
+}
+
+async function isDigitalWrapper(sb: ReturnType<typeof adminClient>, wrapperKey: string): Promise<boolean> {
+  if (!wrapperKey) return false
+  const { data } = await sb.from('wrapper_types').select('kind').eq('key', wrapperKey).maybeSingle()
+  return data ? data.kind === 'digital' : wrapperKey === 'digital'
 }
 
 const PRODUCT_COLUMNS =
-  'id, project_id, unit_index, reference, status, on_hold_reason, cancelled_reason, notes, archived_at, created_at, updated_at'
+  'id, project_id, unit_index, reference, sold_at, manufacturing_completed_at, shipped_at, delivered_at, notes, archived_at, created_at, updated_at'
 
 const PROJECT_METADATA =
   'id, reference, title, public_id, public_token, wrapper_type, designer_id, template_slug, paid_at, manufactured_at, shipped_at, arrived_at, archived_at, message_active, status'
@@ -185,7 +130,7 @@ Deno.serve(async (req) => {
 
     const project = await loadProject(sb, projectId)
     if (!project) return errorResponse('Dearune not found', 404)
-    if (project.wrapper_type === 'digital') {
+    if (await isDigitalWrapper(sb, asText(project.wrapper_type, 30))) {
       return errorResponse('A digital Dearune has no physical units to manufacture', 400)
     }
 
@@ -212,84 +157,7 @@ Deno.serve(async (req) => {
 
   // -- set-status -----------------------------------------------------------
   if (action === 'set-status') {
-    const productId = asText(body.productId, 64)
-    const status = asText(body.status, 40)
-    if (!productId) return errorResponse('Missing Operations id', 400)
-    if (!status || !isStatus(status)) return errorResponse('Unknown Operations status', 400)
-
-    const product = await loadProduct(sb, productId)
-    if (!product) return errorResponse('Operations record not found', 404)
-    if (product.archived_at) {
-      return errorResponse('This unit is archived — bring it back before changing its status', 400)
-    }
-
-    const from = String(product.status)
-    if (from === status) return jsonResponse({ ok: true, unchanged: true, unit: product })
-    if (!transitionAllowed(from, status)) {
-      return errorResponse(`A unit cannot move from ${from} to ${status}`, 409, { from, to: status })
-    }
-
-    const reason = asText(body.reason, 300)
-    if (status === 'on_hold' && !reason) return errorResponse('An On Hold reason is required', 400)
-    if (status === 'cancelled' && !reason) return errorResponse('A cancellation reason is required', 400)
-
-    const project = await loadProject(sb, String(product.project_id))
-    if (!project) return errorResponse('Dearune not found', 404)
-
-    // The Dearune's own stamps may only move forward, and only when the
-    // stamp's own precondition already holds — the same rules `admin-dearunes`
-    // enforces for `stamp`. Operations never invents a stage the Dearune
-    // could not have reached on its own.
-    const stamp = projectStampFor(status)
-    const patch: Row = { status }
-    if (status === 'on_hold') patch.on_hold_reason = reason
-    if (status === 'cancelled') patch.cancelled_reason = reason
-    if (from === 'on_hold' && status !== 'on_hold') patch.on_hold_reason = null
-
-    const { data: updated, error } = await sb
-      .from('physical_products')
-      .update(patch)
-      .eq('id', productId)
-      .eq('status', from)
-      .select(PRODUCT_COLUMNS)
-      .maybeSingle()
-
-    if (error) {
-      // The database guard is the authority and speaks in its own words.
-      const message = error.message ?? ''
-      if (message.includes('operations.status.transition_denied')) {
-        return errorResponse('That status change is not allowed', 409)
-      }
-      if (message.includes('operations.archived_frozen')) {
-        return errorResponse('This unit is archived', 409)
-      }
-      return errorResponse('Could not update the Operations record', 500)
-    }
-    if (!updated) {
-      // Someone else moved it first. Report the truth rather than a false yes.
-      const fresh = await loadProduct(sb, productId)
-      return jsonResponse({ ok: false, conflict: true, unit: fresh }, 409)
-    }
-
-    await logEvent(sb, productId, admin.id, 'operations.status', { from, to: status, reason: reason || null })
-
-    let stamped: string | null = null
-    if (stamp) {
-      const due = stamp === 'manufactured_at' ? Boolean(project.paid_at)
-        : stamp === 'shipped_at' ? Boolean(project.manufactured_at)
-        : Boolean(project.shipped_at)
-      const already = Boolean(project[stamp])
-      if (due && !already) {
-        const { error: stampError } = await sb
-          .from('projects')
-          .update({ [stamp]: new Date().toISOString() })
-          .eq('id', String(product.project_id))
-          .is(stamp, null)
-        if (!stampError) stamped = stamp
-      }
-    }
-
-    return jsonResponse({ ok: true, unit: updated, stamped })
+    return errorResponse('Operations status has been replaced by milestones', 400)
   }
 
   // -- update ---------------------------------------------------------------
@@ -300,20 +168,7 @@ Deno.serve(async (req) => {
     const product = await loadProduct(sb, productId)
     if (!product) return errorResponse('Operations record not found', 404)
 
-    // The canonical id is not editable here — or anywhere. A production paper
-    // must never disagree with the database about which unit it describes.
     const patch: Row = { notes: asText(body.notes, 2000) || null }
-    const status = String(product.status)
-    if (status === 'on_hold') {
-      const reason = asText(body.onHoldReason, 300)
-      if (!reason) return errorResponse('An On Hold reason is required', 400)
-      patch.on_hold_reason = reason
-    }
-    if (status === 'cancelled') {
-      const reason = asText(body.cancelledReason, 300)
-      if (!reason) return errorResponse('A cancellation reason is required', 400)
-      patch.cancelled_reason = reason
-    }
 
     const { data: updated, error } = await sb
       .from('physical_products')

@@ -38,6 +38,12 @@ async function knownWrapperKeys(sb: ReturnType<typeof adminClient>) {
   const { data } = await sb.from('wrapper_types').select('key').eq('active', true)
   return new Set<string>([...LEGACY_WRAPPERS, ...(data ?? []).map((row) => String(row.key))])
 }
+
+async function isDigitalWrapper(sb: ReturnType<typeof adminClient>, wrapperKey: string): Promise<boolean> {
+  if (!wrapperKey) return false
+  const { data } = await sb.from('wrapper_types').select('kind').eq('key', wrapperKey).maybeSingle()
+  return data ? data.kind === 'digital' : wrapperKey === 'digital'
+}
 const FORWARD_FIELDS = ['manufactured_at', 'shipped_at', 'arrived_at'] as const
 type ForwardField = (typeof FORWARD_FIELDS)[number]
 
@@ -449,7 +455,7 @@ Deno.serve(async (req) => {
     if (settings.maintenance) return errorResponse('Maintenance mode is on — production is paused', 409)
     if (archived) return errorResponse('This Dearune is archived', 400)
     if (!project.paid_at) return errorResponse('Record the sale first — an unsold Dearune is not made or shipped', 400)
-    if (project.wrapper_type === 'digital') return errorResponse('A digital Dearune has no making or shipping steps', 400)
+    if (await isDigitalWrapper(sb, asText(project.wrapper_type, 30))) return errorResponse('A digital Dearune has no making or shipping steps', 400)
     if (stampDone(field)) return jsonResponse({ ok: true, already: true })
     if (field === 'shipped_at') {
       if (!stampDone('manufactured_at')) return errorResponse('Mark this Dearune made before marking it shipped', 400)
@@ -540,6 +546,8 @@ Deno.serve(async (req) => {
       address_line2: asText(body.addressLine2, 200) || null,
       city: asText(body.city, 120),
       state_province: asText(body.stateProvince, 120) || null,
+      governorate: asText(body.governorate, 120) || null,
+      district: asText(body.district, 120) || null,
       postal_code: asText(body.postalCode, 30),
       country: asText(body.country, 80),
       phone: asText(body.phone, 30) || null,
@@ -558,7 +566,7 @@ Deno.serve(async (req) => {
       if (error) return errorResponse('Could not save the delivery details', 500)
     }
 
-    await logEvent(sb, projectId, admin.id, 'project.shipping', { city: row.city || null })
+    await logEvent(sb, projectId, admin.id, 'project.shipping', { city: row.city || null, governorate: row.governorate || null })
     return jsonResponse({ ok: true })
   }
 

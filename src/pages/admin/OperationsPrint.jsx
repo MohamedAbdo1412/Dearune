@@ -16,7 +16,6 @@ import { formatProductionDate, buildQrPaperPdf, buildQrPaperPreview } from '@/se
 import { bostaFilename, buildBostaWorkbook } from '@/services/bosta'
 import { fetchOperations, updateOperationContact, updateOperationDesigner } from '@/services/operations'
 import { reviewBatch } from '@/services/operationsReview'
-import { OPERATIONS_STATUS_LABELS } from '@/services/constants'
 import { OperationsBadge } from '@/components/admin/operations-status'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -372,10 +371,7 @@ export default function OperationsPrint() {
                   <span className="font-mono">{activeItem.operation.reference}</span>
                   <span className="text-muted-foreground">Sold as</span>
                   <span className="font-mono">{activeItem.operation.soldAs}</span>
-                  <OperationsBadge
-                    status={activeItem.operation.status}
-                    label={OPERATIONS_STATUS_LABELS[activeItem.operation.status]}
-                  />
+                  <OperationsBadge status={activeItem.operation.status} />
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">

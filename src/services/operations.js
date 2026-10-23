@@ -1,10 +1,10 @@
 import { supabase, currentAccessToken, invokeFunction } from '@/lib/supabase'
-import {
-  OPERATIONS_STATUS_ORDER,
-  PHYSICAL_ID_PATTERN,
-  operationsRank,
-  soldAsId,
-} from './constants'
+import { PHYSICAL_ID_PATTERN, soldAsId } from './constants'
+
+// Milestone order used for sorting and counting operation units. Mirrors the
+// PROJECT_STAGE_ORDER milestone progression but starts at 'pending' for units
+// that have not been sold yet.
+export const OPERATIONS_STATUS_ORDER = ['pending', 'sold', 'manufactured', 'shipped', 'delivered']
 
 // The admin's view of the production line.
 //
@@ -18,10 +18,11 @@ export const OPERATION_COLUMNS = [
   'id',
   'reference',
   'unit_index',
-  'status',
+  'sold_at',
+  'manufacturing_completed_at',
+  'shipped_at',
+  'delivered_at',
   'notes',
-  'on_hold_reason',
-  'cancelled_reason',
   'archived_at',
   'created_at',
   'updated_at',
@@ -86,15 +87,22 @@ export function toOperation(row) {
     soldAs: soldAsId(reference),
     hasValidId: PHYSICAL_ID_PATTERN.test(reference),
     unitIndex: Number.isFinite(unitIndex) ? unitIndex : 1,
-    status: row.status,
-    statusRank: operationsRank(row.status),
+    soldAt: row.sold_at ?? row.paid_at ?? null,
+    manufacturingCompletedAt: row.manufacturing_completed_at ?? null,
+    shippedAt: row.shipped_at ?? null,
+    deliveredAt: row.delivered_at ?? null,
     notes: row.notes ?? '',
-    onHoldReason: row.on_hold_reason ?? '',
-    cancelledReason: row.cancelled_reason ?? '',
     archivedAt: row.archived_at ?? null,
     archived: Boolean(row.archived_at),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    status: (() => {
+      if (row.delivered_at) return 'delivered'
+      if (row.shipped_at) return 'shipped'
+      if (row.manufacturing_completed_at) return 'manufactured'
+      if (row.sold_at || row.paid_at) return 'sold'
+      return 'pending'
+    })(),
 
     projectId: row.project_id,
     projectReference: row.project_reference ?? '',
@@ -180,7 +188,12 @@ export function sortOperations(operations, sortKey = 'newest') {
     case 'updated':
       return rows.sort((a, b) => time(b.updatedAt) - time(a.updatedAt) || byId(a, b))
     case 'status':
-      return rows.sort((a, b) => a.statusRank - b.statusRank || time(b.createdAt) - time(a.createdAt) || byId(a, b))
+      return rows.sort(
+        (a, b) =>
+          OPERATIONS_STATUS_ORDER.indexOf(a.status) - OPERATIONS_STATUS_ORDER.indexOf(b.status) ||
+          time(b.createdAt) - time(a.createdAt) ||
+          byId(a, b),
+      )
     case 'id':
       return rows.sort(byId)
     case 'customer':
@@ -258,7 +271,7 @@ export function ensureOperations(projectId, units = 1) {
 }
 
 export function setOperationStatus(productId, status, reason = '') {
-  return act('set-status', { productId, status, reason })
+  throw new Error('Operations status has been replaced by milestones')
 }
 
 export function updateOperation(productId, fields = {}) {

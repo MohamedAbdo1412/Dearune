@@ -41,10 +41,28 @@ export const PERMISSION_MODULES = [
         description: 'Correct unit notes, the customer phone, or the designer attached to a unit. Never changes a price.',
       },
       {
-        id: 'operations.update_status',
-        label: 'Advance production status',
-        summary: 'Status',
-        description: 'Move a unit along the workshop status graph, or place it on hold / cancel it with a reason.',
+        id: 'operations.mark_sold',
+        label: 'Mark as sold',
+        summary: 'Sold',
+        description: 'Mark a Dearune as sold (milestone).',
+      },
+      {
+        id: 'operations.mark_manufactured',
+        label: 'Mark manufactured/completed',
+        summary: 'Manufactured',
+        description: 'Record manufacturing completion milestone.',
+      },
+      {
+        id: 'operations.mark_shipped',
+        label: 'Mark shipped',
+        summary: 'Shipped',
+        description: 'Record shipment milestone.',
+      },
+      {
+        id: 'operations.mark_delivered',
+        label: 'Mark delivered',
+        summary: 'Delivered',
+        description: 'Record delivery milestone.',
       },
       {
         id: 'operations.assign',

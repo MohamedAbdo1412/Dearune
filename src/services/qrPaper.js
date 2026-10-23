@@ -1,7 +1,7 @@
 import { PDFDocument, degrees, rgb } from 'pdf-lib'
 import fontkit from '@pdf-lib/fontkit'
 import { qrContent, qrDataUrl } from './qr'
-import { PHYSICAL_ID_PATTERN, OPERATIONS_STATUS_LABELS } from './constants'
+import { PHYSICAL_ID_PATTERN } from './constants'
 import { validateOperationForPaper } from './operations'
 
 // The artwork's own layers and the fonts, resolved by the bundler so every
@@ -537,7 +537,7 @@ export async function buildQrPaperPdf(operations, options = {}) {
       id: operation.id,
       reference: operation.reference,
       status: operation.status,
-      statusLabel: OPERATIONS_STATUS_LABELS[operation.status] ?? operation.status,
+      statusLabel: operation.status,
       qrContent: result.qrUrl,
       values: result.values,
     })
@@ -546,7 +546,7 @@ export async function buildQrPaperPdf(operations, options = {}) {
         id: bottomOperation.id,
         reference: bottomOperation.reference,
         status: bottomOperation.status,
-        statusLabel: OPERATIONS_STATUS_LABELS[bottomOperation.status] ?? bottomOperation.status,
+        statusLabel: bottomOperation.status,
         qrContent: null,
         values: paperValues(bottomOperation, { dateLabel }),
       })

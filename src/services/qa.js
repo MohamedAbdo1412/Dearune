@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import { OPERATIONS_STATUS_LABELS, PHYSICAL_ID_PATTERN, soldAsId } from './constants'
+import { PHYSICAL_ID_PATTERN, soldAsId } from './constants'
 import { parseProjectPayload } from './projectPayload'
 
 // The QA desk: turn a scanned Dearune QR into the whole record behind it.
@@ -332,7 +332,7 @@ function toUnit(row, events) {
     hasValidId: PHYSICAL_ID_PATTERN.test(reference),
     unitIndex: Number(row.unit_index ?? 1),
     status: row.status,
-    statusLabel: OPERATIONS_STATUS_LABELS[row.status] ?? row.status,
+    statusLabel: row.status,
     notes: text(row.notes),
     onHoldReason: text(row.on_hold_reason),
     cancelledReason: text(row.cancelled_reason),

@@ -2,15 +2,19 @@ import { corsHeaders, errorResponse, handleOptions, jsonResponse, readJson } fro
 import { adminClient } from '../_shared/supabase.ts'
 import { requireAdmin } from '../_shared/auth.ts'
 
-const WRAPPER_TYPES = ['digital', 'open_letter', 'sealed_letter', 'open_card']
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+async function knownWrapperKeys(sb: ReturnType<typeof adminClient>) {
+  const { data } = await sb.from('wrapper_types').select('key').eq('active', true)
+  return new Set<string>((data ?? []).map((row) => String(row.key)))
+}
 
 function validate(body: Record<string, unknown>): string | null {
   const recipientName = typeof body.recipientName === 'string' ? body.recipientName.trim() : ''
   if (!recipientName || recipientName.length > 120) return 'Recipient name is required'
   if (typeof body.templateId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.templateId)) return 'Template is required'
-  if (typeof body.wrapperType !== 'string' || !WRAPPER_TYPES.includes(body.wrapperType)) return 'Pick a valid wrapper'
+  if (typeof body.wrapperType !== 'string' || body.wrapperType.trim() === '') return 'Pick a valid wrapper'
   if (body.eventDate != null && body.eventDate !== '' && !DATE_ONLY.test(String(body.eventDate))) return 'Enter a valid date'
   if (body.customerEmail != null && body.customerEmail !== '' && !EMAIL.test(String(body.customerEmail))) return 'Enter a valid email'
   if (body.designerCode != null && body.designerCode !== '' && !/^\d{6}$/.test(String(body.designerCode))) return 'Designer code must be 6 digits'
@@ -38,10 +42,33 @@ Deno.serve(async (req) => {
   if (settings?.maintenance_mode) return errorResponse('Maintenance mode is on — new orders are disabled', 409)
   if (settings && !settings.allow_new_orders) return errorResponse('New orders are currently disabled', 409)
 
+  const wrapperType = String(body.wrapperType)
+  const known = await knownWrapperKeys(sb)
+  if (!known.has(wrapperType)) return errorResponse('Pick a valid wrapper', 400)
+
   const { data: template } = await sb.from('templates').select('id, name, enabled, deleted_at').eq('id', String(body.templateId)).is('deleted_at', null).maybeSingle()
   if (!template || !template.enabled) return errorResponse('Template is not available', 400)
 
-  const { data: pricing } = await sb.from('template_pricing').select('price, cost').eq('template_id', template.id).eq('wrapper_type', String(body.wrapperType)).maybeSingle()
+  const { data: wrapperRow } = await sb.from('wrapper_types').select('id, key').eq('key', wrapperType).maybeSingle()
+  let pricing: { price: number; cost: number } | null = null
+  if (wrapperRow) {
+    const { data: option } = await sb
+      .from('template_wrapper_options')
+      .select('price_override, cost_override')
+      .eq('template_id', template.id)
+      .eq('wrapper_id', wrapperRow.id)
+      .maybeSingle()
+    if (option) {
+      pricing = {
+        price: option.price_override != null ? Number(option.price_override) : 0,
+        cost: option.cost_override != null ? Number(option.cost_override) : 0,
+      }
+    }
+  }
+  if (!pricing) {
+    const { data: legacyPricing } = await sb.from('template_pricing').select('price, cost').eq('template_id', template.id).eq('wrapper_type', wrapperType).maybeSingle()
+    if (legacyPricing) pricing = legacyPricing
+  }
   if (!pricing) return errorResponse('This wrapper option is not available for the template', 400)
 
   let designerId: string | null = null
@@ -62,7 +89,7 @@ Deno.serve(async (req) => {
     .insert({
       template_id: template.id,
       designer_id: designerId,
-      wrapper_type: String(body.wrapperType),
+      wrapper_type: wrapperType,
       snapshot_price: pricing.price,
       estimated_cost: pricing.cost,
       currency: settings?.currency ?? 'GBP',
@@ -90,7 +117,7 @@ Deno.serve(async (req) => {
   }
 
   const events: Array<Record<string, unknown>> = [
-    { order_id: order.id, actor_type: 'admin', actor_id: admin.id, action: 'order.created', detail: { template: template.name, wrapper_type: body.wrapperType } },
+    { order_id: order.id, actor_type: 'admin', actor_id: admin.id, action: 'order.created', detail: { template: template.name, wrapper_type: wrapperType } },
   ]
   if (designerId) {
     events.push({ order_id: order.id, actor_type: 'admin', actor_id: admin.id, action: 'designer.assigned', detail: { designer: designerName } })

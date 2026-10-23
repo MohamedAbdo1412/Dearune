@@ -76,6 +76,7 @@ export function Wrappers() {
           name_ar: row.name_ar ?? '',
           description: row.description ?? '',
           description_ar: row.description_ar ?? '',
+          kind: row.kind ?? 'physical',
           base_price: String(row.base_price ?? 0),
           production_cost: String(row.production_cost ?? 0),
           display_order: String(row.display_order ?? 0),

@@ -37,8 +37,15 @@ async function messageAvailability(messageId: string): Promise<{ ok: boolean }> 
   if (!message.message_active || !message.published_at) return { ok: false }
   const { data: order } = await sb.from('orders').select('cancelled_at, wrapper_type, arrived_at').eq('id', message.order_id).maybeSingle()
   if (!order || order.cancelled_at) return { ok: false }
-  if (order.wrapper_type !== 'digital' && !order.arrived_at) return { ok: false }
+  if (await isDigitalWrapper(sb, order.wrapper_type)) return { ok: true }
+  if (!order.arrived_at) return { ok: false }
   return { ok: true }
+}
+
+async function isDigitalWrapper(sb: ReturnType<typeof adminClient>, wrapperKey: string): Promise<boolean> {
+  if (!wrapperKey) return false
+  const { data } = await sb.from('wrapper_types').select('kind').eq('key', wrapperKey).maybeSingle()
+  return data ? data.kind === 'digital' : wrapperKey === 'digital'
 }
 
 Deno.serve(async (req) => {

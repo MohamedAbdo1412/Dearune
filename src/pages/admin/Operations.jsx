@@ -12,31 +12,21 @@ import {
   RotateCcw,
   Search,
   Undo2,
-  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAppSettings } from '@/hooks/use-app-settings'
-import {
-  OPERATIONS_STATUS_LABELS,
-  OPERATIONS_STATUS_ORDER,
-  OPERATIONS_STATUS_SHORT,
-  isOperationsTerminal,
-  nextOperationsStatus,
-} from '@/services/constants'
 import {
   OPERATIONS_SORTS,
   archiveOperations,
   fetchOperationEvents,
   fetchOperations,
   restoreOperations,
-  setOperationStatus,
   statusCounts,
   updateOperation,
   updateOperationContact,
   viewOperations,
 } from '@/services/operations'
 import { formatDateTime } from '@/services/format'
-import { OperationsBadge } from '@/components/admin/operations-status'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -45,16 +35,9 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
 
 // Operations — the production line for the physical units themselves.
 //
@@ -63,14 +46,35 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 // on this screen can create an id, change one, or delete a unit: archiving is
 // a visibility flag, and the database refuses any status move that is not on
 // the workshop's own schedule.
+//
+// Generic Operations status has been replaced by explicit milestones
+// (sold / manufactured / shipped / delivered). This screen reads milestone
+// timestamps from the unit row and displays them; advancing a milestone is
+// done through the Dearune record (admin-dearunes) or the worker milestone
+// RPCs, not from this screen.
 const ALL = 'all'
 
 const messageOf = (err) => (err instanceof Error ? err.message : 'Something went wrong')
 
-// A status change the database turned down (someone else moved the unit, or
-// the requested step is not next) is worth saying precisely, not as a generic
-// failure.
 const isConflict = (err) => err?.status === 409 && Boolean(err?.payload?.conflict)
+
+const MILESTONE_ORDER = ['pending', 'sold', 'manufactured', 'shipped', 'delivered']
+
+const MILESTONE_LABELS = {
+  pending: 'Pending',
+  sold: 'Sold',
+  manufactured: 'Manufactured',
+  shipped: 'Shipped',
+  delivered: 'Delivered',
+}
+
+const MILESTONE_VARIANT = {
+  pending: 'outline',
+  sold: 'outline',
+  manufactured: 'outline',
+  shipped: 'outline',
+  delivered: 'default',
+}
 
 export function Operations() {
   const { settings } = useAppSettings()
@@ -80,18 +84,15 @@ export function Operations() {
   const [rows, setRows] = useState(null)
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState('newest')
-  const [statusFilter, setStatusFilter] = useState(ALL)
+  const [milestoneFilter, setMilestoneFilter] = useState(ALL)
   const [showArchived, setShowArchived] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
-  const [actingId, setActingId] = useState(null)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [detail, setDetail] = useState(null)
   const [timeline, setTimeline] = useState(null)
   const [notesDraft, setNotesDraft] = useState('')
   const [phoneDraft, setPhoneDraft] = useState('')
   const [saving, setSaving] = useState(false)
-  const [reasonFor, setReasonFor] = useState(null)
-  const [reason, setReason] = useState('')
 
   const reload = useCallback(async () => {
     try {
@@ -113,17 +114,16 @@ export function Operations() {
       viewOperations(rows ?? [], {
         sortKey,
         query,
-        status: statusFilter === ALL ? '' : statusFilter,
+        status: milestoneFilter === ALL ? '' : milestoneFilter,
         includeArchived: showArchived,
       }),
-    [rows, sortKey, query, statusFilter, showArchived],
+    [rows, sortKey, query, milestoneFilter, showArchived],
   )
 
   // Counts follow the same scope as the list: the archive is only counted when
   // it is on screen, so a figure never refers to rows the studio cannot see.
   const activeRows = useMemo(() => (rows ?? []).filter((row) => !row.archived), [rows])
   const scoped = useMemo(() => (showArchived ? rows ?? [] : activeRows), [rows, activeRows, showArchived])
-  const counts = useMemo(() => statusCounts(scoped), [scoped])
   const activeCounts = useMemo(() => statusCounts(activeRows), [activeRows])
   const activeCount = activeRows.length
   const readyToPrint = activeCounts.ready_to_print
@@ -157,23 +157,10 @@ export function Operations() {
       await reload()
       return true
     } catch (err) {
-      // A unit that moved under us, or a step that is not the next one, is a
-      // conflict rather than a failure — say so, then show the true state.
       toast.error(isConflict(err) ? 'Someone else moved that unit first — the list has been refreshed' : messageOf(err))
       await reload()
       return false
     }
-  }
-
-  const advance = async (row) => {
-    const next = nextOperationsStatus(row.status)
-    if (!next) return
-    setActingId(row.id)
-    await afterWrite(
-      () => setOperationStatus(row.id, next),
-      `${row.reference} moved to ${OPERATIONS_STATUS_LABELS[next]}`,
-    )
-    setActingId(null)
   }
 
   const bulk = async (fn, successMessage) => {
@@ -235,27 +222,6 @@ export function Operations() {
     }
   }
 
-  const askReason = (row, status) => {
-    setReasonFor({ row, status })
-    setReason('')
-  }
-
-  const confirmReason = async () => {
-    const target = reasonFor
-    if (!target) return
-    if (!reason.trim()) {
-      toast.error(`A reason is required to ${target.status === 'cancelled' ? 'cancel' : 'hold'} a unit`)
-      return
-    }
-    setReasonFor(null)
-    setActingId(target.row.id)
-    await afterWrite(
-      () => setOperationStatus(target.row.id, target.status, reason.trim()),
-      `${target.row.reference} — ${OPERATIONS_STATUS_LABELS[target.status]}`,
-    )
-    setActingId(null)
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -297,7 +263,7 @@ export function Operations() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-1 flex-wrap items-center gap-2">
           <div className="relative w-full sm:min-w-56 sm:flex-1 lg:max-w-72">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className=" pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search id, Sold As, customer, designer…"
               value={query}
@@ -319,16 +285,16 @@ export function Operations() {
             </SelectContent>
           </Select>
 
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select value={milestoneFilter} onValueChange={setMilestoneFilter}>
             <SelectTrigger className="w-full sm:w-52">
-              <SelectValue placeholder="Status" />
+              <SelectValue placeholder="Milestone" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All statuses</SelectItem>
-              {OPERATIONS_STATUS_ORDER.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {OPERATIONS_STATUS_LABELS[status]}
-                  {rows !== null ? ` (${counts[status] ?? 0})` : ''}
+              <SelectItem value={ALL}>All milestones</SelectItem>
+              {MILESTONE_ORDER.map((milestone) => (
+                <SelectItem key={milestone} value={milestone}>
+                  {MILESTONE_LABELS[milestone]}
+                  {rows !== null ? ` (${scoped.filter((row) => row.status === milestone).length})` : ''}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -348,9 +314,7 @@ export function Operations() {
 
       {selectedRows.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2.5">
-          <span className="text-sm text-muted-foreground">
-            {selectedRows.length} selected
-          </span>
+          <span className="text-sm text-muted-foreground">{selectedRows.length} selected</span>
           <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
             {showArchived && selectedRows.some((row) => row.archived) && (
               <Button size="sm" variant="outline" disabled={bulkBusy || maintenance} onClick={() => void restoreSelected()}>
@@ -391,7 +355,7 @@ export function Operations() {
             <div className="flex flex-col items-center gap-2 py-10 text-center">
               <PackageSearch className="size-6 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
-                {query || statusFilter !== ALL || showArchived
+                {query || milestoneFilter !== ALL || showArchived
                   ? 'Nothing matches the current filters.'
                   : 'No units on the line yet. Units are created the moment a physical Dearune is paid for.'}
               </p>
@@ -413,7 +377,6 @@ export function Operations() {
                   <span className="text-xs text-muted-foreground">{selectedRows.length} selected</span>
                 </div>
                 {visible.map((row) => {
-                  const next = nextOperationsStatus(row.status)
                   return (
                     <div key={row.id} className="rounded-lg border bg-background p-3">
                       <div className="flex items-start gap-3">
@@ -439,22 +402,6 @@ export function Operations() {
                           </button>
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
-                          {next && !row.archived && !isOperationsTerminal(row.status) && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={actingId === row.id || maintenance}
-                              onClick={() => void advance(row)}
-                              title={`Move to ${OPERATIONS_STATUS_LABELS[next]}`}
-                            >
-                              {actingId === row.id ? (
-                                <Loader2Icon className="size-4 animate-spin" />
-                              ) : (
-                                <PlayCircle className="size-4" />
-                              )}
-                              <span className="sr-only">{`Move to ${OPERATIONS_STATUS_LABELS[next]}`}</span>
-                            </Button>
-                          )}
                           <Button
                             size="sm"
                             variant="ghost"
@@ -469,12 +416,9 @@ export function Operations() {
 
                       <div className="mt-2 space-y-1.5 border-t pt-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <OperationsBadge status={row.status} label={OPERATIONS_STATUS_SHORT[row.status] ?? row.status} />
+                          <Badge variant={MILESTONE_VARIANT[row.status]}>{MILESTONE_LABELS[row.status]}</Badge>
                           <span className="text-xs text-muted-foreground">updated {formatDateTime(row.updatedAt)}</span>
                         </div>
-                        {row.status === 'on_hold' && row.onHoldReason && (
-                          <p className="text-xs text-muted-foreground">{row.onHoldReason}</p>
-                        )}
                         <p className="min-w-0 break-words text-sm">
                           <span className="text-muted-foreground">Customer · </span>
                           {row.recipientName || '—'}
@@ -507,14 +451,13 @@ export function Operations() {
                       <TableHead>Unit</TableHead>
                       <TableHead className="hidden md:table-cell">Customer</TableHead>
                       <TableHead className="hidden lg:table-cell">Designer</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>Milestone</TableHead>
                       <TableHead className="hidden sm:table-cell">Updated</TableHead>
                       <TableHead className="w-12" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {visible.map((row) => {
-                      const next = nextOperationsStatus(row.status)
                       return (
                         <TableRow key={row.id} data-state={selected.has(row.id) ? 'selected' : undefined}>
                           <TableCell>
@@ -550,34 +493,13 @@ export function Operations() {
                             <span className="block truncate text-xs text-muted-foreground">{row.designerCode}</span>
                           </TableCell>
                           <TableCell>
-                            <OperationsBadge status={row.status} label={OPERATIONS_STATUS_SHORT[row.status] ?? row.status} />
-                            {row.status === 'on_hold' && row.onHoldReason && (
-                              <span className="mt-1 block max-w-56 truncate text-xs text-muted-foreground">
-                                {row.onHoldReason}
-                              </span>
-                            )}
+                            <Badge variant={MILESTONE_VARIANT[row.status]}>{MILESTONE_LABELS[row.status]}</Badge>
                           </TableCell>
                           <TableCell className="hidden text-xs tabular-nums text-muted-foreground sm:table-cell">
                             {formatDateTime(row.updatedAt)}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center justify-end gap-1">
-                              {next && !row.archived && !isOperationsTerminal(row.status) && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  disabled={actingId === row.id || maintenance}
-                                  onClick={() => void advance(row)}
-                                  title={`Move to ${OPERATIONS_STATUS_LABELS[next]}`}
-                                >
-                                  {actingId === row.id ? (
-                                    <Loader2Icon className="size-4 animate-spin" />
-                                  ) : (
-                                    <PlayCircle className="size-4" />
-                                  )}
-                                  <span className="sr-only">{`Move to ${OPERATIONS_STATUS_LABELS[next]}`}</span>
-                                </Button>
-                              )}
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -623,7 +545,7 @@ export function Operations() {
           {detail && (
             <div className="mt-4 space-y-5 px-4 pb-6">
               <div className="flex flex-wrap items-center gap-2">
-                <OperationsBadge status={detail.status} label={OPERATIONS_STATUS_LABELS[detail.status] ?? detail.status} />
+                <Badge variant={MILESTONE_VARIANT[detail.status]}>{MILESTONE_LABELS[detail.status]}</Badge>
                 {detail.archived && <span className="text-xs text-muted-foreground">Archived</span>}
               </div>
 
@@ -663,51 +585,7 @@ export function Operations() {
                 the database, never regenerated and never reused.
               </div>
 
-              {detail.status === 'on_hold' && detail.onHoldReason && (
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">On Hold reason</p>
-                  <p className="text-sm">{detail.onHoldReason}</p>
-                </div>
-              )}
-              {detail.status === 'cancelled' && detail.cancelledReason && (
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Cancellation reason</p>
-                  <p className="text-sm">{detail.cancelledReason}</p>
-                </div>
-              )}
-
               <div className="flex flex-wrap gap-2">
-                {nextOperationsStatus(detail.status) && !detail.archived && (
-                  <Button
-                    size="sm"
-                    disabled={actingId === detail.id || maintenance}
-                    onClick={() => void advance(detail).then(() => setDetail(null))}
-                  >
-                    <PlayCircle className="size-4" />
-                    Move to {OPERATIONS_STATUS_LABELS[nextOperationsStatus(detail.status)]}
-                  </Button>
-                )}
-                {!isOperationsTerminal(detail.status) && !detail.archived && (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={actingId === detail.id || maintenance}
-                      onClick={() => askReason(detail, 'on_hold')}
-                    >
-                      Put on hold
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={actingId === detail.id || maintenance}
-                      onClick={() => askReason(detail, 'cancelled')}
-                    >
-                      <X className="size-4" />
-                      Cancel unit
-                    </Button>
-                  </>
-                )}
                 {detail.archived ? (
                   <Button
                     size="sm"
@@ -749,40 +627,6 @@ export function Operations() {
           )}
         </SheetContent>
       </Sheet>
-
-      {/* ---- holding or cancelling always needs a reason -------------------- */}
-      <Dialog open={reasonFor !== null} onOpenChange={(open) => { if (!open) setReasonFor(null) }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="font-heading text-xl">
-              {reasonFor?.status === 'cancelled' ? 'Cancel this unit' : 'Put this unit on hold'}
-            </DialogTitle>
-            <DialogDescription>
-              {reasonFor?.reference} — this stops the unit on the line. Give the workshop a reason.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="unit-reason">Reason</Label>
-            <Textarea
-              id="unit-reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder={
-                reasonFor?.status === 'cancelled'
-                  ? 'Why is this unit being cancelled?'
-                  : 'Why is this unit being held?'
-              }
-              onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void confirmReason() }}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setReasonFor(null)}>Keep as is</Button>
-            <Button onClick={() => void confirmReason()} disabled={!reason.trim()}>
-              {reasonFor?.status === 'cancelled' ? 'Cancel unit' : 'Put on hold'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

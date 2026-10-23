@@ -17,6 +17,38 @@ import { designerMedia } from './media'
 //   Dearunes from before the catalog keep their historical price).
 // ---------------------------------------------------------------------------
 
+function catalogMap(catalog) {
+  const map = new Map()
+  for (const w of catalog?.wrappers ?? []) {
+    if (w?.key) map.set(w.key, w)
+  }
+  return map
+}
+
+export function wrapperName(wrapperOrKey, catalog = null) {
+  if (wrapperOrKey && typeof wrapperOrKey === 'object') {
+    if (wrapperOrKey.name) return wrapperOrKey.name
+    return wrapperLabel(wrapperOrKey.key ?? wrapperOrKey.wrapper_type, catalog)
+  }
+  return wrapperLabel(wrapperOrKey, catalog)
+}
+
+export function wrapperKind(keyOrWrapper, catalog = null) {
+  if (keyOrWrapper && typeof keyOrWrapper === 'object') {
+    if (keyOrWrapper.kind) return keyOrWrapper.kind
+    return wrapperKind(keyOrWrapper.key ?? keyOrWrapper.wrapper_type, catalog)
+  }
+  const m = catalogMap(catalog)
+  const w = m.get(keyOrWrapper)
+  if (w?.kind) return w.kind
+  if (keyOrWrapper === 'digital') return 'digital'
+  return 'physical'
+}
+
+export function isDigitalWrapper(keyOrWrapper, catalog = null) {
+  return wrapperKind(keyOrWrapper, catalog) === 'digital'
+}
+
 // Pure: no network, no state. Returns the effective price/cost and where
 // they came from (`source: 'template'` when the template overrides the
 // wrapper's base, `'wrapper'` otherwise).
@@ -209,3 +241,4 @@ export async function resolveWrapperPhotoUrl(imageUrl, token) {
     return null
   }
 }
+

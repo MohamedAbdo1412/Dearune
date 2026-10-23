@@ -23,7 +23,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { OPERATIONS_STATUS_LABELS, WRAPPER_LABELS } from '@/services/constants'
 import { formatDateTime } from '@/services/format'
 import { parseQrValue } from '@/services/qa'
 import { fetchWorkerQaRecord } from '@/services/workerQa'
@@ -83,7 +82,7 @@ function UnitCard({ unit }) {
     <li className="rounded-xl border border-border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-mono text-xs font-semibold">{unit.reference}</span>
-        <OperationsBadge status={unit.status} label={OPERATIONS_STATUS_LABELS[unit.status] ?? unit.status} />
+        <OperationsBadge status={unit.status} />
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
         Unit {unit.unit_index} · created {formatDateTime(unit.created_at)}
@@ -152,7 +151,7 @@ function RecordView({ record }) {
         <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Reference" value={project.reference} mono />
           <Field label="Status" value={project.status} />
-          <Field label="Wrapper" value={WRAPPER_LABELS[project.wrapper_type] ?? project.wrapper_type} />
+          <Field label="Wrapper" value={project.wrapper_name || project.wrapper_type || '—'} />
           <Field label="Paper" value={record.template?.name || project.template_slug} />
           <Field label="Paper version" value={project.template_version} />
           <Field label="Designer" value={record.designer ? `${record.designer.name} · ${record.designer.code}` : null} />

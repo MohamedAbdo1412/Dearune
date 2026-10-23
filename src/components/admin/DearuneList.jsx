@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
 import { ProjectBadge } from '@/components/stage-badge'
 import { DearuneActions } from '@/components/admin/DearuneActions'
-import { WRAPPER_LABELS } from '@/services/constants'
+import { wrapperName } from '@/services/wrappers'
 import { formatDateTime, formatMoney } from '@/services/format'
 
 // One Dearune, one line: who it is for, what paper it is, where it stands in
@@ -32,7 +32,7 @@ export function DearuneList({ projects, catalog, maintenance, onChanged, basePat
               <p className="truncate text-xs text-muted-foreground">
                 {paperFor(project.template_slug)}
                 {project.template_version ? ` v${project.template_version}` : ''}
-                {project.wrapper_type ? ` · ${WRAPPER_LABELS[project.wrapper_type] ?? project.wrapper_type}` : ' · no wrapper chosen'}
+                {project.wrapper_type ? ` · ${wrapperName(project.wrapper_type, catalog)}` : ' · no wrapper chosen'}
                 {' · '}
                 {formatDateTime(project.configured_at ?? project.submitted_at)}
               </p>

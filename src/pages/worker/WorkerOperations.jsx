@@ -11,20 +11,16 @@ import {
   Loader2,
   MapPin,
   Package,
-  PauseCircle,
   Pencil,
   Phone,
   Plus,
   Printer,
   RefreshCw,
-  RotateCcw,
   Search,
   Truck,
   UserRound,
-  XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { OperationsBadge } from '@/components/admin/operations-status'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -37,12 +33,6 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Skeleton } from '@/components/ui/skeleton'
 import { hasPermission } from '@/lib/permissions'
 import { formatDateTime } from '@/services/format'
-import {
-  OPERATIONS_STATUS_LABELS,
-  OPERATIONS_STATUS_ORDER,
-  OPERATIONS_STATUS_SHORT,
-  nextOperationsStatus,
-} from '@/services/constants'
 import { OPERATIONS_SORTS } from '@/services/operations'
 import {
   archiveWorkerOperations,
@@ -52,7 +42,9 @@ import {
   fetchWorkerOperationEvents,
   fetchWorkerOperations,
   fetchWorkerOperationsForExport,
-  setWorkerOperationStatus,
+  markWorkerDearuneDelivered,
+  markWorkerDearuneManufactured,
+  markWorkerDearuneShipped,
   updateWorkerOperation,
   updateWorkerOperationContact,
   updateWorkerOperationDesigner,
@@ -72,9 +64,22 @@ const timeOf = (value) => {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-const statusRank = (status) => {
-  const index = OPERATIONS_STATUS_ORDER.indexOf(status)
-  return index === -1 ? OPERATIONS_STATUS_ORDER.length : index
+const MILESTONE_ORDER = ['pending', 'sold', 'manufactured', 'shipped', 'delivered']
+
+const milestoneOf = (row) => {
+  if (row.delivered_at) return 'delivered'
+  if (row.shipped_at) return 'shipped'
+  if (row.manufacturing_completed_at || row.manufactured_at) return 'manufactured'
+  if (row.paid_at) return 'sold'
+  return 'pending'
+}
+
+const MILESTONE_LABELS = {
+  pending: 'Pending',
+  sold: 'Sold',
+  manufactured: 'Manufactured',
+  shipped: 'Shipped',
+  delivered: 'Delivered',
 }
 
 // The same sort choices the admin screen offers, applied to the worker's safe
@@ -89,7 +94,10 @@ function sortWorkerRows(rows, sortKey) {
       return sorted.sort((a, b) => timeOf(b.updated_at) - timeOf(a.updated_at) || byId(a, b))
     case 'status':
       return sorted.sort(
-        (a, b) => statusRank(a.status) - statusRank(b.status) || timeOf(b.created_at) - timeOf(a.created_at) || byId(a, b),
+        (a, b) =>
+          MILESTONE_ORDER.indexOf(milestoneOf(a)) - MILESTONE_ORDER.indexOf(milestoneOf(b)) ||
+          timeOf(b.created_at) - timeOf(a.created_at) ||
+          byId(a, b),
       )
     case 'id':
       return sorted.sort(byId)
@@ -124,49 +132,28 @@ function EmptyState({ title, message, onRetry }) {
   )
 }
 
-function StatusActions({ row, permissions, busy, onAdvance, onAction, onResume }) {
-  const [resume, setResume] = useState('information_verified')
-  const canUpdate = hasPermission(permissions, 'operations.update_status')
-  const next = nextOperationsStatus(row.status)
-  if (!canUpdate) return null
-  if (row.archived_at) return <p className="text-xs text-muted-foreground">Restore this unit before changing its status.</p>
-  if (row.status === 'delivered' || row.status === 'cancelled') return null
+function MilestoneActions({ row, permissions, busy, onAdvance }) {
+  const canManufacture = hasPermission(permissions, 'operations.mark_manufactured')
+  const canShip = hasPermission(permissions, 'operations.mark_shipped')
+  const canDeliver = hasPermission(permissions, 'operations.mark_delivered')
+  const milestone = milestoneOf(row)
+  if (row.archived_at) return <p className="text-xs text-muted-foreground">Restore this unit before changing its milestone.</p>
+  if (milestone === 'delivered') return null
+
+  const next = MILESTONE_ORDER[MILESTONE_ORDER.indexOf(milestone) + 1]
+  // Workers advance through manufacturing milestones only; 'sold' is set by
+  // the studio admin. Skip it in the worker progression.
+  const workerNext = next === 'sold' ? 'manufactured' : next
+  if (!workerNext) return null
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {row.status === 'on_hold' ? (
-        <>
-          <Select value={resume} onValueChange={setResume}>
-            <SelectTrigger className="h-9 w-[13rem]">
-              <SelectValue placeholder="Resume at…" />
-            </SelectTrigger>
-            <SelectContent>
-              {OPERATIONS_STATUS_ORDER.filter((status) => !['on_hold', 'cancelled'].includes(status)).map((status) => (
-                <SelectItem key={status} value={status}>
-                  {OPERATIONS_STATUS_SHORT[status] ?? status}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button size="sm" disabled={busy} onClick={() => onResume(row, resume)}>
-            <RotateCcw className="size-4" aria-hidden />
-            Resume
-          </Button>
-        </>
-      ) : next ? (
-        <Button size="sm" disabled={busy} onClick={() => onAdvance(row, next)}>
+      {(workerNext === 'manufactured' && canManufacture) || (workerNext === 'shipped' && canShip) || (workerNext === 'delivered' && canDeliver) ? (
+        <Button size="sm" disabled={busy} onClick={() => onAdvance(row, workerNext)}>
           <ArrowRight className="size-4" aria-hidden />
-          Advance to {OPERATIONS_STATUS_SHORT[next] ?? next}
+          Advance to {MILESTONE_LABELS[workerNext]}
         </Button>
       ) : null}
-      <Button size="sm" variant="outline" disabled={busy} onClick={() => onAction(row, 'on_hold')}>
-        <PauseCircle className="size-4" aria-hidden />
-        Hold
-      </Button>
-      <Button size="sm" variant="outline" disabled={busy} onClick={() => onAction(row, 'cancelled')}>
-        <XCircle className="size-4" aria-hidden />
-        Cancel
-      </Button>
     </div>
   )
 }
@@ -187,7 +174,7 @@ export function WorkerOperations() {
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState('newest')
-  const [statusFilter, setStatusFilter] = useState(ALL)
+  const [milestoneFilter, setMilestoneFilter] = useState(ALL)
   const [showArchived, setShowArchived] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
   const [busyId, setBusyId] = useState('')
@@ -195,13 +182,9 @@ export function WorkerOperations() {
   const [exporting, setExporting] = useState(false)
   const [timeline, setTimeline] = useState(null)
   const [detail, setDetail] = useState(null)
-  const [statusDialog, setStatusDialog] = useState(null)
-  const [reason, setReason] = useState('')
   const [editOpen, setEditOpen] = useState(false)
   const [notes, setNotes] = useState('')
   const [phone, setPhone] = useState('')
-  const [holdReason, setHoldReason] = useState('')
-  const [cancelReason, setCancelReason] = useState('')
   const [assignOpen, setAssignOpen] = useState(false)
   const [designers, setDesigners] = useState([])
   const [designerId, setDesignerId] = useState('')
@@ -233,14 +216,16 @@ export function WorkerOperations() {
 
   const counts = useMemo(() => {
     const next = { [ALL]: scoped.length }
-    for (const row of scoped) next[row.status] = (next[row.status] ?? 0) + 1
+    for (const milestone of MILESTONE_ORDER) {
+      next[milestone] = scoped.filter((row) => milestoneOf(row) === milestone).length
+    }
     return next
   }, [scoped])
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
     const filtered = scoped
-      .filter((row) => statusFilter === ALL || row.status === statusFilter)
+      .filter((row) => milestoneFilter === ALL || milestoneOf(row) === milestoneFilter)
       .filter((row) => {
         if (!needle) return true
         return [
@@ -258,7 +243,7 @@ export function WorkerOperations() {
           .some((value) => String(value).toLowerCase().includes(needle))
       })
     return sortWorkerRows(filtered, sortKey)
-  }, [scoped, query, statusFilter, sortKey])
+  }, [scoped, query, milestoneFilter, sortKey])
 
   const projectUnits = useMemo(() => {
     const map = new Map()
@@ -301,33 +286,18 @@ export function WorkerOperations() {
   const advance = async (row, status) => {
     setBusyId(row.id)
     try {
-      await setWorkerOperationStatus(row.id, status)
-      toast.success(`Moved to ${OPERATIONS_STATUS_LABELS[status] ?? status}`)
-      await load()
-    } catch (caught) {
-      toast.error(messageOf(caught))
-    } finally {
-      setBusyId('')
-    }
-  }
-
-  const openAction = (row, status) => {
-    setStatusDialog({ row, status })
-    setReason('')
-  }
-
-  const confirmAction = async () => {
-    if (!statusDialog) return
-    const { row, status } = statusDialog
-    if (!reason.trim()) {
-      toast.error('Please say why this unit is being held or cancelled')
-      return
-    }
-    setBusyId(row.id)
-    try {
-      await setWorkerOperationStatus(row.id, status, reason.trim())
-      toast.success(status === 'on_hold' ? 'Unit placed on hold' : 'Unit cancelled')
-      setStatusDialog(null)
+      if (status === 'manufactured') {
+        await markWorkerDearuneManufactured(row.project_id)
+        toast.success('Marked manufactured')
+      } else if (status === 'shipped') {
+        await markWorkerDearuneShipped(row.project_id)
+        toast.success('Marked shipped')
+      } else if (status === 'delivered') {
+        await markWorkerDearuneDelivered(row.project_id)
+        toast.success('Marked delivered')
+      } else {
+        throw new Error('Unsupported milestone')
+      }
       await load()
     } catch (caught) {
       toast.error(messageOf(caught))
@@ -339,8 +309,6 @@ export function WorkerOperations() {
   const openEdit = (row) => {
     setNotes(row.notes ?? '')
     setPhone(row.customer_phone ?? '')
-    setHoldReason(row.on_hold_reason ?? '')
-    setCancelReason(row.cancelled_reason ?? '')
     setEditOpen(true)
   }
 
@@ -350,8 +318,6 @@ export function WorkerOperations() {
     try {
       await updateWorkerOperation(detail.id, {
         notes,
-        onHoldReason: holdReason,
-        cancelledReason: cancelReason,
       })
       if ((detail.customer_phone ?? '') !== phone) {
         await updateWorkerOperationContact(detail.project_id, phone)
@@ -546,8 +512,10 @@ export function WorkerOperations() {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: 'In the workshop', value: scoped.filter((row) => !['delivered', 'cancelled', 'on_hold'].includes(row.status)).length },
-          { label: 'On hold', value: counts.on_hold ?? 0 },
+          { label: 'Pending', value: counts.pending ?? 0 },
+          { label: 'Sold', value: counts.sold ?? 0 },
+          { label: 'Manufactured', value: counts.manufactured ?? 0 },
+          { label: 'Shipped', value: counts.shipped ?? 0 },
           { label: 'Delivered', value: counts.delivered ?? 0 },
           { label: 'Archived', value: (rows ?? []).filter((row) => row.archived_at).length },
         ].map((stat) => (
@@ -582,15 +550,15 @@ export function WorkerOperations() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[13rem]" aria-label="Filter by status">
-              <SelectValue />
+          <Select value={milestoneFilter} onValueChange={setMilestoneFilter} disabled>
+            <SelectTrigger className="w-[13rem]" aria-label="Filter by milestone">
+              <SelectValue placeholder="Milestones" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All statuses ({counts[ALL] ?? 0})</SelectItem>
-              {OPERATIONS_STATUS_ORDER.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {OPERATIONS_STATUS_LABELS[status]} ({counts[status] ?? 0})
+              <SelectItem value={ALL}>All ({counts[ALL] ?? 0})</SelectItem>
+              {MILESTONE_ORDER.map((milestone) => (
+                <SelectItem key={milestone} value={milestone}>
+                  {MILESTONE_LABELS[milestone]} ({counts[milestone] ?? 0})
                 </SelectItem>
               ))}
             </SelectContent>
@@ -652,9 +620,9 @@ export function WorkerOperations() {
 
       {visible.length === 0 ? (
         <EmptyState
-          title={query || statusFilter !== ALL ? 'No units match this view' : 'No production units yet'}
+          title={query || milestoneFilter !== ALL ? 'No units match this view' : 'No production units yet'}
           message={
-            query || statusFilter !== ALL
+            query || milestoneFilter !== ALL
               ? 'Clear the search or status filter to see the rest of the workshop.'
               : 'Units appear here after a physical Dearune is sold. If a unit is missing, ask the studio administrator to open it.'
           }
@@ -704,7 +672,9 @@ export function WorkerOperations() {
                       {row.designer_code ? <p className="mt-0.5 text-xs text-muted-foreground">{row.designer_code}</p> : null}
                     </td>
                     <td className="px-4 py-3 align-top">
-                      <OperationsBadge status={row.status} label={OPERATIONS_STATUS_LABELS[row.status]} />
+                      <div className="flex flex-wrap gap-1">
+                        {row.delivered_at ? <Badge variant="outline">Delivered</Badge> : row.shipped_at ? <Badge variant="outline">Shipped</Badge> : row.manufacturing_completed_at ? <Badge variant="outline">Manufactured</Badge> : row.paid_at ? <Badge variant="outline">Sold</Badge> : <Badge variant="outline">Pending</Badge>}
+                      </div>
                     </td>
                     <td className="px-4 py-3 align-top text-xs text-muted-foreground">
                       <p>{row.recipient_name || 'No recipient name'}</p>
@@ -755,7 +725,7 @@ export function WorkerOperations() {
                         <p className="truncate font-mono text-xs font-semibold">{row.reference}</p>
                         <p className="mt-1 truncate font-medium">{row.project_title || 'Untitled Dearune'}</p>
                       </div>
-                      <OperationsBadge status={row.status} label={OPERATIONS_STATUS_SHORT[row.status]} />
+                      <Badge variant="outline">{MILESTONE_LABELS[milestoneOf(row)]}</Badge>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                       <span>Unit {row.unit_index}</span>
@@ -795,9 +765,8 @@ export function WorkerOperations() {
 
               <div className="mt-5 space-y-5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <OperationsBadge status={detail.status} label={OPERATIONS_STATUS_LABELS[detail.status]} />
+                  <Badge variant="outline">{MILESTONE_LABELS[milestoneOf(detail)]}</Badge>
                   {detail.archived_at ? <Badge variant="outline">Archived</Badge> : null}
-                  {detail.paid_at ? <Badge variant="outline">Sold</Badge> : null}
                   {detail.qr_ready ? <Badge className="bg-primary/10 text-primary">QR ready</Badge> : null}
                 </div>
 
@@ -805,14 +774,27 @@ export function WorkerOperations() {
                   <div className="rounded-2xl border border-border bg-muted/30 p-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Actions</p>
                     <div className="mt-3">
-                      <StatusActions
+                      <MilestoneActions
                         row={detail}
                         permissions={permissions}
                         busy={busyId === detail.id}
                         onAdvance={advance}
-                        onAction={openAction}
-                        onResume={(row, status) => advance(row, status)}
                       />
+                      {canViewDesigners && detail.designer_id && detail.project_id && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          asChild
+                          onClick={(e) => {
+                            e.stopPropagation()
+                          }}
+                        >
+                          <Link to={`/worker/designers/${detail.designer_id}`}>
+                            <UserRound className="size-4" aria-hidden />
+                            View Dearune
+                          </Link>
+                        </Button>
+                      )}
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {canEdit ? (
@@ -1021,30 +1003,6 @@ export function WorkerOperations() {
                 inputMode="tel"
               />
             </div>
-            {detail?.status === 'on_hold' ? (
-              <div className="space-y-2">
-                <Label htmlFor="worker-hold-reason">Hold reason</Label>
-                <Textarea
-                  id="worker-hold-reason"
-                  value={holdReason}
-                  onChange={(event) => setHoldReason(event.target.value)}
-                  rows={2}
-                  maxLength={300}
-                />
-              </div>
-            ) : null}
-            {detail?.status === 'cancelled' ? (
-              <div className="space-y-2">
-                <Label htmlFor="worker-cancel-reason">Cancellation reason</Label>
-                <Textarea
-                  id="worker-cancel-reason"
-                  value={cancelReason}
-                  onChange={(event) => setCancelReason(event.target.value)}
-                  rows={2}
-                  maxLength={300}
-                />
-              </div>
-            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)} disabled={Boolean(busyId)}>
@@ -1053,44 +1011,6 @@ export function WorkerOperations() {
             <Button onClick={saveEdit} disabled={Boolean(busyId)}>
               {busyId ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
               Save details
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={Boolean(statusDialog)} onOpenChange={(open) => !open && setStatusDialog(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {statusDialog?.status === 'on_hold' ? 'Place this unit on hold' : 'Cancel this unit'}
-            </DialogTitle>
-            <DialogDescription>
-              The reason is recorded in the unit timeline and the studio audit log. It is not sent
-              to the customer.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="worker-status-reason">Reason</Label>
-            <Textarea
-              id="worker-status-reason"
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              rows={3}
-              maxLength={300}
-              placeholder={statusDialog?.status === 'on_hold' ? 'Waiting for the customer to confirm the address…' : 'The customer cancelled this order…'}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setStatusDialog(null)} disabled={Boolean(busyId)}>
-              Keep as is
-            </Button>
-            <Button
-              variant={statusDialog?.status === 'cancelled' ? 'destructive' : 'default'}
-              onClick={confirmAction}
-              disabled={Boolean(busyId)}
-            >
-              {busyId ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-              {statusDialog?.status === 'on_hold' ? 'Place on hold' : 'Cancel unit'}
             </Button>
           </DialogFooter>
         </DialogContent>

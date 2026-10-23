@@ -15,19 +15,29 @@ export async function fetchWorkerOperations(includeArchived = false) {
 }
 
 export async function setWorkerOperationStatus(productId, status, reason = null) {
-  return workerRpc('worker_set_operation_status', {
-    p_product_id: productId,
-    p_status: status,
-    p_reason: reason || null,
-  })
+  throw new Error('Operations status has been replaced by milestones')
 }
 
-export async function updateWorkerOperation(productId, { notes, onHoldReason, cancelledReason } = {}) {
+export async function fetchWorkerDearuneDetail(projectId) {
+  return workerRpc('worker_dearune_detail', { p_project_id: projectId })
+}
+
+export async function markWorkerDearuneManufactured(projectId) {
+  return workerRpc('worker_mark_dearune_manufactured', { p_project_id: projectId })
+}
+
+export async function markWorkerDearuneShipped(projectId, trackingCode = null, provider = null) {
+  return workerRpc('worker_mark_dearune_shipped', { p_project_id: projectId, p_tracking_code: trackingCode, p_provider: provider })
+}
+
+export async function markWorkerDearuneDelivered(projectId) {
+  return workerRpc('worker_mark_dearune_delivered', { p_project_id: projectId })
+}
+
+export async function updateWorkerOperation(productId, { notes } = {}) {
   return workerRpc('worker_update_operation', {
     p_product_id: productId,
     p_notes: notes ?? null,
-    p_on_hold_reason: onHoldReason ?? null,
-    p_cancelled_reason: cancelledReason ?? null,
   })
 }
 

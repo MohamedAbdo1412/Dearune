@@ -8,6 +8,7 @@ import { fetchDesigners } from '@/services/designers'
 import { fetchTemplates } from '@/services/templates'
 import { isDigital } from '@/services/constants'
 import { findWrapper, wrapperLabel } from '@/services/wrappers'
+import { getGovernorates, getCitiesForGovernorate } from '@/data/egypt'
 import { buildReceiptPdf, buildShippingPdf, downloadPdf } from '@/services/pdf'
 import { formatDate, formatDateTime, formatMoney } from '@/services/format'
 import { useAppSettings } from '@/hooks/use-app-settings'
@@ -62,8 +63,10 @@ const EMPTY_SHIP = {
   address_line2: '',
   city: '',
   state_province: '',
+  governorate: '',
+  district: '',
   postal_code: '',
-  country: '',
+  country: 'Egypt',
   special_instructions: '',
   tracking_code: '',
   tracking_url: '',
@@ -71,7 +74,7 @@ const EMPTY_SHIP = {
 
 // The wrapper's display name for this record — the catalog's copy when it
 // is loaded, the shared label table as fallback (legacy / deactivated keys).
-function wrapperName(catalog, key, fallback = 'no wrapper') {
+function wrapperNameFromCatalog(catalog, key, fallback = 'no wrapper') {
   if (!key) return fallback
   return wrapperLabel(findWrapper(catalog?.wrappers ?? [], key) ?? { key })
 }
@@ -127,14 +130,16 @@ export function MessageDetail() {
     if (shipping) {
       setShipForm({
         ...EMPTY_SHIP,
-        recipient_name: shipping.recipient_name ?? '',
+        recipient_name: shipping.recipient_name ?? project?.title ?? '',
         phone: shipping.phone ?? '',
         address_line1: shipping.address_line1 ?? '',
         address_line2: shipping.address_line2 ?? '',
         city: shipping.city ?? '',
-        state_province: shipping.state_province ?? '',
+        state_province: shipping.state_province ?? shipping.governorate ?? '',
+        governorate: shipping.governorate ?? shipping.state_province ?? '',
+        district: shipping.district ?? '',
         postal_code: shipping.postal_code ?? '',
-        country: shipping.country ?? '',
+        country: shipping.country ?? 'Egypt',
         special_instructions: shipping.special_instructions ?? '',
         tracking_code: shipping.tracking_code ?? '',
         tracking_url: shipping.tracking_url ?? '',
@@ -202,13 +207,15 @@ export function MessageDetail() {
     setSavingShip(true)
     try {
       await saveDearuneShipping(project.id, {
-        recipientName: shipForm.recipient_name.trim() || project.title || null,
+        recipientName: (shipForm.recipient_name || project.title || '').trim() || null,
         addressLine1: shipForm.address_line1.trim(),
         addressLine2: shipForm.address_line2.trim() || null,
         city: shipForm.city.trim(),
-        stateProvince: shipForm.state_province.trim() || null,
-        postalCode: shipForm.postal_code.trim(),
-        country: shipForm.country.trim(),
+        stateProvince: (shipForm.state_province || shipForm.governorate).trim() || null,
+        governorate: (shipForm.governorate || shipForm.state_province).trim() || null,
+        district: shipForm.district.trim() || null,
+        postalCode: shipForm.postal_code.trim() || null,
+        country: (shipForm.country || 'Egypt').trim() || 'Egypt',
         phone: shipForm.phone.trim() || null,
         specialInstructions: shipForm.special_instructions.trim() || null,
         trackingCode: shipForm.tracking_code.trim() || null,
@@ -247,7 +254,7 @@ export function MessageDetail() {
         recipientName: shipForm.recipient_name.trim() || project.title || 'Recipient',
         orderId: String(project.reference ?? project.id),
         templateName: String(paper?.name ?? project.template_slug),
-        wrapperType: String(wrapperName(catalog, project.wrapper_type)),
+        wrapperType: String(wrapperNameFromCatalog(catalog, project.wrapper_type)),
         customerName: String(designer?.name ?? '—'),
         createdDate: project.created_at ?? project.submitted_at,
         dueDate: project.manufactured_at ?? project.paid_at,
@@ -270,7 +277,7 @@ export function MessageDetail() {
         createdDate: activeSale.sold_at,
         recipientName: shipForm.recipient_name.trim() || project.title || 'Recipient',
         templateName: String(paper?.name ?? project.template_slug),
-        wrapperType: String(wrapperName(catalog, activeSale.wrapper_type ?? project.wrapper_type)),
+        wrapperType: String(wrapperNameFromCatalog(catalog, activeSale.wrapper_type ?? project.wrapper_type)),
         publicId: String(project.public_id ?? '—'),
         price: Number(activeSale.selling_price) || 0,
         currency: activeSale.currency ?? 'EGP',
@@ -301,7 +308,7 @@ export function MessageDetail() {
             {paper?.name ?? project.template_slug}
             {project.template_version ? ` v${project.template_version}` : ''}
             {' · '}
-            {wrapperName(catalog, project.wrapper_type, 'wrapper not chosen')}
+            {wrapperNameFromCatalog(catalog, project.wrapper_type, 'wrapper not chosen')}
             {' · '}
             {digital ? 'digital' : 'physical'}
             {' · handed over '}{formatDateTime(project.configured_at ?? project.submitted_at)}
@@ -394,7 +401,7 @@ export function MessageDetail() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {activeSale.sale_reference} · sold {formatDateTime(activeSale.sold_at)}
-                  {' · '}{wrapperName(catalog, activeSale.wrapper_type)}
+                  {' · '}{wrapperNameFromCatalog(catalog, activeSale.wrapper_type)}
                   {activeSale.designer_name ? ` · ${activeSale.designer_name}` : ''}
                 </p>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
@@ -453,43 +460,90 @@ export function MessageDetail() {
         </Card>
       </div>
 
-      {!digital && project.paid_at && (
+      {!digital && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
               <Truck className="size-4" /> Delivery details
             </CardTitle>
             <CardDescription>
-              Needed before this Dearune can be marked shipped — name, phone, address and city are required by the pipeline.
+              Address form is always available. Fill in delivery details for physical Dearunes.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="ship-recipient">Recipient name</Label>
-              <Input id="ship-recipient" value={shipForm.recipient_name} onChange={(e) => setShipForm({ ...shipForm, recipient_name: e.target.value })} />
+              <Input id="ship-recipient" value={shipForm.recipient_name || project?.title || ''} onChange={(e) => setShipForm({ ...shipForm, recipient_name: e.target.value })} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="ship-phone">Phone</Label>
               <Input id="ship-phone" value={shipForm.phone} onChange={(e) => setShipForm({ ...shipForm, phone: e.target.value })} />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="ship-address">Address</Label>
+              <Label htmlFor="ship-address">Street & building</Label>
               <Input id="ship-address" value={shipForm.address_line1} onChange={(e) => setShipForm({ ...shipForm, address_line1: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ship-address2">Address line 2</Label>
+              <Label htmlFor="ship-address2">Apartment / floor (optional)</Label>
               <Input id="ship-address2" value={shipForm.address_line2} onChange={(e) => setShipForm({ ...shipForm, address_line2: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ship-city">City</Label>
-              <Input id="ship-city" value={shipForm.city} onChange={(e) => setShipForm({ ...shipForm, city: e.target.value })} />
+              <Label htmlFor="ship-district">District / neighborhood</Label>
+              <Input id="ship-district" value={shipForm.district} onChange={(e) => setShipForm({ ...shipForm, district: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ship-state">State / province</Label>
-              <Input id="ship-state" value={shipForm.state_province} onChange={(e) => setShipForm({ ...shipForm, state_province: e.target.value })} />
+              <Label htmlFor="ship-governorate">Governorate</Label>
+              <Select
+                value={shipForm.governorate || shipForm.state_province || ''}
+                onValueChange={(v) => {
+                  setShipForm({ ...shipForm, governorate: v, state_province: v, city: '' })
+                }}
+              >
+                <SelectTrigger id="ship-governorate">
+                  <SelectValue placeholder="Select governorate" />
+                </SelectTrigger>
+                <SelectContent>
+                  {getGovernorates().map((g) => (
+                    <SelectItem key={g.id} value={g.name_en || g.name_ar}>
+                      {g.name_ar} / {g.name_en}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                className="mt-1"
+                placeholder="Or enter manually"
+                value={shipForm.governorate || shipForm.state_province || ''}
+                onChange={(e) => setShipForm({ ...shipForm, governorate: e.target.value, state_province: e.target.value })}
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ship-postal">Postal code</Label>
+              <Label htmlFor="ship-city">City / Markaz</Label>
+              <Select
+                value={shipForm.city || ''}
+                onValueChange={(v) => setShipForm({ ...shipForm, city: v })}
+                disabled={!((shipForm.governorate || shipForm.state_province) && getCitiesForGovernorate(shipForm.governorate || shipForm.state_province).length > 0)}
+              >
+                <SelectTrigger id="ship-city">
+                  <SelectValue placeholder="Select city" />
+                </SelectTrigger>
+                <SelectContent>
+                  {getCitiesForGovernorate(shipForm.governorate || shipForm.state_province).map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                className="mt-1"
+                placeholder="Or enter manually"
+                value={shipForm.city}
+                onChange={(e) => setShipForm({ ...shipForm, city: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ship-postal">Postal code (optional)</Label>
               <Input id="ship-postal" value={shipForm.postal_code} onChange={(e) => setShipForm({ ...shipForm, postal_code: e.target.value })} />
             </div>
             <div className="space-y-2">
