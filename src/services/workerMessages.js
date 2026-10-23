@@ -60,12 +60,25 @@ export async function fetchAdminWorkerInbox() {
  * Realtime is an enhancement, not the delivery mechanism. The database row is
  * written first; screens also refresh on focus and on a timer, so notifications
  * work when the project has no Realtime publication configured.
+ *
+ * channel() reuses an existing channel with the same topic, and adding a
+ * postgres_changes callback after subscribe() throws. Every subscription
+ * therefore gets its own topic: the unread badge, the Messages screen and the
+ * admin inbox can all listen at once, and React StrictMode re-mounts cannot
+ * collide with the previous subscription.
  */
+let channelSequence = 0
+
+function channelTopic(prefix) {
+  channelSequence += 1
+  return `${prefix}-${Date.now().toString(36)}-${channelSequence}`
+}
+
 export function subscribeToWorkerMessages(workerId, onChange) {
   if (!supabase || !workerId) return () => {}
   let active = true
   const channel = supabase
-    .channel(`worker-messages-${workerId}`)
+    .channel(channelTopic(`worker-messages-${workerId}`))
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'worker_messages', filter: `worker_id=eq.${workerId}` },
@@ -84,7 +97,7 @@ export function subscribeToAllWorkerMessages(onChange) {
   if (!supabase) return () => {}
   let active = true
   const channel = supabase
-    .channel('admin-worker-messages')
+    .channel(channelTopic('admin-worker-messages'))
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'worker_messages' },

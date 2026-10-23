@@ -105,6 +105,45 @@ export async function many(db, sql, params) {
 
 export const ADMIN_ID = '11111111-1111-1111-1111-111111111111'
 export const OTHER_ID = '22222222-2222-2222-2222-222222222222'
+export const WORKER_ID = '33333333-3333-3333-3333-333333333333'
+export const OTHER_WORKER_ID = '44444444-4444-4444-4444-444444444444'
+
+/** Give a worker a set of permissions, exactly as an admin grant would. */
+export async function grantWorkerPermissions(db, workerId, permissions = [], grantedBy = ADMIN_ID) {
+  for (const permissionId of permissions) {
+    await db.query(
+      `insert into public.worker_permissions (worker_id, permission_id, granted_by)
+       values ($1, $2, $3) on conflict (worker_id, permission_id) do nothing`,
+      [workerId, permissionId, grantedBy],
+    )
+  }
+}
+
+/**
+ * Create a worker: the Supabase Auth user and the `public.workers` row that
+ * together are the Worker Dashboard identity. Permissions are always explicit;
+ * nothing is implied by the module a permission belongs to.
+ */
+export async function seedWorker(
+  db,
+  {
+    id = WORKER_ID,
+    email = `${id}@dearune.test`,
+    displayName = 'Mariam Hassan',
+    status = 'active',
+    permissions = [],
+    createdBy = ADMIN_ID,
+  } = {},
+) {
+  await db.query('insert into auth.users (id, email) values ($1, $2)', [id, email])
+  await db.query(
+    `insert into public.workers (id, email, display_name, status, created_by)
+     values ($1, $2, $3, $4, $5)`,
+    [id, email, displayName, status, createdBy],
+  )
+  await grantWorkerPermissions(db, id, permissions)
+  return id
+}
 
 /** Create an admin (and their auth user) so `is_dearune_admin()` is true. */
 export async function seedAdmin(db, id = ADMIN_ID, name = 'Studio Admin') {

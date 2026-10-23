@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate } from 'react-router-dom'
 import { Loader2, LogOut, RefreshCw, ShieldAlert } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { WorkerBrand } from '@/components/worker-brand'
