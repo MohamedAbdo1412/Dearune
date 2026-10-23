@@ -65,20 +65,24 @@ where not exists (select 1 from public.physical_product_events e where e.physica
 drop trigger if exists physical_products_guard on public.physical_products;
 drop function if exists public.physical_products_guard();
 
--- 5. Remove status-related columns and index
+-- 5. Drop the operations_units view first — it references pp.status, which
+--    is dropped in the next step. It is recreated below without status.
+drop view if exists public.operations_units;
+
+-- 6. Remove status-related columns and index
 drop index if exists public.physical_products_status_idx;
 alter table public.physical_products drop column if exists status;
 alter table public.physical_products drop column if exists on_hold_reason;
 alter table public.physical_products drop column if exists cancelled_reason;
 
--- 6. Drop enum type if unused
+-- 7. Drop enum type if unused
 do $$
 begin
   drop type if exists public.physical_product_status;
 exception when others then null;
 end $$;
 
--- 7. Recreate ensure_physical_products without status parameter
+-- 8. Recreate ensure_physical_products without status parameter
 create or replace function public.ensure_physical_products(
   p_project_id uuid,
   p_units integer default 1,
@@ -122,7 +126,7 @@ $$;
 
 revoke execute on function public.ensure_physical_products(uuid, integer, uuid) from public, anon, authenticated;
 
--- 8. Update operations_units view to remove status
+-- 9. Update operations_units view to remove status
 create or replace view public.operations_units
 with (security_invoker = true) as
 select

@@ -2,6 +2,33 @@
 -- Worker: per-record Dearune access and milestone actions
 -- ============================================================================
 
+-- Worker audit log: records every worker-initiated milestone/action for
+-- traceability. Kept separate from admin_audit_log so worker actions are
+-- audited under their own actor identity.
+create table if not exists public.worker_audit_logs (
+  id          uuid primary key default gen_random_uuid(),
+  worker_id   uuid not null references public.workers (id) on delete cascade,
+  action      text not null,
+  entity_type text not null,
+  entity_id   text not null,
+  metadata    jsonb not null default '{}'::jsonb,
+  created_at  timestamptz not null default now()
+);
+create index if not exists worker_audit_logs_worker_idx
+  on public.worker_audit_logs (worker_id, created_at desc);
+create index if not exists worker_audit_logs_entity_idx
+  on public.worker_audit_logs (entity_type, entity_id, created_at desc);
+
+alter table public.worker_audit_logs enable row level security;
+revoke all on public.worker_audit_logs from anon, authenticated;
+grant select on public.worker_audit_logs to authenticated;
+create policy worker_audit_logs_read_own_or_admin on public.worker_audit_logs
+  for select to authenticated
+  using (
+    public.is_dearune_admin()
+    or (worker_id = public.current_worker_id())
+  );
+
 -- Function to get a single Dearune detail for workers (safe fields)
 create or replace function public.worker_dearune_detail(p_project_id uuid)
 returns jsonb
@@ -134,7 +161,7 @@ as $$
 declare
   v_worker_id uuid;
   v_project record;
-  v_wrapper text;
+  v_wrapper_kind text;
   v_units_updated integer := 0;
 begin
   v_worker_id := public.current_worker_id();
@@ -146,8 +173,11 @@ begin
   if v_project.archived_at is not null then raise exception 'dearune.archived'; end if;
   if v_project.paid_at is null then raise exception 'dearune.not_sold'; end if;
 
-  select wrapper_type into v_wrapper from public.projects where id = p_project_id;
-  if v_wrapper = 'digital' then raise exception 'dearune.digital'; end if;
+  select coalesce(wt.kind, case when v_project.wrapper_type = 'digital' then 'digital' else 'physical' end)
+    into v_wrapper_kind
+    from public.wrapper_types wt
+   where wt.key = v_project.wrapper_type;
+  if v_wrapper_kind = 'digital' then raise exception 'dearune.digital'; end if;
 
   update public.physical_products
   set manufacturing_completed_at = coalesce(manufacturing_completed_at, now()), updated_at = now()
@@ -182,7 +212,7 @@ as $$
 declare
   v_worker_id uuid;
   v_project record;
-  v_wrapper text;
+  v_wrapper_kind text;
   v_units_updated integer := 0;
 begin
   v_worker_id := public.current_worker_id();
@@ -194,8 +224,11 @@ begin
   if v_project.archived_at is not null then raise exception 'dearune.archived'; end if;
   if v_project.paid_at is null then raise exception 'dearune.not_sold'; end if;
 
-  select wrapper_type into v_wrapper from public.projects where id = p_project_id;
-  if v_wrapper = 'digital' then raise exception 'dearune.digital'; end if;
+  select coalesce(wt.kind, case when v_project.wrapper_type = 'digital' then 'digital' else 'physical' end)
+    into v_wrapper_kind
+    from public.wrapper_types wt
+   where wt.key = v_project.wrapper_type;
+  if v_wrapper_kind = 'digital' then raise exception 'dearune.digital'; end if;
 
   if v_project.manufactured_at is null then raise exception 'dearune.not_manufactured'; end if;
 
@@ -241,7 +274,7 @@ as $$
 declare
   v_worker_id uuid;
   v_project record;
-  v_wrapper text;
+  v_wrapper_kind text;
   v_units_updated integer := 0;
 begin
   v_worker_id := public.current_worker_id();
@@ -253,8 +286,11 @@ begin
   if v_project.archived_at is not null then raise exception 'dearune.archived'; end if;
   if v_project.paid_at is null then raise exception 'dearune.not_sold'; end if;
 
-  select wrapper_type into v_wrapper from public.projects where id = p_project_id;
-  if v_wrapper = 'digital' then raise exception 'dearune.digital'; end if;
+  select coalesce(wt.kind, case when v_project.wrapper_type = 'digital' then 'digital' else 'physical' end)
+    into v_wrapper_kind
+    from public.wrapper_types wt
+   where wt.key = v_project.wrapper_type;
+  if v_wrapper_kind = 'digital' then raise exception 'dearune.digital'; end if;
 
   if v_project.shipped_at is null then raise exception 'dearune.not_shipped'; end if;
 
