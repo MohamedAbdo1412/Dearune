@@ -23,6 +23,12 @@ export const PERMISSION_MODULES = [
         description: 'Open the production list and see units, statuses and delivery details. Never exposes prices or costs.',
       },
       {
+        id: 'operations.view_details',
+        label: 'View full details',
+        summary: 'Details',
+        description: 'View the full detail panel, timeline events and related delivery/designer information for a unit.',
+      },
+      {
         id: 'operations.create',
         label: 'Open production units',
         summary: 'Add units',
@@ -41,10 +47,34 @@ export const PERMISSION_MODULES = [
         description: 'Move a unit along the workshop status graph, or place it on hold / cancel it with a reason.',
       },
       {
+        id: 'operations.assign',
+        label: 'Assign designer',
+        summary: 'Assign',
+        description: 'Change the designer attached to a unit/Dearune.',
+      },
+      {
         id: 'operations.manage',
         label: 'Archive and restore units',
         summary: 'Archive',
         description: 'Hide or restore production units from the default Operations list. Archiving never deletes anything.',
+      },
+      {
+        id: 'operations.print',
+        label: 'Print production labels',
+        summary: 'Print',
+        description: 'Access printing and production label generation for units.',
+      },
+      {
+        id: 'operations.export',
+        label: 'Export operations data',
+        summary: 'Export',
+        description: 'Export operations lists and related data where available.',
+      },
+      {
+        id: 'operations.delete',
+        label: 'Delete operations records',
+        summary: 'Delete',
+        description: 'Remove or delete operations records when allowed by business rules.',
       },
     ],
   },
@@ -61,6 +91,12 @@ export const PERMISSION_MODULES = [
         description: "Open the designer directory and see each designer's projects. No money fields are included.",
       },
       {
+        id: 'designers.view_details',
+        label: 'View designer details',
+        summary: 'Details',
+        description: 'View full designer details, history and related Dearunes.',
+      },
+      {
         id: 'designers.create',
         label: 'Create designers',
         summary: 'Create',
@@ -73,10 +109,28 @@ export const PERMISSION_MODULES = [
         description: "Change a designer's name or sign-in ID.",
       },
       {
+        id: 'designers.assign',
+        label: 'Assign designers',
+        summary: 'Assign',
+        description: 'Assign or reassign designers to Dearunes/units.',
+      },
+      {
         id: 'designers.manage',
         label: 'Manage designer access',
         summary: 'Access',
         description: 'Reset a passcode, revoke access, or reactivate a designer.',
+      },
+      {
+        id: 'designers.delete',
+        label: 'Delete designers',
+        summary: 'Delete',
+        description: 'Delete designer records when allowed by business rules.',
+      },
+      {
+        id: 'designers.export',
+        label: 'Export designers data',
+        summary: 'Export',
+        description: 'Export designer lists and related data where available.',
       },
     ],
   },
@@ -296,6 +350,12 @@ export function togglePermission(granted, permissionId, checked) {
     if (permissionId !== module.viewPermission && permissionId !== 'notifications.view') {
       next.add(module.viewPermission)
     }
+    if (permissionId === 'operations.assign') {
+      next.add('operations.edit')
+    }
+    if (permissionId === 'designers.assign') {
+      next.add('designers.edit')
+    }
   } else {
     next.delete(permissionId)
     if (permissionId === module.viewPermission) {
@@ -322,6 +382,12 @@ export function normalizePermissionSelection(granted) {
     if (hasDependent && !next.includes(module.viewPermission)) {
       next = sortPermissionIds([...next, module.viewPermission])
     }
+  }
+  if (next.includes('operations.assign') && !next.includes('operations.edit')) {
+    next = sortPermissionIds([...next, 'operations.edit'])
+  }
+  if (next.includes('designers.assign') && !next.includes('designers.edit')) {
+    next = sortPermissionIds([...next, 'designers.edit'])
   }
   return next
 }

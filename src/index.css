@@ -2,14 +2,31 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Cormorant+Garamond:wght@400;500;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap');
 
-@font-face {
-  font-family: "Arniya";
-  src: url("./assets/fonts/arniya-regular.otf") format("opentype"),
-       url("./assets/fonts/arniya-regular.ttf") format("truetype");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
+:root {
+  --font-body: "Manrope", "Noto Sans Arabic", sans-serif;
+  --font-display: "Cormorant Garamond", serif;
+}
+
+/* Main interface: admin, worker, forms, tables */
+body,
+button,
+input,
+textarea,
+select {
+  font-family: var(--font-body);
+}
+
+/* Arabic text */
+:lang(ar) {
+  font-family: "Noto Sans Arabic", sans-serif;
+}
+
+/* Keep the vintage identity for selected brand elements */
+.brand-wordmark,
+.memory-title {
+  font-family: var(--font-display);
 }
 
 @custom-variant dark (&:is(.dark *));

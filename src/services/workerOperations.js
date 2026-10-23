@@ -53,3 +53,7 @@ export async function ensureWorkerOperations(projectId, units = 1) {
     p_units: units,
   })
 }
+
+export async function fetchWorkerOperationEvents() {
+  return []
+}

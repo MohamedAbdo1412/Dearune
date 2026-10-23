@@ -128,6 +128,10 @@ export function WorkerOperations() {
   const canEdit = hasPermission(permissions, 'operations.edit')
   const canManage = hasPermission(permissions, 'operations.manage')
   const canCreate = hasPermission(permissions, 'operations.create')
+  const canAssign = hasPermission(permissions, 'operations.assign') || hasPermission(permissions, 'operations.edit')
+  const canViewDetails = hasPermission(permissions, 'operations.view_details') || hasPermission(permissions, 'operations.view')
+  const _canPrint = hasPermission(permissions, 'operations.print')
+  const _canExport = hasPermission(permissions, 'operations.export')
 
   const [rows, setRows] = useState(null)
   const [error, setError] = useState('')
