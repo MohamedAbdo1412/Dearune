@@ -246,7 +246,7 @@ begin
     raise exception 'worker.inactive_or_unknown' using errcode = '42501';
   end if;
   if not public.worker_has_permission('operations.view')
-     or not (public.worker_has_permission('operations.edit') or public.worker_has_permission('operations.assign')) then
+     or not public.worker_has_permission('operations.edit') then
     raise exception 'worker.forbidden' using errcode = '42501';
   end if;
   if char_length(v_notes) > 2000 then
@@ -380,7 +380,7 @@ begin
     raise exception 'worker.inactive_or_unknown' using errcode = '42501';
   end if;
   if not public.worker_has_permission('operations.view')
-     or not (public.worker_has_permission('operations.edit') or public.worker_has_permission('operations.assign')) then
+     or not public.worker_has_permission('operations.edit') then
     raise exception 'worker.forbidden' using errcode = '42501';
   end if;
   if char_length(v_phone) > 30 then
@@ -430,7 +430,7 @@ begin
     raise exception 'worker.inactive_or_unknown' using errcode = '42501';
   end if;
   if not public.worker_has_permission('operations.view')
-     or not (public.worker_has_permission('operations.edit') or public.worker_has_permission('operations.assign')) then
+     or not public.worker_has_permission('operations.edit') then
     raise exception 'worker.forbidden' using errcode = '42501';
   end if;
   if not exists (select 1 from public.projects where id = p_project_id) then
