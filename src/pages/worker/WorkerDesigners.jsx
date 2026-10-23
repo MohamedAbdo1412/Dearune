@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { Link, useOutletContext } from 'react-router-dom'
 import {
   ChevronRight,
   Copy,
+  Download,
   FolderOpen,
   KeyRound,
   Loader2,
@@ -40,7 +41,9 @@ import {
   activateDesignerAsWorker,
   createDesignerAsWorker,
   fetchWorkerDesigners,
+  downloadWorkerShipmentsCsv,
   fetchWorkerProjects,
+  fetchWorkerShipmentsForExport,
   resetDesignerPasscodeAsWorker,
   revokeDesignerAsWorker,
   updateDesignerAsWorker,
@@ -103,7 +106,8 @@ export function WorkerDesigners() {
   const canEdit = hasPermission(permissions, 'designers.edit')
   const canManage = hasPermission(permissions, 'designers.manage')
   const canAssign = hasPermission(permissions, 'designers.assign')
-  const canViewDetails = hasPermission(permissions, 'designers.view_details') || hasPermission(permissions, 'designers.view')
+  const canViewDetails = hasPermission(permissions, 'designers.view_details')
+  const canExport = hasPermission(permissions, 'designers.export')
 
   const [designers, setDesigners] = useState(null)
   const [error, setError] = useState('')
@@ -120,6 +124,7 @@ export function WorkerDesigners() {
   const [editCode, setEditCode] = useState('')
   const [credentials, setCredentials] = useState(null)
   const [confirm, setConfirm] = useState(null)
+  const [exporting, setExporting] = useState(false)
 
   const selected = useMemo(
     () => (designers ?? []).find((designer) => designer.id === selectedId) ?? null,
@@ -238,6 +243,21 @@ export function WorkerDesigners() {
     }
   }
 
+  const exportShipments = async () => {
+    if (exporting || !canExport) return
+    setExporting(true)
+    try {
+      const rows = await fetchWorkerShipmentsForExport()
+      const count = downloadWorkerShipmentsCsv(rows)
+      if (count === 0) toast.error('No delivery details have been entered yet')
+      else toast.success(`Shipping CSV downloaded · ${count} ${count === 1 ? 'Dearune' : 'Dearunes'}`)
+    } catch (caught) {
+      toast.error(messageOf(caught))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const runConfirm = async () => {
     if (!confirm) return
     const { type, designer } = confirm
@@ -306,6 +326,16 @@ export function WorkerDesigners() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {canExport ? (
+            <Button variant="outline" onClick={exportShipments} disabled={exporting}>
+              {exporting ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <Download className="size-4" aria-hidden />
+              )}
+              Shipping CSV
+            </Button>
+          ) : null}
           <Button variant="outline" onClick={load}>
             <RefreshCw className="size-4" aria-hidden />
             Refresh
@@ -410,6 +440,14 @@ export function WorkerDesigners() {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {canViewDetails || canAssign ? (
+                    <Button asChild variant="outline" size="sm">
+                      <Link to={`/worker/designers/${selected.id}`}>
+                        <FolderOpen className="size-4" aria-hidden />
+                        {canAssign ? 'Open & assign' : 'Full page'}
+                      </Link>
+                    </Button>
+                  ) : null}
                   {canEdit ? (
                     <Button variant="outline" size="sm" onClick={openEdit}>
                       <Pencil className="size-4" aria-hidden />

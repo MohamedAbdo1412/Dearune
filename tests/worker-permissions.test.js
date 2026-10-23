@@ -401,6 +401,132 @@ describe('operations permissions', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Operations / Designers parity reads
+// ---------------------------------------------------------------------------
+describe('operations and designers parity', () => {
+  it('keeps timeline, print, export and designer detail gated independently', async () => {
+    await expect(
+      rpc(VIEW_ONLY_WORKER, 'select public.worker_operation_events($1)', [productId]),
+    ).rejects.toThrow(/worker\.forbidden/)
+    await expect(
+      rpc(VIEW_ONLY_WORKER, 'select public.worker_operations_print(null)'),
+    ).rejects.toThrow(/worker\.forbidden/)
+    await expect(
+      rpc(VIEW_ONLY_WORKER, 'select public.worker_export_operations(true)'),
+    ).rejects.toThrow(/worker\.forbidden/)
+    await expect(
+      rpc(VIEW_ONLY_WORKER, 'select public.worker_designer_detail($1)', [designerId]),
+    ).rejects.toThrow(/worker\.forbidden/)
+    await expect(
+      rpc(VIEW_ONLY_WORKER, 'select public.worker_export_shipments()'),
+    ).rejects.toThrow(/worker\.forbidden/)
+  })
+
+  it('returns a unit timeline only with view_details', async () => {
+    await db.query(
+      `insert into public.worker_permissions (worker_id, permission_id, granted_by)
+       values ($1, 'operations.view_details', $2)`,
+      [OPERATIONS_WORKER, ADMIN_ID],
+    )
+    const result = await rpc(OPERATIONS_WORKER, 'select public.worker_operation_events($1) as result', [productId])
+    expect(result.result.length).toBeGreaterThan(0)
+    expect(result.result[0]).toHaveProperty('action')
+    expect(JSON.stringify(result.result)).not.toMatch(/selling_price|estimated_cost|payload/)
+  })
+
+  it('returns a print payload with the QR token only when print is granted', async () => {
+    await db.query(
+      `insert into public.worker_permissions (worker_id, permission_id, granted_by)
+       values ($1, 'operations.print', $2)`,
+      [OPERATIONS_WORKER, ADMIN_ID],
+    )
+    const result = await rpc(OPERATIONS_WORKER, 'select public.worker_operations_print(array[$1]::uuid[]) as result', [
+      productId,
+    ])
+    const row = result.result.find((unit) => unit.reference === 'DR70700099901')
+    expect(row).toBeTruthy()
+    expect(row.public_token).toBe(TOKEN)
+    expect(JSON.stringify(result.result)).not.toMatch(/selling_price|estimated_cost|estimated_profit|"payload"/)
+  })
+
+  it('exports only safe operational columns and no token', async () => {
+    await db.query(
+      `insert into public.worker_permissions (worker_id, permission_id, granted_by)
+       values ($1, 'operations.export', $2)`,
+      [OPERATIONS_WORKER, ADMIN_ID],
+    )
+    const result = await rpc(OPERATIONS_WORKER, 'select public.worker_export_operations(true) as result')
+    const row = result.result.find((unit) => unit.reference === 'DR70700099901')
+    expect(row).toBeTruthy()
+    expect(row.public_token).toBeUndefined()
+    expect(row.customer_phone).toBe('01000000001')
+    expect(JSON.stringify(result.result)).not.toMatch(/selling_price|estimated_cost|public_token|"payload"/)
+  })
+
+  it('returns designer detail without money, the private letter, or another designer\'s Dearunes', async () => {
+    await db.query(
+      `insert into public.worker_permissions (worker_id, permission_id, granted_by)
+       values ($1, 'designers.view', $2), ($1, 'designers.view_details', $2)`,
+      [OPERATIONS_WORKER, ADMIN_ID],
+    )
+    const otherDesignerId = await seedDesigner(db, { name: 'Other Designer', code: 'DR-909090' })
+    const otherProject = await seedProject(db, {
+      designerId: otherDesignerId,
+      title: 'Not on this page',
+      publicId: 'PUB-OTHER-PAGE',
+    })
+
+    const result = await rpc(OPERATIONS_WORKER, 'select public.worker_designer_detail($1) as result', [designerId])
+    expect(result.result.designer.id).toBe(designerId)
+    expect(result.result.projects.some((entry) => entry.id === project.id)).toBe(true)
+    expect(result.result.projects.some((entry) => entry.id === otherProject.id)).toBe(false)
+    expect(JSON.stringify(result.result)).not.toMatch(/selling_price|estimated_cost|estimated_profit|"payload"/)
+
+    await db.query(
+      `insert into public.worker_permissions (worker_id, permission_id, granted_by)
+       values ($1, 'designers.export', $2)`,
+      [OPERATIONS_WORKER, ADMIN_ID],
+    )
+    const exported = await rpc(OPERATIONS_WORKER, 'select public.worker_export_shipments() as result')
+    const shipment = exported.result.find((row) => row.title === 'For my sister')
+    expect(shipment).toBeTruthy()
+    expect(shipment.phone).toBe('01000000001')
+    expect(JSON.stringify(exported.result)).not.toMatch(
+      /selling_price|estimated_cost|estimated_profit|public_token|"payload"/,
+    )
+  })
+
+  it('allows designer assignment only with operations.edit or operations.assign', async () => {
+    await expect(
+      rpc(VIEW_ONLY_WORKER, 'select public.worker_update_operation_designer($1, $2)', [project.id, designerId]),
+    ).rejects.toThrow(/worker\.forbidden/)
+    await expect(
+      rpc(VIEW_ONLY_WORKER, 'select public.worker_assignable_designers()'),
+    ).rejects.toThrow(/worker\.forbidden/)
+
+    await db.query(
+      `insert into public.worker_permissions (worker_id, permission_id, granted_by)
+       values ($1, 'operations.assign', $2)`,
+      [VIEW_ONLY_WORKER, ADMIN_ID],
+    )
+
+    // The Operations picker is available through the assignment capability,
+    // independently of the designers.view directory permission (this worker
+    // still has no designers.* permission at all).
+    const pickable = await rpc(VIEW_ONLY_WORKER, 'select public.worker_assignable_designers() as result')
+    expect(pickable.result.some((entry) => entry.id === designerId)).toBe(true)
+    expect(JSON.stringify(pickable.result)).not.toMatch(/passcode|selling_price|estimated_cost|"payload"/)
+
+    const result = await rpc(
+      VIEW_ONLY_WORKER,
+      'select public.worker_update_operation_designer($1, $2) as result',
+      [project.id, designerId],
+    )
+    expect(result.result.designerId).toBe(designerId)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Financial separation
 // ---------------------------------------------------------------------------
 describe('financial permissions', () => {

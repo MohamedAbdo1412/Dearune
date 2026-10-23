@@ -70,12 +70,6 @@ export const PERMISSION_MODULES = [
         summary: 'Export',
         description: 'Export operations lists and related data where available.',
       },
-      {
-        id: 'operations.delete',
-        label: 'Delete operations records',
-        summary: 'Delete',
-        description: 'Remove or delete operations records when allowed by business rules.',
-      },
     ],
   },
   {
@@ -119,12 +113,6 @@ export const PERMISSION_MODULES = [
         label: 'Manage designer access',
         summary: 'Access',
         description: 'Reset a passcode, revoke access, or reactivate a designer.',
-      },
-      {
-        id: 'designers.delete',
-        label: 'Delete designers',
-        summary: 'Delete',
-        description: 'Delete designer records when allowed by business rules.',
       },
       {
         id: 'designers.export',

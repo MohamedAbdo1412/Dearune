@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { Link, useOutletContext } from 'react-router-dom'
 import {
   Archive,
   ArchiveRestore,
   ArrowRight,
   Boxes,
+  Download,
   Factory,
+  History,
   Loader2,
   MapPin,
   Package,
@@ -13,16 +15,19 @@ import {
   Pencil,
   Phone,
   Plus,
+  Printer,
   RefreshCw,
   RotateCcw,
   Search,
   Truck,
+  UserRound,
   XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { OperationsBadge } from '@/components/admin/operations-status'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -38,17 +43,20 @@ import {
   OPERATIONS_STATUS_SHORT,
   nextOperationsStatus,
 } from '@/services/constants'
-import { 
+import { OPERATIONS_SORTS } from '@/services/operations'
+import {
   archiveWorkerOperations,
+  downloadWorkerOperationsCsv,
   ensureWorkerOperations,
+  fetchWorkerAssignableDesigners,
+  fetchWorkerOperationEvents,
   fetchWorkerOperations,
+  fetchWorkerOperationsForExport,
   setWorkerOperationStatus,
   updateWorkerOperation,
   updateWorkerOperationContact,
   updateWorkerOperationDesigner,
 } from '@/services/workerOperations'
-import { fetchWorkerDesigners } from '@/services/workerDesigners'
-
 const ALL = 'all'
 
 function messageOf(error) {
@@ -57,6 +65,45 @@ function messageOf(error) {
 
 function when(value) {
   return value ? formatDateTime(value) : '—'
+}
+
+const timeOf = (value) => {
+  const parsed = Date.parse(String(value ?? ''))
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const statusRank = (status) => {
+  const index = OPERATIONS_STATUS_ORDER.indexOf(status)
+  return index === -1 ? OPERATIONS_STATUS_ORDER.length : index
+}
+
+// The same sort choices the admin screen offers, applied to the worker's safe
+// snake_case rows without fetching any extra columns.
+function sortWorkerRows(rows, sortKey) {
+  const sorted = [...(rows ?? [])]
+  const byId = (a, b) => String(a.reference ?? '').localeCompare(String(b.reference ?? ''))
+  switch (sortKey) {
+    case 'oldest':
+      return sorted.sort((a, b) => timeOf(a.created_at) - timeOf(b.created_at) || byId(a, b))
+    case 'updated':
+      return sorted.sort((a, b) => timeOf(b.updated_at) - timeOf(a.updated_at) || byId(a, b))
+    case 'status':
+      return sorted.sort(
+        (a, b) => statusRank(a.status) - statusRank(b.status) || timeOf(b.created_at) - timeOf(a.created_at) || byId(a, b),
+      )
+    case 'id':
+      return sorted.sort(byId)
+    case 'customer':
+      return sorted.sort(
+        (a, b) =>
+          String(a.recipient_name ?? '').localeCompare(String(b.recipient_name ?? '')) ||
+          String(a.customer_phone ?? '').localeCompare(String(b.customer_phone ?? '')) ||
+          byId(a, b),
+      )
+    case 'newest':
+    default:
+      return sorted.sort((a, b) => timeOf(b.created_at) - timeOf(a.created_at) || byId(a, b))
+  }
 }
 
 function EmptyState({ title, message, onRetry }) {
@@ -131,16 +178,22 @@ export function WorkerOperations() {
   const canManage = hasPermission(permissions, 'operations.manage')
   const canCreate = hasPermission(permissions, 'operations.create')
   const canAssign = hasPermission(permissions, 'operations.assign') || hasPermission(permissions, 'operations.edit')
-  const canViewDetails = hasPermission(permissions, 'operations.view_details') || hasPermission(permissions, 'operations.view')
+  const canViewDetails = hasPermission(permissions, 'operations.view_details')
   const canPrint = hasPermission(permissions, 'operations.print')
   const canExport = hasPermission(permissions, 'operations.export')
+  const canViewDesigners = hasPermission(permissions, 'designers.view')
 
   const [rows, setRows] = useState(null)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
+  const [sortKey, setSortKey] = useState('newest')
   const [statusFilter, setStatusFilter] = useState(ALL)
   const [showArchived, setShowArchived] = useState(false)
+  const [selected, setSelected] = useState(() => new Set())
   const [busyId, setBusyId] = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [timeline, setTimeline] = useState(null)
   const [detail, setDetail] = useState(null)
   const [statusDialog, setStatusDialog] = useState(null)
   const [reason, setReason] = useState('')
@@ -159,6 +212,10 @@ export function WorkerOperations() {
       const data = await fetchWorkerOperations(true)
       setRows(data)
       setDetail((current) => (current ? data.find((row) => row.id === current.id) ?? null : null))
+      setSelected((current) => {
+        const live = new Set(data.map((row) => row.id))
+        return new Set([...current].filter((id) => live.has(id)))
+      })
     } catch (caught) {
       setError(messageOf(caught))
       setRows((current) => current ?? [])
@@ -182,7 +239,7 @@ export function WorkerOperations() {
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return scoped
+    const filtered = scoped
       .filter((row) => statusFilter === ALL || row.status === statusFilter)
       .filter((row) => {
         if (!needle) return true
@@ -191,6 +248,7 @@ export function WorkerOperations() {
           row.project_reference,
           row.project_title,
           row.designer_name,
+          row.designer_code,
           row.recipient_name,
           row.city,
           row.tracking_code,
@@ -199,8 +257,8 @@ export function WorkerOperations() {
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(needle))
       })
-      .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
-  }, [scoped, query, statusFilter])
+    return sortWorkerRows(filtered, sortKey)
+  }, [scoped, query, statusFilter, sortKey])
 
   const projectUnits = useMemo(() => {
     const map = new Map()
@@ -209,6 +267,32 @@ export function WorkerOperations() {
     }
     return map
   }, [rows])
+
+  const visibleIds = useMemo(() => visible.map((row) => row.id), [visible])
+  const selectedRows = useMemo(
+    () => (rows ?? []).filter((row) => selected.has(row.id)),
+    [rows, selected],
+  )
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
+  const printable = selectedRows.filter((row) => !row.archived_at)
+
+  const toggle = (id) => {
+    setSelected((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAll = () => {
+    setSelected((current) => {
+      const next = new Set(current)
+      if (allSelected) for (const id of visibleIds) next.delete(id)
+      else for (const id of visibleIds) next.add(id)
+      return next
+    })
+  }
 
   const refresh = async () => {
     await load()
@@ -295,6 +379,67 @@ export function WorkerOperations() {
     }
   }
 
+  const archiveSelected = async (shouldArchive) => {
+    if (selectedRows.length === 0 || bulkBusy) return
+    setBulkBusy(true)
+    try {
+      await archiveWorkerOperations(selectedRows.map((row) => row.id), shouldArchive)
+      toast.success(
+        `${shouldArchive ? 'Archived' : 'Restored'} ${selectedRows.length} ${
+          selectedRows.length === 1 ? 'unit' : 'units'
+        }`,
+      )
+      setSelected(new Set())
+      await load()
+    } catch (caught) {
+      toast.error(messageOf(caught))
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  const openDetail = (row) => {
+    setDetail(row)
+    setTimeline(null)
+  }
+
+  // Re-read the timeline whenever the open unit changes, including after a
+  // status/edit action replaced the row. The RPC is gated by `view_details`;
+  // without it the panel simply stays hidden.
+  useEffect(() => {
+    if (!detail || !canViewDetails) return undefined
+    let active = true
+    setTimeline(null)
+    void (async () => {
+      try {
+        const events = await fetchWorkerOperationEvents(detail.id)
+        if (active) setTimeline(events)
+      } catch (caught) {
+        if (active) {
+          setTimeline([])
+          toast.error(messageOf(caught))
+        }
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [detail, canViewDetails])
+
+  const exportCsv = async () => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      const data = await fetchWorkerOperationsForExport(showArchived)
+      downloadWorkerOperationsCsv(data)
+      toast.success(`Exported ${data.length} ${data.length === 1 ? 'unit' : 'units'}`)
+    } catch (caught) {
+      toast.error(messageOf(caught))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const addUnit = async (row) => {
     if (!canCreate && !canManage) return
     setBusyId(row.id)
@@ -316,7 +461,7 @@ export function WorkerOperations() {
     setAssignOpen(true)
     if (designers.length === 0) {
       try {
-        const list = await fetchWorkerDesigners()
+        const list = await fetchWorkerAssignableDesigners()
         setDesigners(Array.isArray(list) ? list : [])
       } catch {
         // ignore
@@ -373,10 +518,30 @@ export function WorkerOperations() {
             not part of this workspace and are never loaded here.
           </p>
         </div>
-        <Button variant="outline" onClick={refresh}>
-          <RefreshCw className="size-4" aria-hidden />
-          Refresh
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {canPrint ? (
+            <Button asChild variant="outline">
+              <Link to="/worker/operations/print">
+                <Printer className="size-4" aria-hidden />
+                Print papers
+              </Link>
+            </Button>
+          ) : null}
+          {canExport ? (
+            <Button variant="outline" onClick={exportCsv} disabled={exporting}>
+              {exporting ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <Download className="size-4" aria-hidden />
+              )}
+              Export CSV
+            </Button>
+          ) : null}
+          <Button variant="outline" onClick={refresh}>
+            <RefreshCw className="size-4" aria-hidden />
+            Refresh
+          </Button>
+        </div>
       </header>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -405,6 +570,18 @@ export function WorkerOperations() {
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Select value={sortKey} onValueChange={setSortKey}>
+            <SelectTrigger className="w-[11rem]" aria-label="Sort operations">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {OPERATIONS_SORTS.map((sort) => (
+                <SelectItem key={sort.key} value={sort.key}>
+                  {sort.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-[13rem]" aria-label="Filter by status">
               <SelectValue />
@@ -424,10 +601,54 @@ export function WorkerOperations() {
             onClick={() => setShowArchived((value) => !value)}
           >
             <Archive className="size-4" aria-hidden />
-            {showArchived ? 'Hiding nothing' : 'Show archive'}
+            {showArchived ? 'Hide archive' : 'Show archived'}
           </Button>
         </div>
       </div>
+
+      {selectedRows.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-muted/40 px-3 py-2.5">
+          <span className="text-sm text-muted-foreground">
+            {selectedRows.length} selected
+          </span>
+          <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+            {canManage && showArchived && selectedRows.some((row) => row.archived_at) ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={bulkBusy}
+                onClick={() => archiveSelected(false)}
+              >
+                {bulkBusy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <ArchiveRestore className="size-4" aria-hidden />}
+                Restore selected
+              </Button>
+            ) : null}
+            {canManage ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={bulkBusy || selectedRows.every((row) => row.archived_at)}
+                onClick={() => archiveSelected(true)}
+              >
+                {bulkBusy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Archive className="size-4" aria-hidden />}
+                Archive selected
+              </Button>
+            ) : null}
+            {canPrint ? (
+              <Button asChild size="sm" variant="outline">
+                <Link
+                  to={`/worker/operations/print${
+                    printable.length > 0 ? `?ids=${printable.map((row) => row.id).join(',')}` : ''
+                  }`}
+                >
+                  <Printer className="size-4" aria-hidden />
+                  Print papers
+                </Link>
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {visible.length === 0 ? (
         <EmptyState
@@ -444,6 +665,13 @@ export function WorkerOperations() {
             <table className="w-full text-sm">
               <thead className="bg-muted/50 text-left text-xs uppercase tracking-[0.12em] text-muted-foreground">
                 <tr>
+                  <th className="w-10 px-3 py-3 font-medium">
+                    <Checkbox
+                      checked={allSelected}
+                      onCheckedChange={toggleAll}
+                      aria-label="Select every visible unit"
+                    />
+                  </th>
                   <th className="px-4 py-3 font-medium">Unit</th>
                   <th className="px-4 py-3 font-medium">Dearune</th>
                   <th className="px-4 py-3 font-medium">Designer</th>
@@ -455,6 +683,13 @@ export function WorkerOperations() {
               <tbody>
                 {visible.map((row) => (
                   <tr key={row.id} className="border-t border-border/70 transition-colors hover:bg-muted/35">
+                    <td className="px-3 py-3 align-top">
+                      <Checkbox
+                        checked={selected.has(row.id)}
+                        onCheckedChange={() => toggle(row.id)}
+                        aria-label={`Select ${row.reference}`}
+                      />
+                    </td>
                     <td className="px-4 py-3 align-top">
                       <p className="font-mono text-xs font-semibold tracking-tight">{row.reference}</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">Unit {row.unit_index}</p>
@@ -476,7 +711,7 @@ export function WorkerOperations() {
                       <p className="mt-0.5">{row.city || 'No city'} {row.tracking_code ? `· ${row.tracking_code}` : ''}</p>
                     </td>
                     <td className="px-4 py-3 text-right align-top">
-                      <Button size="sm" variant="outline" onClick={() => setDetail(row)}>
+                      <Button size="sm" variant="outline" onClick={() => void openDetail(row)}>
                         Open
                       </Button>
                     </td>
@@ -487,33 +722,64 @@ export function WorkerOperations() {
           </div>
 
           <div className="grid gap-3 md:hidden">
+            <div className="flex items-center justify-between gap-2 rounded-2xl border border-border bg-muted/40 px-3 py-2">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Checkbox
+                  checked={allSelected}
+                  onCheckedChange={toggleAll}
+                  aria-label="Select every visible unit"
+                />
+                Select all
+              </label>
+              <span className="text-xs text-muted-foreground">{selectedRows.length} selected</span>
+            </div>
             {visible.map((row) => (
-              <button
+              <div
                 key={row.id}
-                type="button"
-                onClick={() => setDetail(row)}
-                className="rounded-2xl border border-border bg-card p-4 text-left shadow-sm transition-colors hover:border-primary/30"
+                className="rounded-2xl border border-border bg-card p-4 shadow-sm transition-colors hover:border-primary/30"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate font-mono text-xs font-semibold">{row.reference}</p>
-                    <p className="mt-1 truncate font-medium">{row.project_title || 'Untitled Dearune'}</p>
-                  </div>
-                  <OperationsBadge status={row.status} label={OPERATIONS_STATUS_SHORT[row.status]} />
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    checked={selected.has(row.id)}
+                    onCheckedChange={() => toggle(row.id)}
+                    aria-label={`Select ${row.reference}`}
+                    className="mt-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void openDetail(row)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-xs font-semibold">{row.reference}</p>
+                        <p className="mt-1 truncate font-medium">{row.project_title || 'Untitled Dearune'}</p>
+                      </div>
+                      <OperationsBadge status={row.status} label={OPERATIONS_STATUS_SHORT[row.status]} />
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <span>Unit {row.unit_index}</span>
+                      <span>{row.designer_name || 'Unassigned'}</span>
+                      {row.city ? <span>{row.city}</span> : null}
+                      {row.archived_at ? <span className="text-primary">Archived</span> : null}
+                    </div>
+                  </button>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  <span>Unit {row.unit_index}</span>
-                  <span>{row.designer_name || 'Unassigned'}</span>
-                  {row.city ? <span>{row.city}</span> : null}
-                  {row.archived_at ? <span className="text-primary">Archived</span> : null}
-                </div>
-              </button>
+              </div>
             ))}
           </div>
         </>
       )}
 
-      <Sheet open={Boolean(detail)} onOpenChange={(open) => !open && setDetail(null)}>
+      <Sheet
+        open={Boolean(detail)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDetail(null)
+            setTimeline(null)
+          }
+        }}
+      >
         <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
           {detail ? (
             <>
@@ -589,7 +855,19 @@ export function WorkerOperations() {
                   <div>
                     <dt className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Designer</dt>
                     <dd className="mt-1 flex items-center justify-between gap-2">
-                      <span>{detail.designer_name || 'Unassigned'} {detail.designer_code ? `· ${detail.designer_code}` : ''}</span>
+                      <span>
+                        {canViewDesigners && detail.designer_id ? (
+                          <Link
+                            to={`/worker/designers/${detail.designer_id}`}
+                            className="underline decoration-primary/40 underline-offset-4 hover:text-primary"
+                          >
+                            {detail.designer_name || 'Unassigned'}
+                          </Link>
+                        ) : (
+                          detail.designer_name || 'Unassigned'
+                        )}{' '}
+                        {detail.designer_code ? `· ${detail.designer_code}` : ''}
+                      </span>
                       {canAssign ? (
                         <Button size="sm" variant="ghost" onClick={() => openAssign(detail)}>
                           <UserRound className="size-4" aria-hidden />
@@ -660,6 +938,48 @@ export function WorkerOperations() {
                     </p>
                   ) : null}
                 </div>
+
+                {canViewDetails ? (
+                  <div className="rounded-2xl border border-border p-4">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold">
+                      <History className="size-4 text-primary" aria-hidden />
+                      Unit history
+                    </h3>
+                    {timeline === null ? (
+                      <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                        Loading the timeline…
+                      </p>
+                    ) : timeline.length === 0 ? (
+                      <p className="mt-2 text-xs text-muted-foreground">No history recorded yet.</p>
+                    ) : (
+                      <ol className="mt-3 space-y-2">
+                        {timeline.map((event) => (
+                          <li key={event.id} className="flex gap-3 text-xs">
+                            <span className="mt-1 size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+                            <div className="min-w-0">
+                              <p className="font-mono text-[0.7rem] text-foreground">{event.action}</p>
+                              <p className="mt-0.5 text-muted-foreground">
+                                {event.actorType ? `${event.actorType} · ` : ''}
+                                {formatDateTime(event.createdAt)}
+                              </p>
+                              {event.detail && Object.keys(event.detail).length > 0 ? (
+                                <p className="mt-0.5 break-words text-[0.7rem] text-muted-foreground">
+                                  {Object.entries(event.detail)
+                                    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+                                    .map(([key, value]) =>
+                                      `${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`,
+                                    )
+                                    .join(' · ')}
+                                </p>
+                              ) : null}
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
+                ) : null}
 
                 <div className="grid gap-2 text-xs text-muted-foreground">
                   <p className="flex items-center gap-2"><Package className="size-3.5" aria-hidden /> {detail.public_id}</p>

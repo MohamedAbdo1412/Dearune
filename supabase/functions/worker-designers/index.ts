@@ -59,9 +59,11 @@ Deno.serve(async (req) => {
       ? 'designers.create'
       : action === 'update'
         ? 'designers.edit'
-        : action === 'reset-passcode' || action === 'revoke' || action === 'activate'
-          ? 'designers.manage'
-          : ''
+        : action === 'assign'
+          ? 'designers.assign'
+          : action === 'reset-passcode' || action === 'revoke' || action === 'activate'
+            ? 'designers.manage'
+            : ''
 
   if (!permission) return errorResponse('Unknown action', 400)
 
@@ -100,6 +102,23 @@ Deno.serve(async (req) => {
   if (!designerId) return errorResponse('Missing designer id', 400)
   const { data: existing } = await sb.from('designers').select('id').eq('id', designerId).maybeSingle()
   if (!existing) return errorResponse('Designer not found', 404)
+
+  if (action === 'assign') {
+    const projectId = asText(body.projectId, 64)
+    if (!projectId) return errorResponse('Missing Dearune id', 400)
+    const { data: project } = await sb
+      .from('projects')
+      .select('id, designer_id')
+      .eq('id', projectId)
+      .maybeSingle()
+    if (!project) return errorResponse('Dearune not found', 404)
+
+    const { error } = await sb.from('projects').update({ designer_id: designerId }).eq('id', projectId)
+    if (error) return errorResponse('Could not assign the designer', 500)
+
+    await audit(sb, worker, 'worker.designer.assigned', designerId, { projectId })
+    return jsonResponse({ projectId, designerId })
+  }
 
   if (action === 'update') {
     const name = asText(body.name, 120)

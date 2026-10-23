@@ -29,6 +29,7 @@ import { WorkerLogin } from '@/pages/worker/WorkerLogin'
 import { WorkerHome } from '@/pages/worker/WorkerHome'
 import { WorkerOperations } from '@/pages/worker/WorkerOperations'
 import { WorkerDesigners } from '@/pages/worker/WorkerDesigners'
+import { WorkerDesignerDetail } from '@/pages/worker/WorkerDesignerDetail'
 import { WorkerQa } from '@/pages/worker/WorkerQa'
 import { WorkerFinancial } from '@/pages/worker/WorkerFinancial'
 import { WorkerMessages } from '@/pages/worker/WorkerMessages'
@@ -39,6 +40,11 @@ const CreateBook = lazy(() => import('@/pages/create/CreateBook'))
 // The review step carries the PDF generator and the spreadsheet writer, so it
 // is only fetched when someone actually goes to print.
 const OperationsPrint = lazy(() => import('@/pages/admin/OperationsPrint'))
+// Worker printing uses the same PDF/spreadsheet builders, so it is also only
+// fetched when someone actually opens the print review.
+const WorkerOperationsPrint = lazy(() =>
+  import('@/pages/worker/WorkerOperationsPrint').then((module) => ({ default: module.WorkerOperationsPrint })),
+)
 // The Apps page carries its own typeface, so it is fetched on its own too.
 const Apps = lazy(() => import('@/pages/admin/Apps'))
 
@@ -217,10 +223,34 @@ export default function App() {
           }
         />
         <Route
+          path="operations/print"
+          element={
+            <WorkerPermissionGate permission="operations.print">
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
+                    Preparing the papers…
+                  </div>
+                }
+              >
+                <WorkerOperationsPrint />
+              </Suspense>
+            </WorkerPermissionGate>
+          }
+        />
+        <Route
           path="designers"
           element={
             <WorkerPermissionGate permission="designers.view">
               <WorkerDesigners />
+            </WorkerPermissionGate>
+          }
+        />
+        <Route
+          path="designers/:designerId"
+          element={
+            <WorkerPermissionGate anyOf={['designers.view_details', 'designers.assign']}>
+              <WorkerDesignerDetail />
             </WorkerPermissionGate>
           }
         />
