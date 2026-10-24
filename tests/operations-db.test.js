@@ -143,15 +143,19 @@ describe('creating units', () => {
   it('gives a paid physical Dearune exactly one unit, once', async () => {
     const project = await seedProject(db, { designerId })
 
-    await db.query('select * from public.ensure_physical_products($1, 1, null, null)', [project.id])
+    await db.query('select * from public.ensure_physical_products($1, 1, null)', [project.id])
     const first = await many(db, 'select * from public.physical_products where project_id = $1', [project.id])
     expect(first).toHaveLength(1)
     expect(first[0].reference).toMatch(ID_PATTERN)
     expect(first[0].unit_index).toBe(1)
-    expect(first[0].status).toBe('pending_verification')
+    // Milestones start empty; the unit is "pending" until stamped forward.
+    expect(first[0].sold_at).toBeNull()
+    expect(first[0].manufacturing_completed_at).toBeNull()
+    expect(first[0].shipped_at).toBeNull()
+    expect(first[0].delivered_at).toBeNull()
 
     // Idempotent: a second call must not mint a second unit or a new id.
-    await db.query('select * from public.ensure_physical_products($1, 1, null, null)', [project.id])
+    await db.query('select * from public.ensure_physical_products($1, 1, null)', [project.id])
     const second = await many(db, 'select * from public.physical_products where project_id = $1', [project.id])
     expect(second).toHaveLength(1)
     expect(second[0].reference).toBe(first[0].reference)
@@ -160,7 +164,7 @@ describe('creating units', () => {
 
   it('makes N units for a quantity, and never takes one away', async () => {
     const project = await seedProject(db, { designerId })
-    await db.query('select * from public.ensure_physical_products($1, 3, null, null)', [project.id])
+    await db.query('select * from public.ensure_physical_products($1, 3, null)', [project.id])
     const three = await many(
       db,
       'select reference, unit_index from public.physical_products where project_id = $1 order by unit_index',
@@ -171,20 +175,20 @@ describe('creating units', () => {
     for (const unit of three) expect(unit.reference).toMatch(ID_PATTERN)
 
     // Asking for fewer must never archive or delete the extras.
-    await db.query('select * from public.ensure_physical_products($1, 1, null, null)', [project.id])
+    await db.query('select * from public.ensure_physical_products($1, 1, null)', [project.id])
     const still = await many(db, 'select id from public.physical_products where project_id = $1', [project.id])
     expect(still).toHaveLength(3)
   })
 
   it('gives a digital Dearune nothing physical', async () => {
     const project = await seedProject(db, { designerId, wrapperType: 'digital' })
-    await db.query('select * from public.ensure_physical_products($1, 2, null, null)', [project.id])
+    await db.query('select * from public.ensure_physical_products($1, 2, null)', [project.id])
     expect(await many(db, 'select id from public.physical_products where project_id = $1', [project.id])).toHaveLength(0)
   })
 
   it('will not create units for a Dearune that does not exist', async () => {
     const ghost = '99999999-9999-9999-9999-999999999999'
-    await db.query('select * from public.ensure_physical_products($1, 1, null, null)', [ghost])
+    await db.query('select * from public.ensure_physical_products($1, 1, null)', [ghost])
     // No error, and — crucially — no orphan unit pointing at a missing Dearune.
     expect(await value(db, 'select count(*)::int from public.physical_products where project_id = $1', [ghost])).toBe(0)
   })
@@ -200,7 +204,7 @@ describe('creating units', () => {
     ])
     await db.exec('rollback')
 
-    await db.query('select * from public.ensure_physical_products($1, 1, null, null)', [project.id])
+    await db.query('select * from public.ensure_physical_products($1, 1, null)', [project.id])
     const unit = await unitOf(project.id)
     expect(unit.reference).toMatch(ID_PATTERN)
     expect(unit.reference).not.toBe(spent)
@@ -213,7 +217,7 @@ describe('creating units', () => {
     expect(seen.size).toBe(before.length)
 
     const project = await seedProject(db, { designerId })
-    await db.query('select * from public.ensure_physical_products($1, 5, null, null)', [project.id])
+    await db.query('select * from public.ensure_physical_products($1, 5, null)', [project.id])
     const created = await many(
       db,
       'select reference from public.physical_products where project_id = $1 order by unit_index',
@@ -230,11 +234,25 @@ describe('creating units', () => {
 })
 
 describe('the backfill', () => {
-  it('gives every already-sold physical Dearune one unit in the right status', async () => {
-    expect((await unitOf(legacy.pending)).status).toBe('pending_verification')
-    expect((await unitOf(legacy.made)).status).toBe('manufacturing')
-    expect((await unitOf(legacy.shipped)).status).toBe('shipped')
-    expect((await unitOf(legacy.delivered)).status).toBe('delivered')
+  it('gives every already-sold physical Dearune one unit with milestones stamped from its project', async () => {
+    const pending = await unitOf(legacy.pending)
+    expect(pending.sold_at).not.toBeNull()
+    expect(pending.manufacturing_completed_at).toBeNull()
+    expect(pending.shipped_at).toBeNull()
+    expect(pending.delivered_at).toBeNull()
+
+    const made = await unitOf(legacy.made)
+    expect(made.sold_at).not.toBeNull()
+    expect(made.manufacturing_completed_at).not.toBeNull()
+    expect(made.shipped_at).toBeNull()
+    expect(made.delivered_at).toBeNull()
+
+    const shipped = await unitOf(legacy.shipped)
+    expect(shipped.shipped_at).not.toBeNull()
+    expect(shipped.delivered_at).toBeNull()
+
+    const delivered = await unitOf(legacy.delivered)
+    expect(delivered.delivered_at).not.toBeNull()
   })
 
   it('skips digital Dearunes and anything never sold', async () => {
@@ -247,7 +265,7 @@ describe('the backfill', () => {
       db,
       `select e.action, count(*)::int as n from public.physical_product_events e
        join public.physical_products p on p.id = e.physical_product_id
-       where p.project_id = $1 group by e.action`,
+       where p.project_id = $1 and e.action = 'operations.backfilled' group by e.action`,
       [legacy.shipped],
     )
     expect(events).toHaveLength(1)
@@ -257,97 +275,43 @@ describe('the backfill', () => {
 
   it('does not re-issue an id to a Dearune it already owns', async () => {
     const held = (await unitOf(legacy.delivered)).reference
-    await db.query('select * from public.ensure_physical_products($1, 1, null, null)', [legacy.delivered])
+    await db.query('select * from public.ensure_physical_products($1, 1, null)', [legacy.delivered])
     expect((await unitOf(legacy.delivered)).reference).toBe(held)
   })
 })
 
-describe('the status graph', () => {
-  const setStatus = (id, status) =>
-    db.query('update public.physical_products set status = $2 where id = $1', [id, status])
+describe('milestones', () => {
+  const now = () => new Date('2026-01-05T00:00:00Z')
 
-  let unit
-  beforeAll(async () => {
+  it('lets a unit be stamped through its milestones and keeps the same id', async () => {
     const project = await seedProject(db, { designerId })
-    await db.query('select * from public.ensure_physical_products($1, 1, null, null)', [project.id])
-    unit = await unitOf(project.id)
-  })
+    await db.query('select * from public.ensure_physical_products($1, 1, null)', [project.id])
+    const unit = await unitOf(project.id)
 
-  it('walks the manufacturing line in order', async () => {
-    const line = [
-      'information_verified',
-      'ready_to_print',
-      'printing',
-      'printed',
-      'qr_verified',
-      'manufacturing',
-      'quality_control',
-      'qc_passed',
-      'ready_for_packaging',
-      'packed',
-      'ready_for_shipment',
-      'shipped',
-      'delivered',
-    ]
-    for (const status of line) {
-      await expect(setStatus(unit.id, status), status).resolves.toBeTruthy()
-    }
-    expect((await one(db, 'select status from public.physical_products where id = $1', [unit.id])).status).toBe('delivered')
-  })
+    const setMilestone = (field, value) =>
+      db.query(`update public.physical_products set ${field} = $2 where id = $1`, [unit.id, value])
 
-  it('refuses to skip a step', async () => {
-    const project = await seedProject(db, { designerId })
-    await db.query('select * from public.ensure_physical_products($1, 1, null, null)', [project.id])
-    const fresh = await unitOf(project.id)
-    await expect(setStatus(fresh.id, 'printed')).rejects.toThrow(/transition/i)
-    await expect(setStatus(fresh.id, 'delivered')).rejects.toThrow(/transition/i)
-  })
+    await setMilestone('sold_at', now())
+    await setMilestone('manufacturing_completed_at', now())
+    await setMilestone('shipped_at', now())
+    await setMilestone('delivered_at', now())
 
-  it('refuses to move a finished unit at all', async () => {
-    await expect(setStatus(unit.id, 'shipped')).rejects.toThrow(/transition/i)
-    await expect(setStatus(unit.id, 'manufacturing')).rejects.toThrow(/transition/i)
-  })
+    const row = await one(db, 'select sold_at, manufacturing_completed_at, shipped_at, delivered_at from public.physical_products where id = $1', [unit.id])
+    expect(row.sold_at).not.toBeNull()
+    expect(row.manufacturing_completed_at).not.toBeNull()
+    expect(row.shipped_at).not.toBeNull()
+    expect(row.delivered_at).not.toBeNull()
 
-  it('lets a unit be held from anywhere and resumed to where it stood', async () => {
-    const project = await seedProject(db, { designerId })
-    await db.query('select * from public.ensure_physical_products($1, 1, null, null)', [project.id])
-    const held = await unitOf(project.id)
-    await setStatus(held.id, 'information_verified')
-    await setStatus(held.id, 'on_hold')
-    expect((await one(db, 'select status from public.physical_products where id = $1', [held.id])).status).toBe('on_hold')
-    await setStatus(held.id, 'information_verified')
-    expect((await one(db, 'select status from public.physical_products where id = $1', [held.id])).status).toBe('information_verified')
-  })
-
-  it('treats a cancellation as final', async () => {
-    const project = await seedProject(db, { designerId })
-    await db.query('select * from public.ensure_physical_products($1, 1, null, null)', [project.id])
-    const dead = await unitOf(project.id)
-    await setStatus(dead.id, 'cancelled')
-    await expect(setStatus(dead.id, 'pending_verification')).rejects.toThrow(/transition/i)
-    await expect(setStatus(dead.id, 'on_hold')).rejects.toThrow(/transition/i)
-  })
-
-  it('freezes an archived unit until it is restored', async () => {
-    const project = await seedProject(db, { designerId })
-    await db.query('select * from public.ensure_physical_products($1, 1, null, null)', [project.id])
-    const frozen = await unitOf(project.id)
-    await db.query('update public.physical_products set archived_at = now() where id = $1', [frozen.id])
-    await expect(setStatus(frozen.id, 'information_verified')).rejects.toThrow(/archived/i)
-
-    await db.query('update public.physical_products set archived_at = null where id = $1', [frozen.id])
-    await expect(setStatus(frozen.id, 'information_verified')).resolves.toBeTruthy()
-    // Unarchiving keeps the same id — no new record is ever minted.
-    const after = await one(db, 'select id, reference from public.physical_products where id = $1', [frozen.id])
-    expect(after.reference).toBe(frozen.reference)
+    // The same id is kept through every milestone — units are never renumbered.
+    expect((await unitOf(project.id)).reference).toBe(unit.reference)
   })
 
   it('stamps updated_at on every change', async () => {
     const project = await seedProject(db, { designerId })
-    await db.query('select * from public.ensure_physical_products($1, 1, null, null)', [project.id])
+    await db.query('select * from public.ensure_physical_products($1, 1, null)', [project.id])
     const before = await unitOf(project.id)
     await new Promise((resolve) => setTimeout(resolve, 10))
-    await setStatus(before.id, 'information_verified')
+    await db.query('update public.physical_products set sold_at = $1 where id = $2', [now(), before.id])
     const after = await one(db, 'select updated_at from public.physical_products where id = $1', [before.id])
     expect(new Date(after.updated_at).getTime()).toBeGreaterThan(new Date(before.updated_at).getTime())
   })
@@ -357,7 +321,7 @@ describe('the list view', () => {
   it('joins the unit, its Dearune, its designer and its delivery contact', async () => {
     const project = await seedProject(db, { designerId, title: 'For Hana' })
     await seedShipping(db, project.id, { phone: '01099998888', recipientName: 'Hana' })
-    await db.query('select * from public.ensure_physical_products($1, 1, null, null)', [project.id])
+    await db.query('select * from public.ensure_physical_products($1, 1, null)', [project.id])
 
     const row = await one(db, 'select * from public.operations_units where project_id = $1', [project.id])
     expect(row.reference).toMatch(ID_PATTERN)
@@ -379,7 +343,7 @@ describe('the list view', () => {
       payload: { body: 'Secret', passwordSet: true },
     })
     for (const id of [open.id, closed.id, locked.id]) {
-      await db.query('select * from public.ensure_physical_products($1, 1, null, null)', [id])
+      await db.query('select * from public.ensure_physical_products($1, 1, null)', [id])
     }
 
     expect((await one(db, 'select qr_ready, qr_target from public.operations_units where project_id = $1', [open.id])).qr_ready).toBe(true)
@@ -437,7 +401,7 @@ describe('row level security', () => {
       asRole(
         db,
         'authenticated',
-        () => db.query('select * from public.ensure_physical_products($1, 1, null, null)', [project.id]),
+        () => db.query('select * from public.ensure_physical_products($1, 1, null)', [project.id]),
         { userId: ADMIN_ID },
       ),
     ).rejects.toThrow()

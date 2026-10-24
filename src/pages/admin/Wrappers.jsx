@@ -46,6 +46,7 @@ const emptyDraft = {
   name_ar: '',
   description: '',
   description_ar: '',
+  kind: 'physical',
   base_price: '0',
   production_cost: '0',
   display_order: '0',
@@ -121,6 +122,7 @@ export function Wrappers() {
         name_ar: draft.name_ar.trim(),
         description: draft.description.trim(),
         description_ar: draft.description_ar.trim(),
+        kind: draft.kind === 'digital' ? 'digital' : 'physical',
         base_price: Number(draft.base_price) || 0,
         production_cost: Number(draft.production_cost) || 0,
         display_order: Number(draft.display_order) || 0,
@@ -362,6 +364,23 @@ export function Wrappers() {
                       <Label htmlFor={`days-${key}`} className="text-xs">Production days</Label>
                       <Input id={`days-${key}`} type="number" min={0} value={draft.estimated_production_days ?? ''} disabled={maintenance} onChange={(e) => setField(key, { estimated_production_days: e.target.value })} />
                     </div>
+                    <div className="space-y-1">
+                      <Label htmlFor={`kind-${key}`} className="text-xs">Type</Label>
+                      <Select id={`kind-${key}`} value={draft.kind ?? 'physical'} disabled={maintenance} onValueChange={(value) => setField(key, { kind: value })}>
+                        <SelectTrigger id={`kind-${key}`} className="h-9 text-xs" aria-label={`Type for ${row.name}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem key="digital" value="digital">
+                            Digital
+                          </SelectItem>
+                          <SelectItem key="physical" value="physical">
+                            Physical
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-muted-foreground">Digital has no production units; physical Dearunes get one Operations record per unit.</p>
+                    </div>
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -431,6 +450,18 @@ export function Wrappers() {
             <div className="space-y-1">
               <Label htmlFor="new-days" className="text-xs">Production days</Label>
               <Input id="new-days" type="number" min={0} value={newWrapper.estimated_production_days} onChange={(e) => setNewWrapper({ ...newWrapper, estimated_production_days: e.target.value })} />
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label htmlFor="new-kind" className="text-xs">Type</Label>
+              <Select id="new-kind" value={newWrapper.kind ?? 'physical'} onValueChange={(value) => setNewWrapper({ ...newWrapper, kind: value })}>
+                <SelectTrigger id="new-kind" className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem key="digital" value="digital">Digital</SelectItem>
+                  <SelectItem key="physical" value="physical">Physical</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1 sm:col-span-2">
               <Label htmlFor="new-desc" className="text-xs">Description (EN)</Label>

@@ -148,7 +148,9 @@ Deno.serve(async (req) => {
 
     const rows = (data ?? []) as Row[]
     for (const row of rows) {
-      if (row.status === 'pending_verification') {
+      // The generic `status` column is gone — units carry milestones instead.
+      // Log the open event only for units this call actually created.
+      if (Number(row.unit_index) > before) {
         await logEvent(sb, String(row.id), admin.id, 'operations.opened', { unit_index: row.unit_index })
       }
     }

@@ -364,10 +364,14 @@ begin
     'id', pp.id,
     'reference', pp.reference,
     'unit_index', pp.unit_index,
-    'status', pp.status::text,
+    'status', case
+      when pp.delivered_at is not null then 'delivered'
+      when pp.shipped_at is not null then 'shipped'
+      when pp.manufacturing_completed_at is not null then 'manufactured'
+      when pp.sold_at is not null then 'sold'
+      else 'pending'
+    end,
     'notes', pp.notes,
-    'on_hold_reason', pp.on_hold_reason,
-    'cancelled_reason', pp.cancelled_reason,
     'archived_at', pp.archived_at,
     'created_at', pp.created_at,
     'updated_at', pp.updated_at

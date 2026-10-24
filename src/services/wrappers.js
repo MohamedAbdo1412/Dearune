@@ -148,6 +148,7 @@ export async function createWrapper(wrapper) {
       key: wrapper.key,
       name: wrapper.name,
       name_ar: wrapper.name_ar ?? '',
+      kind: wrapper.kind ?? 'physical',
       description: wrapper.description ?? '',
       description_ar: wrapper.description_ar ?? '',
       image_url: wrapper.image_url ?? '',
@@ -169,7 +170,7 @@ export async function updateWrapper(wrapperId, patch) {
   if (!supabase) throw new Error('Supabase is not configured')
   const allowed = [
     'name', 'name_ar', 'description', 'description_ar', 'image_url', 'active',
-    'display_state', 'base_price', 'production_cost', 'display_order',
+    'kind', 'display_state', 'base_price', 'production_cost', 'display_order',
     'estimated_production_days', 'sku', 'notes',
   ]
   const clean = {}

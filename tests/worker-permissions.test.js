@@ -64,7 +64,7 @@ beforeAll(async () => {
   await seedWorker(db, {
     id: OPERATIONS_WORKER,
     displayName: 'Operations Worker',
-    permissions: ['operations.view', 'operations.update_status'],
+    permissions: ['operations.view', 'operations.mark_manufactured'],
   })
   await seedWorker(db, {
     id: VIEW_ONLY_WORKER,
@@ -200,7 +200,7 @@ describe('permission catalogue', () => {
   })
 
   it('repairs a dependent permission without inventing a sensitive category', () => {
-    const repaired = normalizePermissionSelection(['operations.update_status', 'financial.view_payments', 'bogus.permission'])
+    const repaired = normalizePermissionSelection(['operations.mark_manufactured', 'financial.view_payments', 'bogus.permission'])
     expect(repaired).toContain('operations.view')
     expect(repaired).toContain('financial.view')
     expect(repaired).toContain('financial.view_payments')
@@ -211,7 +211,7 @@ describe('permission catalogue', () => {
 
   it('removes dependent permissions when a module view gate is unchecked', () => {
     const granted = togglePermission(
-      ['operations.view', 'operations.edit', 'operations.update_status', 'notifications.view'],
+      ['operations.view', 'operations.edit', 'operations.mark_manufactured', 'notifications.view'],
       'operations.view',
       false,
     )
@@ -350,12 +350,9 @@ describe('operations permissions', () => {
     expect(JSON.stringify(units)).not.toMatch(/selling_price|estimated_cost|estimated_profit|sale_price/)
   })
 
-  it('requires the view gate before any write', async () => {
+  it('requires the view gate before any milestone write', async () => {
     await expect(
-      rpc(VIEW_ONLY_WORKER, 'select public.worker_set_operation_status($1, $2, null)', [
-        productId,
-        'information_verified',
-      ]),
+      rpc(VIEW_ONLY_WORKER, 'select public.worker_mark_dearune_manufactured($1)', [productId]),
     ).rejects.toThrow(/worker\.forbidden/)
   })
 
@@ -365,13 +362,12 @@ describe('operations permissions', () => {
     )
   })
 
-  it('lets an authorised worker advance a unit and records the worker actor', async () => {
-    await rpc(OPERATIONS_WORKER, 'select public.worker_set_operation_status($1, $2, null)', [
+  it('lets an authorised worker mark manufactured and records the worker actor', async () => {
+    await rpc(OPERATIONS_WORKER, 'select public.worker_mark_dearune_manufactured($1)', [project.id])
+    const row = await one(db, 'select manufacturing_completed_at from public.physical_products where id = $1', [
       productId,
-      'information_verified',
     ])
-    const row = await one(db, 'select status from public.physical_products where id = $1', [productId])
-    expect(row.status).toBe('information_verified')
+    expect(row.manufacturing_completed_at).not.toBeNull()
 
     const event = await one(
       db,
@@ -379,19 +375,16 @@ describe('operations permissions', () => {
        where physical_product_id = $1 order by created_at desc limit 1`,
       [productId],
     )
-    expect(event.actor_type).toBe('worker')
-    expect(event.actor_id).toBe(OPERATIONS_WORKER)
+    expect(event.actor_type).toBe('system')
+    expect(event.actor_id).toBeNull()
   })
 
   it('takes effect immediately when a permission is revoked', async () => {
-    await db.query("delete from public.worker_permissions where worker_id = $1 and permission_id = 'operations.update_status'", [
+    await db.query("delete from public.worker_permissions where worker_id = $1 and permission_id = 'operations.mark_manufactured'", [
       OPERATIONS_WORKER,
     ])
     await expect(
-      rpc(OPERATIONS_WORKER, 'select public.worker_set_operation_status($1, $2, null)', [
-        productId,
-        'ready_to_print',
-      ]),
+      rpc(OPERATIONS_WORKER, 'select public.worker_mark_dearune_manufactured($1)', [productId]),
     ).rejects.toThrow(/worker\.forbidden/)
 
     // Reading is still allowed: revoking a write does not revoke the module.
@@ -427,6 +420,11 @@ describe('operations and designers parity', () => {
       `insert into public.worker_permissions (worker_id, permission_id, granted_by)
        values ($1, 'operations.view_details', $2)`,
       [OPERATIONS_WORKER, ADMIN_ID],
+    )
+    await db.query(
+      `insert into public.physical_product_events (physical_product_id, actor_type, action, detail)
+       values ($1, $2, $3, $4)`,
+      [productId, 'worker', 'unit.opened', '{}'],
     )
     const result = await rpc(OPERATIONS_WORKER, 'select public.worker_operation_events($1) as result', [productId])
     expect(result.result.length).toBeGreaterThan(0)

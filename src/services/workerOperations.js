@@ -114,8 +114,6 @@ export function downloadWorkerOperationsCsv(rows) {
     ['Tracking', 'tracking_code'],
     ['Archived', 'archived_at'],
     ['Notes', 'notes'],
-    ['Hold reason', 'on_hold_reason'],
-    ['Cancellation reason', 'cancelled_reason'],
   ]
   const escape = (value) => {
     if (value === null || value === undefined) return ''

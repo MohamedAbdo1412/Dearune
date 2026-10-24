@@ -149,10 +149,11 @@ const UNIT_COLUMNS = [
   'id',
   'reference',
   'unit_index',
-  'status',
+  'sold_at',
+  'manufacturing_completed_at',
+  'shipped_at',
+  'delivered_at',
   'notes',
-  'on_hold_reason',
-  'cancelled_reason',
   'archived_at',
   'created_at',
   'updated_at',
@@ -279,7 +280,9 @@ export async function fetchQaRecord(raw) {
   }
 
   // 3. Everything else hangs off the project, so it can be read in one go.
-  const [unitRows, saleRows, designerRows, templateRows, shippingRows, projectEventRows] = await Promise.all([
+  //    The wrapper catalog is read alongside so the record shows the
+  //    wrapper's actual name instead of a raw key.
+  const [unitRows, saleRows, designerRows, templateRows, shippingRows, projectEventRows, wrapperRows] = await Promise.all([
     read(supabase.from('operations_units').select(UNIT_COLUMNS).eq('public_id', parsed.publicId), 'the physical units'),
     read(supabase.from('sales_log').select(SALE_COLUMNS).eq('project_id', project.id), 'the sale'),
     read(
@@ -314,7 +317,8 @@ export async function fetchQaRecord(raw) {
       )
     : []
 
-  return buildQaRecord({ parsed, project, unitRows, saleRows, designerRows, templateRows, shippingRows, projectEventRows, unitEventRows })
+  const wrapperByKey = new Map((wrapperRows ?? []).map((row) => [String(row.key), row.name ?? null]))
+  return buildQaRecord({ parsed, project, unitRows, saleRows, designerRows, templateRows, shippingRows, projectEventRows, unitEventRows, wrappers: wrapperByKey })
 }
 
 // ---------------------------------------------------------------------------
@@ -323,7 +327,7 @@ export async function fetchQaRecord(raw) {
 
 const text = (value) => (value === null || value === undefined ? '' : String(value))
 
-function toUnit(row, events) {
+function toUnit(row, unitEvents = []) {
   const reference = text(row.reference)
   return {
     id: row.id,
@@ -331,11 +335,14 @@ function toUnit(row, events) {
     soldAs: soldAsId(reference),
     hasValidId: PHYSICAL_ID_PATTERN.test(reference),
     unitIndex: Number(row.unit_index ?? 1),
-    status: row.status,
-    statusLabel: row.status,
+    status: (() => {
+      if (row.delivered_at) return 'delivered'
+      if (row.shipped_at) return 'shipped'
+      if (row.manufacturing_completed_at) return 'manufactured'
+      if (row.sold_at || row.paid_at) return 'sold'
+      return 'pending'
+    })(),
     notes: text(row.notes),
-    onHoldReason: text(row.on_hold_reason),
-    cancelledReason: text(row.cancelled_reason),
     archived: Boolean(row.archived_at),
     archivedAt: row.archived_at ?? null,
     createdAt: row.created_at ?? null,
@@ -345,8 +352,7 @@ function toUnit(row, events) {
     messageActive: Boolean(row.message_active),
     messageProtected: Boolean(row.message_protected),
     paidAt: row.paid_at ?? null,
-    events: events
-      .filter((event) => event.physical_product_id === row.id)
+    events: unitEvents
       .map((event) => ({
         id: event.id,
         actorType: event.actor_type,
@@ -393,10 +399,18 @@ export function buildQaRecord({
   shippingRows = [],
   projectEventRows = [],
   unitEventRows = [],
+  wrappers = new Map(),
 }) {
   const letter = parseProjectPayload(project.payload)
+  const wrapperName = (key) => (key ? wrappers.get(key) ?? key : null)
+  const eventsByUnit = new Map()
+  for (const event of unitEventRows ?? []) {
+    const id = event.physical_product_id
+    if (!eventsByUnit.has(id)) eventsByUnit.set(id, [])
+    eventsByUnit.get(id).push(event)
+  }
   const units = unitRows
-    .map((row) => toUnit(row, unitEventRows))
+    .map((row) => toUnit(row, eventsByUnit.get(row.id) ?? []))
     .sort((a, b) => a.unitIndex - b.unitIndex)
 
   const designer = designerRows[0] ?? null
@@ -441,6 +455,7 @@ export function buildQaRecord({
       templateSlug: text(project.template_slug),
       templateVersion: project.template_version ?? null,
       wrapperType: text(project.wrapper_type),
+      wrapperName: wrapperName(project.wrapper_type),
       salePrice: project.sale_price ?? null,
       estimatedCost: project.estimated_cost ?? null,
       currency: text(project.currency) || 'EGP',
@@ -519,6 +534,7 @@ export function buildQaRecord({
           voidReason: text(sale.void_reason),
           templateName: text(sale.template_name),
           wrapperType: text(sale.wrapper_type),
+          wrapperName: wrapperName(sale.wrapper_type),
           designerName: text(sale.designer_name),
         }
       : null,

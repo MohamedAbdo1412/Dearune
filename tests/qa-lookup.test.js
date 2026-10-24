@@ -174,7 +174,7 @@ describe('fetchQaRecord', () => {
       [projectId],
     )
 
-    await db.query('select public.ensure_physical_products($1, 1, null, null)', [projectId])
+    await db.query('select public.ensure_physical_products($1, 1, null)', [projectId])
     const unit = await one(
       db,
       'select id, reference from public.physical_products where project_id = $1 order by unit_index limit 1',

@@ -226,9 +226,7 @@ $$;
 -- ---------------------------------------------------------------------------
 create or replace function public.worker_update_operation(
   p_product_id uuid,
-  p_notes text default null,
-  p_on_hold_reason text default null,
-  p_cancelled_reason text default null
+  p_notes text default null
 )
 returns jsonb
 language plpgsql
@@ -239,8 +237,6 @@ declare
   v_worker  uuid := public.current_worker_id();
   v_product public.physical_products%rowtype;
   v_notes   text := btrim(coalesce(p_notes, ''));
-  v_hold    text := btrim(coalesce(p_on_hold_reason, ''));
-  v_cancel  text := btrim(coalesce(p_cancelled_reason, ''));
 begin
   if v_worker is null then
     raise exception 'worker.inactive_or_unknown' using errcode = '42501';
@@ -251,9 +247,6 @@ begin
   end if;
   if char_length(v_notes) > 2000 then
     raise exception 'operations.notes_too_long' using errcode = '22001';
-  end if;
-  if char_length(v_hold) > 300 or char_length(v_cancel) > 300 then
-    raise exception 'operations.reason_too_long' using errcode = '22001';
   end if;
 
   select * into v_product
@@ -266,17 +259,9 @@ begin
   if v_product.archived_at is not null then
     raise exception 'operations.archived_frozen' using errcode = '55000';
   end if;
-  if v_product.status::text = 'on_hold' and v_hold = '' then
-    raise exception 'operations.reason_required' using errcode = '22023';
-  end if;
-  if v_product.status::text = 'cancelled' and v_cancel = '' then
-    raise exception 'operations.reason_required' using errcode = '22023';
-  end if;
 
   update public.physical_products
-  set notes = nullif(v_notes, ''),
-      on_hold_reason = case when status = 'on_hold' then nullif(v_hold, '') else on_hold_reason end,
-      cancelled_reason = case when status = 'cancelled' then nullif(v_cancel, '') else cancelled_reason end
+  set notes = nullif(v_notes, '')
   where id = p_product_id;
 
   insert into public.physical_product_events (physical_product_id, actor_type, actor_id, action, detail)
@@ -289,9 +274,7 @@ begin
 
   return jsonb_build_object(
     'id', p_product_id,
-    'notes', nullif(v_notes, ''),
-    'on_hold_reason', case when v_product.status::text = 'on_hold' then nullif(v_hold, '') else v_product.on_hold_reason end,
-    'cancelled_reason', case when v_product.status::text = 'cancelled' then nullif(v_cancel, '') else v_product.cancelled_reason end
+    'notes', nullif(v_notes, '')
   );
 end;
 $$;
@@ -630,7 +613,7 @@ $$;
 -- ---------------------------------------------------------------------------
 revoke all on function public.worker_operations_units(boolean) from public, anon, authenticated;
 revoke all on function public.worker_set_operation_status(uuid, text, text) from public, anon, authenticated;
-revoke all on function public.worker_update_operation(uuid, text, text, text) from public, anon, authenticated;
+revoke all on function public.worker_update_operation(uuid, text) from public, anon, authenticated;
 revoke all on function public.worker_archive_operations(uuid[], boolean) from public, anon, authenticated;
 revoke all on function public.worker_update_operation_contact(uuid, text) from public, anon, authenticated;
 revoke all on function public.worker_update_operation_designer(uuid, uuid) from public, anon, authenticated;
@@ -640,7 +623,7 @@ revoke all on function public.worker_projects(uuid) from public, anon, authentic
 
 grant execute on function public.worker_operations_units(boolean) to authenticated;
 grant execute on function public.worker_set_operation_status(uuid, text, text) to authenticated;
-grant execute on function public.worker_update_operation(uuid, text, text, text) to authenticated;
+grant execute on function public.worker_update_operation(uuid, text) to authenticated;
 grant execute on function public.worker_archive_operations(uuid[], boolean) to authenticated;
 grant execute on function public.worker_update_operation_contact(uuid, text) to authenticated;
 grant execute on function public.worker_update_operation_designer(uuid, uuid) to authenticated;

@@ -89,16 +89,6 @@ function UnitCard({ unit }) {
         {unit.archived_at ? ' · archived' : ''}
       </p>
       {unit.notes ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{unit.notes}</p> : null}
-      {unit.on_hold_reason ? (
-        <p className="mt-2 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-xs text-rose-700 dark:text-rose-300">
-          On hold: {unit.on_hold_reason}
-        </p>
-      ) : null}
-      {unit.cancelled_reason ? (
-        <p className="mt-2 rounded-lg bg-destructive/10 px-2.5 py-1.5 text-xs text-destructive">
-          Cancelled: {unit.cancelled_reason}
-        </p>
-      ) : null}
     </li>
   )
 }

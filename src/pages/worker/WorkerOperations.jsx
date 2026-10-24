@@ -868,7 +868,7 @@ export function WorkerOperations() {
                   </div>
                   <div>
                     <dt className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Wrapper</dt>
-                    <dd className="mt-1">{detail.wrapper_type || '—'}</dd>
+                    <dd className="mt-1">{detail.wrapper_name || detail.wrapper_type || '—'}</dd>
                   </div>
                 </dl>
 
@@ -909,16 +909,6 @@ export function WorkerOperations() {
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
                     {detail.notes || 'No notes on this unit.'}
                   </p>
-                  {detail.on_hold_reason ? (
-                    <p className="mt-3 rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
-                      On hold: {detail.on_hold_reason}
-                    </p>
-                  ) : null}
-                  {detail.cancelled_reason ? (
-                    <p className="mt-3 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                      Cancelled: {detail.cancelled_reason}
-                    </p>
-                  ) : null}
                 </div>
 
                 {canViewDetails ? (

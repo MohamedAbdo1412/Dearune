@@ -4,7 +4,8 @@ import { ArrowLeft, Loader2Icon, ShieldAlert } from 'lucide-react'
 import { toast } from 'sonner'
 import { correctSale, fetchDearune } from '@/services/dearunes'
 import { fetchSale } from '@/services/sales'
-import { WRAPPER_LABELS } from '@/services/constants'
+import { fetchWrapperTypes } from '@/services/wrappers'
+import { findWrapper, wrapperLabel } from '@/services/wrappers'
 import { formatDateTime, formatMoney } from '@/services/format'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -38,15 +39,22 @@ export function SaleDetail() {
 
   const [sale, setSale] = useState(null)
   const [project, setProject] = useState(null)
+  const [wrappers, setWrappers] = useState([])
   const [status, setStatus] = useState('loading')
   const [reason, setReason] = useState('')
   const [voiding, setVoiding] = useState(false)
 
+  const wrapperNameFor = (key) => {
+    if (!key) return '—'
+    return wrapperLabel(findWrapper(wrappers, key) ?? { key })
+  }
+
   const reload = useCallback(async () => {
     setStatus('loading')
     try {
-      const row = await fetchSale(saleId)
+      const [row, wrapperRows] = await Promise.all([fetchSale(saleId), fetchWrapperTypes().catch(() => [])])
       setSale(row)
+      setWrappers(Array.isArray(wrapperRows) ? wrapperRows : [])
       let projectRow = null
       if (row.project_id) {
         projectRow = await fetchDearune(row.project_id).catch(() => null)
@@ -144,7 +152,7 @@ export function SaleDetail() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <Row label="Currency" value={sale.currency} />
-            <Row label="Wrapper" value={WRAPPER_LABELS[sale.wrapper_type] ?? sale.wrapper_type ?? '—'} />
+            <Row label="Wrapper" value={wrapperNameFor(sale.wrapper_type)} />
             <Row label="Paper" value={sale.template_name ?? '—'} />
             <Row label="Designer" value={sale.designer_name ?? '—'} />
             <Row label="Sold at" value={formatDateTime(sale.sold_at)} />

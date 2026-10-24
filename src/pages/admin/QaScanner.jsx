@@ -295,7 +295,7 @@ function RecordSections({ record }) {
           <Field label="Status" value={record.project.status} />
           <Field label="Paper" value={record.template?.name || record.project.templateSlug} empty="No paper chosen" />
           <Field label="Paper version" value={record.project.templateVersion} />
-          <Field label="Wrapper" value={WRAPPER_LABELS[record.project.wrapperType] ?? record.project.wrapperType} empty="No wrapper" />
+          <Field label="Wrapper" value={record.project.wrapperName ?? record.project.wrapperType ?? 'No wrapper'} empty="No wrapper" />
           <Field label="Currency" value={record.project.currency} />
           <Field label="Created" value={formatDateTime(record.project.createdAt)} />
           <Field label="Configured" value={formatDateTime(record.project.configuredAt)} />
@@ -400,7 +400,7 @@ function RecordSections({ record }) {
               <Field label="Estimated cost" value={formatMoney(sale.estimatedCost, sale.currency)} />
               <Field label="Estimated profit" value={formatMoney(sale.estimatedProfit, sale.currency)} />
               <Field label="Paper" value={sale.templateName} empty="No paper" />
-              <Field label="Wrapper" value={WRAPPER_LABELS[sale.wrapperType] ?? sale.wrapperType} empty="No wrapper" />
+              <Field label="Wrapper" value={sale.wrapperName ?? sale.wrapperType ?? 'No wrapper'} empty="No wrapper" />
               <Field label="Designer" value={sale.designerName} empty={NOT_ASSIGNED} />
             </FieldGrid>
           ) : (
