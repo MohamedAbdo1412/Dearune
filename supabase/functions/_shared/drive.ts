@@ -3,11 +3,14 @@ import { requireEnv } from './env.ts'
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const DRIVE_URL = 'https://www.googleapis.com/drive/v3'
 const UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3'
+const TOKEN_TTL = 50 * 60 * 1000 // 50 minutes in milliseconds
 
 let cachedToken: string | null = null
+let cachedTokenAt: number = 0
 
 export async function googleAccessToken(): Promise<string> {
-  if (cachedToken) return cachedToken
+  const now = Date.now()
+  if (cachedToken && now - cachedTokenAt < TOKEN_TTL) return cachedToken
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
     client_id: requireEnv('GOOGLE_CLIENT_ID'),
@@ -23,6 +26,7 @@ export async function googleAccessToken(): Promise<string> {
   const json = await res.json()
   if (!json.access_token) throw new Error('Google token exchange returned no token')
   cachedToken = json.access_token
+  cachedTokenAt = Date.now()
   return cachedToken
 }
 

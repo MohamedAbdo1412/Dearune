@@ -39,9 +39,9 @@ export default function WrapperSelectionStage({ template = null, wrappers = null
 
   useEffect(() => {
     let alive = true
-    const withPhotos = (list ?? []).filter((w) => w.image_url)
+    const withPhotos = (list ?? []).filter((w) => w.thumbnail_url || w.image_url)
     if (!withPhotos.length || !token) return undefined
-    Promise.all(withPhotos.map(async (w) => [w.key, await resolveWrapperPhotoUrl(w.image_url, token)]))
+    Promise.all(withPhotos.map(async (w) => [w.key, await resolveWrapperPhotoUrl(w.thumbnail_url || w.image_url, token)]))
       .then((entries) => {
         if (alive) setPhotos(Object.fromEntries(entries.filter(([, url]) => url)))
       })

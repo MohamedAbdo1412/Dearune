@@ -665,6 +665,7 @@ export default function CreateBook() {
         policyVersion: DEARUNE_POLICY_VERSION,
         policiesAcceptedAt: now,
         wrapperType,
+        letterPassword: passwordRef.current || null,
       }))
     } catch (cause) {
       // The archive may have moved under the letter (a paper or wrapper the

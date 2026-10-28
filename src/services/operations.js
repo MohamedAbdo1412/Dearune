@@ -56,10 +56,13 @@ export const OPERATION_COLUMNS = [
 
 // ---- reading ---------------------------------------------------------------
 
-export async function fetchOperations({ includeArchived = false } = {}) {
+export async function fetchOperations({ includeArchived = false, ids = null } = {}) {
   if (!supabase) throw new Error('Supabase is not configured')
   let query = supabase.from('operations_units').select(OPERATION_COLUMNS)
   if (!includeArchived) query = query.is('archived_at', null)
+  if (ids && Array.isArray(ids) && ids.length > 0) {
+    query = query.in('id', ids)
+  }
   const { data, error } = await query
   if (error) throw error
   return (data ?? []).map(toOperation)
@@ -121,7 +124,7 @@ export function toOperation(row) {
     designerName,
     designerCode: row.designer_code ?? '',
 
-    recipientName: designerName || row.recipient_name || '',
+    recipientName: row.recipient_name ?? shipping?.recipient_name ?? project?.title ?? '',
     customerPhone: row.customer_phone ?? '',
     trackingCode: row.tracking_code ?? '',
     provider: row.provider ?? '',

@@ -151,10 +151,22 @@ Deno.serve(async (req) => {
   const designer = await requireDesigner(req)
   if (!designer) return errorResponse('Unauthorized', 401)
 
+  // Rate limit: 10 project submissions per minute per designer
+  const sb = adminClient()
+  const rateLimit = await sb.rpc('consume_rate_limit', {
+    p_key: 'designer-projects:submit:' + designer.designerId,
+    p_tokens: 1,
+    p_capacity: 10,
+    p_refill_per_minute: 10,
+  })
+  const rateLimitData = rateLimit.data as { allowed: boolean; remaining: number; retry_after_seconds: number } | null
+  if (rateLimitData && !rateLimitData.allowed) {
+    return errorResponse('Rate limit exceeded — too many submissions', 429, { retryAfterSeconds: rateLimitData.retry_after_seconds })
+  }
+
   const path = new URL(req.url).pathname.split('/').filter(Boolean)
   const fnIndex = path.lastIndexOf('designer-projects')
   const tail = path.slice(fnIndex + 1)
-  const sb = adminClient()
 
   if (req.method === 'POST') {
     if (tail.length) return errorResponse('Invalid route', 404)
@@ -183,8 +195,18 @@ Deno.serve(async (req) => {
     if (!template) return errorResponse('This paper is not offered', 400)
     if (!SELECTABLE_STATES.includes(template.display_state ?? 'normal')) return errorResponse('This paper is resting for now — choose another to continue', 400)
 
-    const payload = sanitizePayload(body.draft, designer.designerId)
+    let payload = sanitizePayload(body.draft, designer.designerId)
     if (!payload) return errorResponse('The words are not written yet', 400)
+    if (body.letterPassword && typeof body.letterPassword === 'string' && body.letterPassword.trim()) {
+      try {
+        const enc = new TextEncoder().encode(body.letterPassword.trim())
+        const hash = await crypto.subtle.digest('SHA-256', enc)
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(hash)))
+        payload = { ...payload, passwordSet: true, letter_password_hash: b64 }
+      } catch {
+        // ignore
+      }
+    }
 
     // The arrival wrapper chosen in Create (optional: a draft written before
     // the wrapper stage existed still submits). It must be an ACTIVE catalog

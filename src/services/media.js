@@ -164,6 +164,14 @@ export async function designerAuthedDriveBlob(fileId, token) {
 // ---------------------------------------------------------------------------
 
 const SIGNED_URL_CACHE = new Map()
+const SIGNED_URL_TTL_MS = 50 * 60 * 1000
+
+export function invalidateMediaUrlCache(path) {
+  if (!path) return
+  for (const key of SIGNED_URL_CACHE.keys()) {
+    if (key.includes(path)) SIGNED_URL_CACHE.delete(key)
+  }
+}
 
 // `designerMedia` is shared with `services/wrappers.js` (wrapper catalog
 // photos live in the same private bucket, through this same edge function).

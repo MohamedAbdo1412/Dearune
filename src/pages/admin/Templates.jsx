@@ -122,6 +122,9 @@ export function Templates() {
     setSavingVersionSlug(slug)
     try {
       setCurrentTemplateVersion(slug, version)
+      if (template?.id) {
+        await updateTemplate(template.id, { current_version: version })
+      }
       toast.success(`${template.name} now uses version ${version}`)
       await reload()
     } catch (err) {

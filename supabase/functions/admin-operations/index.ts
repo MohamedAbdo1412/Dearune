@@ -79,7 +79,7 @@ const PRODUCT_COLUMNS =
   'id, project_id, unit_index, reference, sold_at, manufacturing_completed_at, shipped_at, delivered_at, notes, archived_at, created_at, updated_at'
 
 const PROJECT_METADATA =
-  'id, reference, title, public_id, public_token, wrapper_type, designer_id, template_slug, paid_at, manufactured_at, shipped_at, arrived_at, archived_at, message_active, status'
+  'id, reference, title, public_id, public_token, wrapper_type, designer_id, template_slug, paid_at, manufactured_at, shipped_at, arrived_at, archived_at, message_active'
 
 async function loadProduct(sb: ReturnType<typeof adminClient>, productId: string) {
   const { data } = await sb.from('physical_products').select(PRODUCT_COLUMNS).eq('id', productId).maybeSingle()
@@ -147,13 +147,6 @@ Deno.serve(async (req) => {
     if (error) return errorResponse('Could not open the Operations record', 500)
 
     const rows = (data ?? []) as Row[]
-    for (const row of rows) {
-      // The generic `status` column is gone — units carry milestones instead.
-      // Log the open event only for units this call actually created.
-      if (Number(row.unit_index) > before) {
-        await logEvent(sb, String(row.id), admin.id, 'operations.opened', { unit_index: row.unit_index })
-      }
-    }
     return jsonResponse({ ok: true, units: rows }, 201)
   }
 

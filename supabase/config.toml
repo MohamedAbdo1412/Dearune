@@ -28,6 +28,16 @@ verify_jwt = false
 [functions.drive-media]
 verify_jwt = false
 
+[functions.admin-dearunes]
+verify_jwt = false
+
+[functions.designer-templates]
+verify_jwt = false
+
+[functions.project-media]
+verify_jwt = false
+
+
 [functions.drive-delete-media]
 verify_jwt = false
 

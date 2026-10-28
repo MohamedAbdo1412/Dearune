@@ -17,7 +17,7 @@ import { googleAccessToken, driveEnsureFolder, driveCreateResumableSession, driv
 
 const BUCKET = 'designer-drafts'
 const ROOT_FOLDER = 'Dearune Designer Drafts'
-const SIGNED_URL_TTL = 3600
+const SIGNED_URL_TTL = 3000 // 50 minutes
 
 const KIND_LIMITS: Record<string, number> = {
   photo: 20 * 1024 * 1024,
@@ -43,9 +43,35 @@ const EXT_BY_MIME: Record<string, string> = {
   'audio/m4a': '.m4a',
 }
 
+function sniffMime(bytes: Uint8Array): string | null {
+  if (bytes.length < 4) return null
+  // JPEG
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
+  // PNG
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png'
+  // GIF
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) return 'image/gif'
+  // WebP
+  if (bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp'
+  // WAV
+  if (bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x41 && bytes[10] === 0x56 && bytes[11] === 0x45) return 'audio/wav'
+  // OGG
+  if (bytes[0] === 0x4f && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) return 'audio/ogg'
+  // MP3 (ID3 or sync)
+  if ((bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) || (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0)) return 'audio/mpeg'
+  // WebM/Matroska
+  if (bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) return 'audio/webm'
+  // M4A/MP4
+  if (bytes.length >= 8 && bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) return 'audio/mp4'
+  return null
+}
+
 function sanitizeName(name: string): string {
-  const safe = name.replace(/[^A-Za-z0-9._-]/g, '-').replace(/^\.+/, '').slice(0, 80)
-  return safe || 'print'
+  if (typeof name !== 'string') return 'file'
+  // Strip path components to prevent traversal
+  const base = name.split(/[\\/]/).pop() ?? name
+  const safe = base.replace(/[^A-Za-z0-9._-]/g, '-').replace(/^\.+/, '').replace(/-+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80)
+  return safe || 'file'
 }
 
 function extensionFor(mime: string, originalName: string): string {
@@ -159,15 +185,28 @@ Deno.serve(async (req) => {
     const limit = KIND_LIMITS[kind]
     if (!limit) return errorResponse('Unknown media kind', 400)
 
-    const mimeType = (req.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
+    const declaredMime = (req.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
     const requiredPrefix = KIND_MIME[kind]
-    if (!mimeType.startsWith(requiredPrefix)) return errorResponse(`A ${kind} must be ${requiredPrefix}*`, 400)
+    if (!declaredMime.startsWith(requiredPrefix)) return errorResponse(`A ${kind} must be ${requiredPrefix}*`, 400)
 
     const originalName = sanitizeName(url.searchParams.get('name') ?? '')
-    const fixedName = sanitizeName(url.searchParams.get('fixed') ?? '').replace(/\.g$/, '')
+    const fixedName = sanitizeName(url.searchParams.get('fixed') ?? '')
     const bytes = new Uint8Array(await req.arrayBuffer())
     if (bytes.byteLength === 0) return errorResponse('Nothing was sent', 400)
     if (bytes.byteLength > limit) return errorResponse('That is too heavy to pin', 413)
+
+    const sniffed = sniffMime(bytes)
+    if (!sniffed) return errorResponse('Unrecognized file format', 400)
+    if (sniffed.startsWith('audio/mp4')) {
+      // Normalize m4a/m4v family
+      const sniffedNorm = 'audio/m4a'
+      if (!sniffedNorm.startsWith(requiredPrefix)) return errorResponse(`A ${kind} must be ${requiredPrefix}*`, 400)
+    } else if (sniffed.startsWith('audio/mpeg') && kind === 'audio') {
+      // ok
+    } else if (!sniffed.startsWith(requiredPrefix)) {
+      return errorResponse(`A ${kind} must be ${requiredPrefix}*`, 400)
+    }
+    const mimeType = sniffed.startsWith('audio/mp4') ? 'audio/m4a' : sniffed
 
     // Wrapper catalog photos always live in Supabase storage (the designer
     // interface must show them without any Drive dependency), under the

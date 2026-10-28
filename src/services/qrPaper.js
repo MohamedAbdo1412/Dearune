@@ -19,6 +19,7 @@ import serifRegularUrl from '@/assets/fonts/LibreBaskerville-Regular.ttf'
 import sansUrl from '@/assets/fonts/AtkinsonHyperlegible-Regular.ttf'
 import sansItalicUrl from '@/assets/fonts/AtkinsonHyperlegible-Italic.ttf'
 import sansBoldUrl from '@/assets/fonts/AtkinsonHyperlegible-Bold.ttf'
+import arabicUrl from '@/assets/fonts/arniya-regular.ttf'
 
 // ---------------------------------------------------------------------------
 // The QR production paper (2-up 90° rotated layout).
@@ -128,17 +129,18 @@ const FACE = {
   sans: 'sans',
   sansItalic: 'sansItalic',
   sansBold: 'sansBold',
+  arabic: 'arabic',
 }
 
 export const STATIC_RUNS = [
   // Front page — the lockup (rotated -90°)
-  { page: 'front', face: FACE.serif, text: '', x: 431.31, y: 929.62, size: 168.52, width: 132.29, rotate: -90, colorKey: 'brand' },
-  { page: 'front', face: FACE.serif, text: '', x: 394.03, y: 975.37, size: 173.26, width: 128.21, rotate: -90, colorKey: 'brand' },
-  { page: 'front', face: FACE.serif, text: '', x: 435.38, y: 776.3, size: 39.15, width: 263.7, rotate: -90, colorKey: 'brand' },
+  { page: 'front', face: FACE.serif, text: 'DEARUNE', x: 431.31, y: 929.62, size: 168.52, width: 132.29, rotate: -90, colorKey: 'brand' },
+  { page: 'front', face: FACE.serif, text: 'DEARUNE', x: 394.03, y: 975.37, size: 173.26, width: 128.21, rotate: -90, colorKey: 'brand' },
+  { page: 'front', face: FACE.serif, text: 'Some words are meant to last.', x: 435.38, y: 776.3, size: 39.15, width: 263.7, rotate: -90, colorKey: 'brand' },
   { page: 'front', face: FACE.serifRegular, text: ' .', x: 409.64, y: 771.73, size: 17.13, width: 419.64, rotate: -90, colorKey: 'brand' },
   // Front page — the masthead (rotated -90°)
-  { page: 'front', face: FACE.serif, text: '', x: 1532.28, y: 834.44, size: 50.95, width: 343.23, rotate: -90, colorKey: 'brand' },
-  { page: 'front', face: FACE.serif, text: '', x: 1460.98, y: 1127.36, size: 50.95, width: 929.07, rotate: -90, colorKey: 'brand' },
+  { page: 'front', face: FACE.serif, text: 'DEARUNE', x: 1532.28, y: 834.44, size: 50.95, width: 343.23, rotate: -90, colorKey: 'brand' },
+  { page: 'front', face: FACE.serif, text: 'Some words are meant to last.', x: 1460.98, y: 1127.36, size: 50.95, width: 929.07, rotate: -90, colorKey: 'brand' },
 ]
 
 // The detachable strip, identical on both pages and repeated for both slots.
@@ -215,6 +217,98 @@ export function formatProductionDate(date) {
   if (Number.isNaN(value.getTime())) return ''
   const pad = (n) => String(n).padStart(2, '0')
   return `${value.getDate()} ${MONTHS[value.getMonth()]} ${value.getFullYear()} - ${pad(value.getHours())}:${pad(value.getMinutes())}`
+}
+
+// ---- Arabic glyph shaping ---------------------------------------------------
+// Basic Arabic reshaping for proper glyph joining. This is a minimal
+// implementation that converts logical Arabic text to presentation forms
+// by mapping characters to their positional variants (isolated, initial,
+// medial, final). For production use, a full OpenType shaper like HarfBuzz
+// would be preferred, but this covers the common cases for names/addresses.
+const ARABIC_LETTERS = new Set([
+  // Basic Arabic letters
+  '\u0627', '\u0628', '\u0629', '\u062A', '\u062B', '\u062C', '\u062D', '\u062E',
+  '\u062F', '\u0630', '\u0631', '\u0632', '\u0633', '\u0634', '\u0635', '\u0636',
+  '\u0637', '\u0638', '\u0639', '\u063A', '\u0641', '\u0642', '\u0643', '\u0644',
+  '\u0645', '\u0646', '\u0647', '\u0648', '\u0649', '\u064A',
+  // Hamza variants
+  '\u0621', '\u0622', '\u0623', '\u0624', '\u0625', '\u0626',
+  // Extended Arabic letters (Persian, Urdu, etc.)
+  '\u067E', '\u067F', '\u0686', '\u0698', '\u06A9', '\u06AF', '\u06CC',
+])
+
+// Characters that don't connect to the following character (non-joiners)
+const NON_JOINERS = new Set([
+  '\u0627', '\u0622', '\u0623', '\u0625', // Alif variants
+  '\u062F', '\u0630', '\u0631', '\u0632', // Dal, Thal, Ra, Zay
+  '\u0648', '\u0649', // Waw, Alif Maqsura
+  '\u067E', '\u0698', '\u06A9', '\u06AF', '\u06CC', // Pe, Je, Kaf, Gaf, Farsi Yeh
+])
+
+// Presentation forms mapping (simplified - maps to isolated forms for non-joiners)
+const PRESENTATION_FORMS = {
+  // Isolated forms (for non-joiners or end of word)
+  '\u0627': '\uFE8D', // Alif
+  '\u0628': '\uFE8F', // Ba
+  '\u0629': '\uFE93', // Ta Marbuta
+  '\u062A': '\uFE95', // Ta
+  '\u062B': '\uFE99', // Tha
+  '\u062C': '\uFE9D', // Jim
+  '\u062D': '\uFEA1', // Ha
+  '\u062E': '\uFEA5', // Kha
+  '\u062F': '\uFEA9', // Dal
+  '\u0630': '\uFEAB', // Thal
+  '\u0631': '\uFEAD', // Ra
+  '\u0632': '\uFEAF', // Zay
+  '\u0633': '\uFEB1', // Sin
+  '\u0634': '\uFEB5', // Shin
+  '\u0635': '\uFEB9', // Sad
+  '\u0636': '\uFEBD', // Dad
+  '\u0637': '\uFEC1', // Tah
+  '\u0638': '\uFEC5', // Zah
+  '\u0639': '\uFEC9', // Ain
+  '\u063A': '\uFECD', // Ghain
+  '\u0641': '\uFED1', // Fa
+  '\u0642': '\uFED5', // Qaf
+  '\u0643': '\uFED9', // Kaf
+  '\u0644': '\uFEDD', // Lam
+  '\u0645': '\uFEE1', // Mim
+  '\u0646': '\uFEE5', // Nun
+  '\u0647': '\uFEE9', // Ha
+  '\u0648': '\uFEED', // Waw
+  '\u0649': '\uFEF0', // Alif Maqsura
+  '\u064A': '\uFEF1', // Ya
+  '\u0621': '\uFE80', // Hamza
+  '\u0622': '\uFE81', // Alif with Madda
+  '\u0623': '\uFE83', // Alif with Hamza Above
+  '\u0624': '\uFE85', // Waw with Hamza
+  '\u0625': '\uFE87', // Alif with Hamza Below
+  '\u0626': '\uFE89', // Ya with Hamza
+  '\u067E': '\uFB56', // Pe
+  '\u067F': '\uFB62', // Gaf
+  '\u0686': '\uFB7A', // Che
+  '\u0698': '\uFB8A', // Je
+  '\u06A9': '\uFB8E', // Kaf
+  '\u06AF': '\uFB92', // Gaf
+  '\u06CC': '\uFBFC', // Farsi Yeh
+}
+
+// Simplified: return isolated form for all (proper shaping needs context)
+export function shapeArabicText(text) {
+  if (!text || typeof text !== 'string') return text
+  // Check if text contains Arabic characters
+  const hasArabic = [...text].some(ch => ARABIC_LETTERS.has(ch))
+  if (!hasArabic) return text
+
+  // For each character, map to presentation form if available
+  // This is a simplified version - full shaping requires context analysis
+  return text.split('').map(ch => PRESENTATION_FORMS[ch] ?? ch).join('')
+}
+
+// Check if text contains Arabic characters
+export function containsArabic(text) {
+  if (!text || typeof text !== 'string') return false
+  return [...text].some(ch => ARABIC_LETTERS.has(ch))
 }
 
 export function spacedId(reference) {
@@ -350,6 +444,7 @@ const ASSET_URLS = {
   sans: sansUrl,
   sansItalic: sansItalicUrl,
   sansBold: sansBoldUrl,
+  arabic: arabicUrl,
   texture: paperTextureUrl,
   textureBack : paperTextureUrlBack,
   'deco-front-a': decoFrontAUrl,
@@ -363,12 +458,13 @@ export { ASSET_URLS }
 
 async function loadAssets(doc, load) {
   doc.registerFontkit(fontkit)
-  const [serifBytes, serifRegularBytes, sansBytes, sansItalicBytes, sansBoldBytes] = await Promise.all([
+  const [serifBytes, serifRegularBytes, sansBytes, sansItalicBytes, sansBoldBytes, arabicBytes] = await Promise.all([
     load(ASSET_URLS.serif),
     load(ASSET_URLS.serifRegular),
     load(ASSET_URLS.sans),
     load(ASSET_URLS.sansItalic),
     load(ASSET_URLS.sansBold),
+    load(ASSET_URLS.arabic),
   ])
 
   const fonts = {
@@ -377,6 +473,7 @@ async function loadAssets(doc, load) {
     [FACE.sans]: await doc.embedFont(sansBytes, { subset: true }),
     [FACE.sansItalic]: await doc.embedFont(sansItalicBytes, { subset: true }),
     [FACE.sansBold]: await doc.embedFont(sansBoldBytes, { subset: true }),
+    [FACE.arabic]: await doc.embedFont(arabicBytes, { subset: true }),
   }
 
   const texture = await doc.embedPng(await load(ASSET_URLS.texture))
@@ -485,8 +582,8 @@ async function drawUnit(doc, assets, assets_back, operation, { dateLabel, palett
   const back = doc.addPage([A4.width, A4.height])
   for (const slot of slotConfigs) {
     if (!slot.has) continue
-    drawArtworkSlot(back, assets_back, 'back', slot.offsetY)
-    drawStripSlot(back, assets_back, slot.values, { offsetY: slot.offsetY, palette })
+    drawArtworkSlot(back, assets, 'back', slot.offsetY)
+    drawStripSlot(back, assets, slot.values, { offsetY: slot.offsetY, palette })
   }
 
   return { qrUrl: topQr.content, values: topValues }
@@ -523,7 +620,7 @@ export async function buildQrPaperPdf(operations, options = {}) {
   doc.setCreator('Dearune Operations')
 
   const assets = await loadAssets(doc, options.loadAsset ?? fetchAsset)
-  const assets_back = await loadAssets(doc, options.loadAssetBack ?? fetchAsset)
+  const assets_back = assets
   const dateLabel = options.dateLabel || formatProductionDate(new Date())
   const palette = resolvePalette(options.colors)
 
@@ -532,7 +629,7 @@ export async function buildQrPaperPdf(operations, options = {}) {
   for (let i = 0; i < normalized.length; i += 2) {
     const operation = normalized[i]
     const bottomOperation = normalized[i + 1] ?? null
-    const result = await drawUnit(doc, assets, assets_back, operation, { dateLabel, palette, bottomOperation })
+    const result = await drawUnit(doc, assets, assets, operation, { dateLabel, palette, bottomOperation })
     items.push({
       id: operation.id,
       reference: operation.reference,

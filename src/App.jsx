@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState, Component } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { Landing } from '@/pages/Landing'
@@ -35,6 +35,41 @@ import { WorkerFinancial } from '@/pages/worker/WorkerFinancial'
 import { WorkerMessages } from '@/pages/worker/WorkerMessages'
 import { WorkerAccount } from '@/pages/worker/WorkerAccount'
 import { syncAppForPath } from '@/pwa/app-runtime'
+
+// ErrorBoundary for lazy-loaded components
+class ErrorBoundary extends Component {
+  state = { hasError: false, error: null }
+  
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+  
+  componentDidCatch(error, errorInfo) {
+    console.error('ErrorBoundary caught an error:', error, errorInfo)
+  }
+  
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex min-h-screen items-center justify-center p-4">
+          <div className="text-center">
+            <h2 className="text-lg font-semibold text-destructive">Something went wrong</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              This section failed to load. Please try refreshing the page.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+            >
+              Refresh page
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 const CreateBook = lazy(() => import('@/pages/create/CreateBook'))
 // The review step carries the PDF generator and the spreadsheet writer, so it
@@ -132,15 +167,17 @@ export default function App() {
       <Route
         path="/create"
         element={
-          <Suspense
-            fallback={
-              <div className="flex min-h-screen items-center justify-center text-sm tracking-[0.3em] uppercase text-muted-foreground">
-                fetching the book…
-              </div>
-            }
-          >
-            <CreateBook />
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense
+              fallback={
+                <div className="flex min-h-screen items-center justify-center text-sm tracking-[0.3em] uppercase text-muted-foreground">
+                  fetching the book…
+                </div>
+              }
+            >
+              <CreateBook />
+            </Suspense>
+          </ErrorBoundary>
         }
       />
       <Route path="/admin/login" element={<AdminLogin />} />
@@ -175,15 +212,17 @@ export default function App() {
         <Route
           path="operations/print"
           element={
-            <Suspense
-              fallback={
-                <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
-                  Preparing the papers…
-                </div>
-              }
-            >
-              <OperationsPrint />
-            </Suspense>
+            <ErrorBoundary>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
+                    Preparing the papers…
+                  </div>
+                }
+              >
+                <OperationsPrint />
+              </Suspense>
+            </ErrorBoundary>
           }
         />
         <Route path="templates" element={<Templates />} />
@@ -192,15 +231,17 @@ export default function App() {
         <Route
           path="apps"
           element={
-            <Suspense
-              fallback={
-                <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
-                  Opening the apps…
-                </div>
-              }
-            >
-              <Apps />
-            </Suspense>
+            <ErrorBoundary>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
+                    Opening the apps…
+                  </div>
+                }
+              >
+                <Apps />
+              </Suspense>
+            </ErrorBoundary>
           }
         />
         <Route path="settings" element={<Settings />} />
@@ -226,15 +267,17 @@ export default function App() {
           path="operations/print"
           element={
             <WorkerPermissionGate permission="operations.print">
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
-                    Preparing the papers…
-                  </div>
-                }
-              >
-                <WorkerOperationsPrint />
+              <ErrorBoundary>
+                <Suspense
+                  fallback={
+                    <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
+                      Preparing the papers…
+                    </div>
+                  }
+                >
+                  <WorkerOperationsPrint />
               </Suspense>
+            </ErrorBoundary>
             </WorkerPermissionGate>
           }
         />

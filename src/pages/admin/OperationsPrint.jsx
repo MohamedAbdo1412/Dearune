@@ -80,9 +80,8 @@ export default function OperationsPrint() {
     let active = true
     void (async () => {
       try {
-        const all = await fetchOperations({ includeArchived: true })
+        const wanted = await fetchOperations({ includeArchived: true, ids })
         if (!active) return
-        const wanted = all.filter((row) => ids.includes(row.id))
         setRows(wanted)
         setActiveId(wanted[0]?.id ?? null)
       } catch (err) {

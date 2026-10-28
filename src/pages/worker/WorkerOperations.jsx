@@ -550,7 +550,7 @@ export function WorkerOperations() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={milestoneFilter} onValueChange={setMilestoneFilter} disabled>
+          <Select value={milestoneFilter} onValueChange={setMilestoneFilter}>
             <SelectTrigger className="w-[13rem]" aria-label="Filter by milestone">
               <SelectValue placeholder="Milestones" />
             </SelectTrigger>

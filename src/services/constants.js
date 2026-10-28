@@ -41,9 +41,23 @@ export const PHYSICAL_ID_PATTERN = /^DR\d{11}$/
 // Keep exports for backward compatibility but mark as deprecated.
 export const OPERATIONS_STEP_ORDER = []
 export const OPERATIONS_EXIT_STATUSES = []
-export const OPERATIONS_STATUS_ORDER = []
-export const OPERATIONS_STATUS_LABELS = {}
-export const OPERATIONS_STATUS_SHORT = {}
+export const OPERATIONS_STATUS_ORDER = ['pending', 'sold', 'manufactured', 'shipped', 'delivered']
+
+export const OPERATIONS_STATUS_LABELS = {
+  pending: 'Pending',
+  sold: 'Sold',
+  manufactured: 'Manufactured',
+  shipped: 'Shipped',
+  delivered: 'Delivered',
+}
+
+export const OPERATIONS_STATUS_SHORT = {
+  pending: 'Pend.',
+  sold: 'Sold',
+  manufactured: 'Mfg.',
+  shipped: 'Shipped',
+  delivered: 'Del.',
+}
 
 export function isOperationsStatus(value) {
   return false

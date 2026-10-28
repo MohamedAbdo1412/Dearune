@@ -71,6 +71,18 @@ Deno.serve(async (req) => {
   const worker = await requireWorker(req, permission)
   if (!worker) return errorResponse('Forbidden', 403)
 
+  // Rate limit: 30 designer management actions per minute per worker
+  const rateLimit = await sb.rpc('consume_rate_limit', {
+    p_key: 'worker-designers:' + worker.id,
+    p_tokens: 1,
+    p_capacity: 30,
+    p_refill_per_minute: 30,
+  })
+  const rateLimitData = rateLimit.data as { allowed: boolean; remaining: number; retry_after_seconds: number } | null
+  if (rateLimitData && !rateLimitData.allowed) {
+    return errorResponse('Rate limit exceeded', 429, { retryAfterSeconds: rateLimitData.retry_after_seconds })
+  }
+
   if (action === 'create') {
     const name = asText(body.name, 120)
     if (!name) return errorResponse('Please provide a designer name', 400)

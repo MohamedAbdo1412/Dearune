@@ -30,6 +30,19 @@ const TEMPLATE_DEFINITIONS = {
 // In-memory/current version overrides (can be extended with persistence later)
 const currentVersionOverrides = {}
 
+try {
+  if (typeof localStorage !== 'undefined') {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith('dearune.templateVersion.')) {
+        const slug = key.replace('dearune.templateVersion.', '')
+        const v = Number(localStorage.getItem(key))
+        if (Number.isFinite(v) && v >= 1) currentVersionOverrides[slug] = v
+      }
+    }
+  }
+} catch {}
+
 export function getTemplateVersions(slug) {
   const def = TEMPLATE_DEFINITIONS[slug]
   if (!def) return []
@@ -46,6 +59,16 @@ export function getCurrentTemplateVersion(slug) {
       return v
     }
   }
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem(`dearune.templateVersion.${slug}`)
+      const v = Number(stored)
+      if (Number.isFinite(v) && v >= 1 && TEMPLATE_DEFINITIONS[slug]?.versions[v]) {
+        currentVersionOverrides[slug] = v
+        return v
+      }
+    }
+  } catch {}
   const def = TEMPLATE_DEFINITIONS[slug]
   if (!def) return null
   return def.defaultVersion
@@ -56,6 +79,11 @@ export function setCurrentTemplateVersion(slug, version) {
   if (!def) throw new Error(`Unknown template: ${slug}`)
   if (!def.versions[version]) throw new Error(`Version ${version} not registered for ${slug}`)
   currentVersionOverrides[slug] = version
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(`dearune.templateVersion.${slug}`, String(version))
+    }
+  } catch {}
   return version
 }
 

@@ -68,18 +68,39 @@ export function phoneWarning(phone) {
 // building a workbook.
 export function bostaRowValues(operation, { areas = null } = {}) {
   const address = [clean(operation.addressLine1), clean(operation.addressLine2)].filter(Boolean).join(', ')
-  const area = clean(operation.stateProvince)
+  const governorate = clean(operation.stateProvince || operation.governorate)
+  const city = clean(operation.city)
+  const district = clean(operation.district)
+  const area = city || district || governorate
   const reference = clean(operation.reference)
+
+  const allowedArea = () => {
+    if (!area) return ''
+    if (!areas) return area
+    if (areas.has(area)) return area
+    if (city && areas.has(city)) return city
+    if (district && areas.has(district)) return district
+    if (governorate && areas.has(governorate)) return governorate
+    return ''
+  }
+
+  const allowedCity = () => {
+    if (governorate && areas) {
+      if (areas.has(governorate)) return governorate
+    }
+    if (governorate) return governorate
+    if (city && areas) {
+      if (areas.has(city)) return city
+    }
+    return city || governorate || ''
+  }
 
   return {
     customerName: clean(operation.recipientName),
     phone: clean(operation.customerPhone),
     phone2: '',
-    city: clean(operation.city),
-    // Bosta only accepts an area that exists in its own list. A free-text
-    // province that does not match is dropped rather than sent to fail the
-    // whole upload (it is optional), and the review step says so.
-    area: areas && area && !areas.has(area) ? '' : area,
+    city: allowedCity(),
+    area: allowedArea(),
     address,
     landmark: '',
     isWorkAddress: '',
@@ -93,8 +114,6 @@ export function bostaRowValues(operation, { areas = null } = {}) {
     deposit: '',
     bostaPoints: '',
     flexshipFees: '',
-    // A memorial letter is not a parcel anyone should open in transit; the
-    // template treats a blank as "No".
     allowOpen: '',
     brand: '',
     returnPieces: '',
@@ -209,7 +228,8 @@ function normalise(row) {
     addressLine1: row.address_line1 ?? '',
     addressLine2: row.address_line2 ?? '',
     city: row.city ?? '',
-    stateProvince: row.state_province ?? '',
+    stateProvince: row.state_province ?? row.governorate ?? '',
+    district: row.district ?? '',
     postalCode: row.postal_code ?? '',
     country: row.country ?? '',
     specialInstructions: row.special_instructions ?? '',

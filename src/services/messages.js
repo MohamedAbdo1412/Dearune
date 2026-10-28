@@ -19,7 +19,7 @@ export function projectMediaUrl(path, { publicId, token }) {
 // the current designer/`projects` path. The reader asks for the legacy row
 // first and only falls back when it does not exist, so an existing public link
 // keeps behaving exactly as before.
-export async function fetchPublicMessage(publicId, token, { bump = true } = {}) {
+export async function fetchPublicMessage(publicId, token, { bump = true, password = null } = {}) {
   if (!supabase) throw new Error('Supabase is not configured')
   const { data, error } = await supabase.rpc('get_public_message', { p_public_id: publicId, p_bump: bump })
   if (error) throw error
@@ -28,6 +28,7 @@ export async function fetchPublicMessage(publicId, token, { bump = true } = {}) 
   const { data: projectData, error: projectError } = await supabase.rpc('get_public_project_message', {
     p_public_id: publicId,
     p_token: token ?? '',
+    p_password: password || null,
   })
   if (projectError) throw projectError
   return projectData ?? data

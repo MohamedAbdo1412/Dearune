@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { PHYSICAL_ID_PATTERN, soldAsId } from './constants'
 import { parseProjectPayload } from './projectPayload'
+import { fetchWrapperTypes } from './wrappers'
 
 // The QA desk: turn a scanned Dearune QR into the whole record behind it.
 //
@@ -302,7 +303,11 @@ export async function fetchQaRecord(raw) {
       supabase.from('project_events').select('id, action, actor_type, created_at, detail').eq('project_id', project.id).order('created_at', { ascending: true }),
       'the activity trail',
     ),
-  ])
+    fetchWrapperTypes().catch(() => []),
+  ]).catch((err) => {
+    // Fallback to 7-element array shape if wrapper_types read fails
+    throw err
+  })
 
   // 4. The per-unit timeline, only when there are units to attach it to.
   const unitIds = unitRows.map((row) => row.id).filter(Boolean)

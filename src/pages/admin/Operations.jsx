@@ -126,7 +126,7 @@ export function Operations() {
   const scoped = useMemo(() => (showArchived ? rows ?? [] : activeRows), [rows, activeRows, showArchived])
   const activeCounts = useMemo(() => statusCounts(activeRows), [activeRows])
   const activeCount = activeRows.length
-  const readyToPrint = activeCounts.ready_to_print
+  const readyToPrint = (activeCounts.sold ?? 0) + (activeCounts.pending ?? 0)
 
   const visibleIds = visible.map((row) => row.id)
   const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))

@@ -148,7 +148,7 @@ export async function createWrapper(wrapper) {
       key: wrapper.key,
       name: wrapper.name,
       name_ar: wrapper.name_ar ?? '',
-      kind: wrapper.kind ?? 'physical',
+      kind: wrapper.kind === 'digital' ? 'digital' : 'physical',
       description: wrapper.description ?? '',
       description_ar: wrapper.description_ar ?? '',
       image_url: wrapper.image_url ?? '',

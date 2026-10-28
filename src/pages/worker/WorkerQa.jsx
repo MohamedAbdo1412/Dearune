@@ -45,6 +45,14 @@ function messageOf(error) {
   return text || 'The lookup failed. Please try again.'
 }
 
+function milestoneOf(row) {
+  if (row.delivered_at) return 'delivered'
+  if (row.shipped_at) return 'shipped'
+  if (row.manufacturing_completed_at || row.manufactured_at) return 'manufactured'
+  if (row.sold_at || row.paid_at) return 'sold'
+  return 'pending'
+}
+
 function Field({ label, value, mono = false, empty = 'Not available' }) {
   return (
     <div className="min-w-0">
@@ -78,11 +86,12 @@ function Section({ icon: Icon, title, description, children }) {
 }
 
 function UnitCard({ unit }) {
+  const status = milestoneOf(unit)
   return (
     <li className="rounded-xl border border-border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-mono text-xs font-semibold">{unit.reference}</span>
-        <OperationsBadge status={unit.status} />
+        <OperationsBadge status={status} />
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
         Unit {unit.unit_index} · created {formatDateTime(unit.created_at)}

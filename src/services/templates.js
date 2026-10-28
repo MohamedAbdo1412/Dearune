@@ -31,7 +31,7 @@ export async function fetchTemplates() {
 // slug or print configuration.
 export async function updateTemplate(templateId, patch) {
   if (!supabase) throw new Error('Supabase is not configured')
-  const allowed = ['name', 'description', 'image_url', 'enabled', 'sort_order', 'display_state']
+  const allowed = ['name', 'description', 'image_url', 'enabled', 'sort_order', 'display_state', 'current_version']
   const clean = {}
   for (const field of allowed) {
     if (patch[field] !== undefined) clean[field] = patch[field]

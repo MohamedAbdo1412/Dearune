@@ -1,4 +1,4 @@
-import { corsHeaders, errorResponse, handleOptions, jsonResponse } from '../_shared/cors.ts'
+import { corsHeaders, errorResponse, handleOptions, jsonResponse, generateRequestId, logInfo, logError, withRequestId } from '../_shared/cors.ts'
 import { adminClient } from '../_shared/supabase.ts'
 
 // The public face of a Dearune's letters.
@@ -20,22 +20,38 @@ import { adminClient } from '../_shared/supabase.ts'
 //     bytes keep flowing straight from storage.
 const BUCKET = 'designer-drafts'
 const SIGNED_URL_TTL = 900
+const RATE_LIMIT_KEY_PREFIX = 'project-media:'
 
-const projectColumns = 'public_id, public_token, message_active, payload'
+const projectColumns = 'public_id, public_token, message_active, payload, first_activated_at'
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return handleOptions()
-  if (req.method !== 'GET') return errorResponse('Method not allowed', 405)
+  return withRequestId(req, async (requestId) => {
+    logInfo(requestId, 'project-media request started', { method: req.method, url: req.url })
+    
+    if (req.method === 'OPTIONS') return handleOptions()
+    if (req.method !== 'GET') return errorResponse('Method not allowed', 405, {}, requestId)
 
-  const url = new URL(req.url)
-  const publicId = (url.searchParams.get('project') ?? '').trim()
-  const token = (url.searchParams.get('token') ?? '').trim()
-  const path = (url.searchParams.get('path') ?? '').trim()
+    const url = new URL(req.url)
+    const publicId = (url.searchParams.get('project') ?? '').trim()
+    const token = (url.searchParams.get('token') ?? '').trim()
+    const path = (url.searchParams.get('path') ?? '').trim()
 
-  if (!publicId || !token) return errorResponse('A Dearune and its token are required', 400)
-  if (!path) return errorResponse('Nothing to resolve', 400)
+    if (!publicId || !token) return errorResponse('A Dearune and its token are required', 400, {}, requestId)
+    if (!path) return errorResponse('Nothing to resolve', 400, {}, requestId)
 
-  const sb = adminClient()
+    // Rate limit: 60 requests per minute per public_id
+    const sb = adminClient()
+    const rateLimit = await sb.rpc('consume_rate_limit', {
+      p_key: RATE_LIMIT_KEY_PREFIX + publicId,
+      p_tokens: 1,
+      p_capacity: 60,
+      p_refill_per_minute: 60,
+    })
+    const rateLimitData = rateLimit.data as { allowed: boolean; remaining: number; retry_after_seconds: number } | null
+    if (rateLimitData && !rateLimitData.allowed) {
+      logInfo(requestId, 'Rate limit exceeded', { publicId })
+      return errorResponse('Rate limit exceeded', 429, { retryAfterSeconds: rateLimitData.retry_after_seconds }, requestId)
+    }
   const { data: project } = await sb
     .from('projects')
     .select(projectColumns)
@@ -46,13 +62,17 @@ Deno.serve(async (req) => {
 
   const payload = parsePayload(project.payload)
   const protectedLetter = Boolean(payload?.passwordSet)
+  const expired = (project as any).first_activated_at
+    ? new Date((project as any).first_activated_at).getTime() + 1000 * 60 * 60 * 24 * 365 * 2 <= Date.now()
+    : false
   const allowed =
     project.public_token &&
     project.public_token === token &&
     project.message_active === true &&
-    !protectedLetter
+    !protectedLetter &&
+    !expired
 
-  if (!allowed) return errorResponse('Media unavailable', 404)
+  if (!allowed) return jsonResponse({ available: false, reason: expired ? 'expired' : protectedLetter ? 'password_protected' : 'unavailable' }, 404)
 
   // The path must be one this project actually carries — nothing else.
   if (!projectPaths(payload).has(path)) return errorResponse('Media unavailable', 404)
@@ -60,7 +80,11 @@ Deno.serve(async (req) => {
   const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_TTL)
   if (error || !data?.signedUrl) return errorResponse('Media unavailable', 404)
 
+  if (url.searchParams.get('redirect') === '1' || (req.headers.get('accept') || '').includes('image/') || (req.headers.get('accept') || '').includes('audio/')) {
+    return Response.redirect(data.signedUrl, 302)
+  }
   return jsonResponse({ url: data.signedUrl })
+  })
 })
 
 // A project's payload may have been stored as an object or (early builds) as a

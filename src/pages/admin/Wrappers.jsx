@@ -100,7 +100,7 @@ export function Wrappers() {
     const entries = await Promise.all(
       rows.map(async (row) => [
         row.id,
-        row.image_url ? await resolveWrapperPhotoUrl(row.image_url, token) : null,
+        row.thumbnail_url || row.image_url ? await resolveWrapperPhotoUrl(row.thumbnail_url || row.image_url, token) : null,
       ]),
     )
     setPhotoUrls(Object.fromEntries(entries))
@@ -240,6 +240,7 @@ export function Wrappers() {
         display_order: Number(newWrapper.display_order) || 0,
         display_state: DISPLAY_STATES.includes(newWrapper.display_state) ? newWrapper.display_state : 'normal',
         estimated_production_days: Number(newWrapper.estimated_production_days) || 0,
+        kind: newWrapper.kind === 'digital' ? 'digital' : 'physical',
       })
       toast.success(`${newWrapper.name.trim()} added to the catalog`)
       setAdding(false)
@@ -301,8 +302,8 @@ export function Wrappers() {
                 <CardContent className="space-y-4">
                   <div className="flex gap-4">
                     <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg border bg-muted">
-                      {(photoUrls[row.id] || (row.thumbnail_url ? photoUrls[row.id] : null)) ? (
-                        <img src={photoUrls[row.id]} alt={row.name} className="h-full w-full object-cover" />
+                      {(photoUrls[row.id] || row.thumbnail_url || row.image_url) ? (
+                        <img src={photoUrls[row.id] || row.thumbnail_url || row.image_url || ''} alt={row.name} className="h-full w-full object-cover" />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-muted-foreground">
                           <ImagePlus className="size-5" />
