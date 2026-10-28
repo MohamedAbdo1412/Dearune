@@ -1,4 +1,4 @@
-import { supabaseUrl, currentAccessToken, invokeFunction } from '@/lib/supabase'
+import { supabaseUrl, publishableKeyValue, currentAccessToken, invokeFunction } from '@/lib/supabase'
 
 export const MEDIA_TYPE_LABELS = {
   image: 'Image',
@@ -145,7 +145,10 @@ export async function authedDriveBlob(fileId) {
 export async function designerAuthedDriveBlob(fileId, token) {
   if (!token) throw new Error('Not signed in')
   const params = new URLSearchParams({ file: fileId })
-  const res = await fetch(`${supabaseUrl}/functions/v1/drive-media?${params.toString()}`, {
+  const baseUrl = import.meta.env.DEV ? '/functions/v1' : `${supabaseUrl}/functions/v1`
+  const url = new URL(`${baseUrl}/drive-media`, import.meta.env.DEV ? window.location.origin : supabaseUrl)
+  url.search = params.toString()
+  const res = await fetch(url.toString(), {
     headers: { authorization: `Bearer ${token}` },
   })
   if (!res.ok) throw new Error(`Could not load media (${res.status})`)
@@ -165,13 +168,15 @@ const SIGNED_URL_CACHE = new Map()
 // `designerMedia` is shared with `services/wrappers.js` (wrapper catalog
 // photos live in the same private bucket, through this same edge function).
 export async function designerMedia(method, path, { token, query, body, contentType } = {}) {
-  const url = new URL(`${supabaseUrl}/functions/v1/designer-media`)
+  // In dev, use the Vite proxy to avoid CORS issues and ensure headers are forwarded
+  const baseUrl = import.meta.env.DEV ? '/functions/v1' : `${supabaseUrl}/functions/v1`
+  const url = new URL(`${baseUrl}/designer-media`, import.meta.env.DEV ? window.location.origin : supabaseUrl)
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined && value !== null) url.searchParams.set(key, value)
     }
   }
-  const headers = { apikey: '', 'x-client-info': 'supabase-js-web/2' }
+  const headers = { apikey: publishableKeyValue || '', 'x-client-info': 'supabase-js-web/2' }
   if (token) headers.authorization = `Bearer ${token}`
   if (body !== undefined) headers['content-type'] = contentType ?? (typeof body === 'string' ? 'application/json' : 'application/octet-stream')
   const res = await fetch(url.toString(), { method, headers, body })
@@ -219,7 +224,8 @@ export function getSignedDesignerMediaUrl(ref, token) {
 // (the designer JWT must be attached), so the bytes are fetched here and kept
 // as an object URL for the life of the session.
 export async function designerDraftDriveBlob(ref, token) {
-  const url = new URL(`${supabaseUrl}/functions/v1/designer-media`)
+  const baseUrl = import.meta.env.DEV ? '/functions/v1' : `${supabaseUrl}/functions/v1`
+  const url = new URL(`${baseUrl}/designer-media`, import.meta.env.DEV ? window.location.origin : supabaseUrl)
   url.searchParams.set('path', ref.path)
   url.searchParams.set('dl', '1')
   const res = await fetch(url.toString(), {

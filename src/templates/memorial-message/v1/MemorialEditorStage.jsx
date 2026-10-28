@@ -12,6 +12,7 @@ import { useMemorialMedia } from './useMemorialMedia'
 import DearuneLoader from '@/components/book/DearuneLoader'
 import { Fleuron } from '@/components/book/ornaments'
 
+
 // Memorial stage B — speaking page. The letter is written live on the paper:
 // greeting, the words, the closing, a name. Three small prints are brought in
 // from the owner's hand — each cropped on a mounter's bench, pinned, and left

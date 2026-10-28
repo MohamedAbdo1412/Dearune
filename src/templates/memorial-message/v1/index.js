@@ -3,7 +3,7 @@ import MemorialEditorStage from './MemorialEditorStage'
 import MemorialPasswordStage from './MemorialPasswordStage'
 import MemorialCardMini from './MemorialCardMini'
 import MemorialLetter from './MemorialLetter'
-import { TEMPLATE_SEQUENCES } from '../stages'
+import { TEMPLATE_SEQUENCES } from '../../stages'
 
 // The Memorial Message template — a single preserved letter in English or
 // Arabic with three pinned prints and (optionally) one sound. The DB row for
@@ -14,8 +14,9 @@ import { TEMPLATE_SEQUENCES } from '../stages'
 // CreateBook renders the pages below through `components` keyed by stage, so
 // this object is the template's whole page-by-page identity.
 
-export const MEMORIAL_TEMPLATE = {
+export const MEMORIAL_TEMPLATE_V1 = {
   slug: 'memorial-message',
+  version: 1,
   subject: 'Memorial Message',
   phrase: 'one kept letter · three prints · a sound, if you like',
   // The paper's fixed proportion as delivered (portrait 3:4). Previews wrap
@@ -32,4 +33,6 @@ export const MEMORIAL_TEMPLATE = {
   Letter: MemorialLetter,
 }
 
-export default MEMORIAL_TEMPLATE
+export const MEMORIAL_TEMPLATE = MEMORIAL_TEMPLATE_V1
+
+export default MEMORIAL_TEMPLATE_V1

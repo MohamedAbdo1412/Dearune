@@ -20,7 +20,8 @@ import { designerLogin, fetchDesignerTemplates, getDesignerToken, clearDesignerT
 import { fetchProjects, fetchProject, createProject, fetchDraftUnlock } from '@/services/projects'
 import { uploadDesignerMedia } from '@/services/media'
 import { DEARUNE_POLICY_VERSION } from '@/policies/dearunePolicy'
-import { blankPageDraft } from '@/templates/memorial-message/memorialSampleData'
+import { blankPageDraft } from '@/templates/memorial-message/v1/memorialSampleData'
+
 import BookStageNavigation from '@/components/book/BookStageNavigation'
 import {
   playPageLift,
@@ -46,10 +47,11 @@ import ProjectsBook from './stages/ProjectsBook'
 import ProjectSheet from './stages/ProjectSheet'
 import { TitleSheet, ReceiverSheet, PapersSheet, LanguageSheet, WrapperSheet, LockSheet, CloseSheet, PoliciesSheet, SubmittedSheet, ClosedBookSheet, UnwrittenSheet, ChapterPage } from './stages/chapters'
 
-import MemorialLetter from '@/templates/memorial-message/MemorialLetter'
-import { validateMemorial } from '@/templates/memorial-message/MemorialEditorStage'
-import { useMemorialMedia } from '@/templates/memorial-message/useMemorialMedia'
-import { MEMORIAL_TEMPLATE } from '@/templates/memorial-message'
+import MemorialLetter from '@/templates/memorial-message/v1/MemorialLetter'
+import { validateMemorial } from '@/templates/memorial-message/v1/MemorialEditorStage'
+import { useMemorialMedia } from '@/templates/memorial-message/v1/useMemorialMedia'
+import { MEMORIAL_TEMPLATE } from '@/templates/memorial-message/v1'
+
 
 import { useReducedMotion, useIsMobile } from '@/hooks/use-media'
 import { bookReducer, initialBookMotion } from './state/bookMachine'

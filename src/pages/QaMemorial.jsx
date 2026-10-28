@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import MemorialLetter from '@/templates/memorial-message/MemorialLetter'
-import { memorialDefaults } from '@/templates/memorial-message/letterDefaults'
+import MemorialLetter from '@/templates/memorial-message/v1/MemorialLetter'
+import { memorialDefaults } from '@/templates/memorial-message/v1/letterDefaults'
+
 import '@/styles/book.css'
 
 // /qa/memorial — the visual-QA bench for the letter itself.

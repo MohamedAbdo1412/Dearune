@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { fetchTemplates, updateTemplate } from '@/services/templates'
 import { findOption, saveTemplateWrapperOption, wrapperLabel } from '@/services/wrappers'
 import { DISPLAY_STATES, DISPLAY_STATE_META, getCatalogItemState } from '@/services/catalog'
-import { templateMiniFor } from '@/templates'
+import { templateMiniFor, listTemplates, getCurrentTemplateVersion, setCurrentTemplateVersion, getTemplateVersions, isVersionRegistered } from '@/templates'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,7 @@ import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAppSettings } from '@/hooks/use-app-settings'
+
 
 const rowKey = (templateId, wrapperId) => `${templateId}:${wrapperId}`
 
@@ -42,6 +43,9 @@ export function Templates() {
   const [savingKey, setSavingKey] = useState(null)
   const [orderDraft, setOrderDraft] = useState({})
   const [savingTemplateId, setSavingTemplateId] = useState(null)
+  const [versionDraft, setVersionDraft] = useState({})
+  const [savingVersionSlug, setSavingVersionSlug] = useState(null)
+  const [availableVersions, setAvailableVersions] = useState({})
 
   const reload = async () => {
     try {
@@ -61,6 +65,20 @@ export function Templates() {
       const orders = {}
       for (const template of data.templates) orders[template.id] = String(template.sort_order ?? 0)
       setOrderDraft(orders)
+      // Load version info
+      try {
+        const versionsMap = {}
+        const versionDraftMap = {}
+        for (const template of data.templates) {
+          const versions = getTemplateVersions(template.slug)
+          versionsMap[template.slug] = versions
+          versionDraftMap[template.slug] = String(getCurrentTemplateVersion(template.slug) || versions[0] || 1)
+        }
+        setAvailableVersions(versionsMap)
+        setVersionDraft(versionDraftMap)
+      } catch (e) {
+        // ignore
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not load templates')
     }
@@ -69,6 +87,7 @@ export function Templates() {
   useEffect(() => {
     void reload()
   }, [])
+
 
   // One row-level save for the header controls (activation, display state,
   // order). RLS keeps the write admin-only; Create picks it up on its next
@@ -91,6 +110,27 @@ export function Templates() {
       setSavingTemplateId(null)
     }
   }
+
+  const saveTemplateVersion = async (template) => {
+    const slug = template.slug
+    const version = Number(versionDraft[slug])
+    if (!version) return
+    if (!isVersionRegistered(slug, version)) {
+      toast.error('Selected version is not registered')
+      return
+    }
+    setSavingVersionSlug(slug)
+    try {
+      setCurrentTemplateVersion(slug, version)
+      toast.success(`${template.name} now uses version ${version}`)
+      await reload()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not update version')
+    } finally {
+      setSavingVersionSlug(null)
+    }
+  }
+
 
   const orderIsClean = (template) =>
     String(template.sort_order ?? 0) === String(Number(orderDraft[template.id] ?? '') || 0)
@@ -212,6 +252,40 @@ export function Templates() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Version</span>
+                      <Select
+                        value={versionDraft[t.slug] ?? String(availableVersions[t.slug]?.[0] ?? 1)}
+                        onValueChange={(value) => setVersionDraft((current) => ({ ...current, [t.slug]: value }))}
+                        disabled={maintenance || savingVersionSlug === t.slug || !(availableVersions[t.slug]?.length)}
+                      >
+                        <SelectTrigger className="h-8 w-full text-xs sm:w-[110px]" aria-label={`Version for ${t.name}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(availableVersions[t.slug] || []).map((v) => (
+                            <SelectItem key={v} value={String(v)}>
+                              v{v}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 px-2"
+                        disabled={maintenance || savingVersionSlug === t.slug || String(getCurrentTemplateVersion(t.slug)) === String(versionDraft[t.slug])}
+                        onClick={() => void saveTemplateVersion(t)}
+                        aria-label={`Save version for ${t.name}`}
+                      >
+                        {savingVersionSlug === t.slug ? (
+                          <Loader2Icon className="size-3.5 animate-spin" />
+                        ) : (
+                          <Save className="size-3.5" />
+                        )}
+                      </Button>
+                      <Badge variant="secondary" className="text-xs">Current: v{getCurrentTemplateVersion(t.slug) || 1}</Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
                       <Switch
                         id={`enabled-${t.id}`}
                         checked={t.enabled !== false}
@@ -267,6 +341,7 @@ export function Templates() {
                       </Button>
                     </div>
                   </div>
+
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">

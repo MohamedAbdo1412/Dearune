@@ -2,7 +2,8 @@ import { useState } from 'react'
 import DearuneLoader from '@/components/book/DearuneLoader'
 import { Fleuron } from '@/components/book/ornaments'
 import { DEARUNE_POLICY, DEARUNE_POLICY_VERSION } from '@/policies/dearunePolicy'
-import { validateMemorial } from '@/templates/memorial-message/MemorialEditorStage'
+import { validateMemorial } from '@/templates/memorial-message/v1/MemorialEditorStage'
+
 
 // The last spread of the pipeline. The letter is set and reviewed; this page
 // is where the designer reads the terms and — only after freely accepting the

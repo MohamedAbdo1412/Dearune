@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
-import MemorialLetter from '@/templates/memorial-message/MemorialLetter'
-import { useMemorialMedia } from '@/templates/memorial-message/useMemorialMedia'
+import MemorialLetter from '@/templates/memorial-message/v1/MemorialLetter'
+import { useMemorialMedia } from '@/templates/memorial-message/v1/useMemorialMedia'
+
 import { parseProjectPayload } from '@/services/projectPayload'
 import '@/styles/book.css'
 

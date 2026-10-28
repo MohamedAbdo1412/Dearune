@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
-import MemorialLetter from '@/templates/memorial-message/MemorialLetter'
-import { useMemorialMedia } from '@/templates/memorial-message/useMemorialMedia'
+import MemorialLetter from '@/templates/memorial-message/v1/MemorialLetter'
+import { useMemorialMedia } from '@/templates/memorial-message/v1/useMemorialMedia'
+
 import { Fleuron } from '@/components/book/ornaments'
 
 function validateMemorial(draft, lang) {
