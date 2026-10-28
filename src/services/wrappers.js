@@ -152,6 +152,7 @@ export async function createWrapper(wrapper) {
       description: wrapper.description ?? '',
       description_ar: wrapper.description_ar ?? '',
       image_url: wrapper.image_url ?? '',
+      thumbnail_url: wrapper.thumbnail_url ?? '',
       active: wrapper.active ?? true,
       display_state: wrapper.display_state ?? 'normal',
       base_price: wrapper.base_price ?? 0,
@@ -160,6 +161,7 @@ export async function createWrapper(wrapper) {
       estimated_production_days: wrapper.estimated_production_days ?? 7,
       notes: wrapper.notes ?? null,
     })
+
     .select('*')
     .single()
   if (error) throw error
@@ -169,10 +171,11 @@ export async function createWrapper(wrapper) {
 export async function updateWrapper(wrapperId, patch) {
   if (!supabase) throw new Error('Supabase is not configured')
   const allowed = [
-    'name', 'name_ar', 'description', 'description_ar', 'image_url', 'active',
+    'name', 'name_ar', 'description', 'description_ar', 'image_url', 'thumbnail_url', 'active',
     'kind', 'display_state', 'base_price', 'production_cost', 'display_order',
     'estimated_production_days', 'sku', 'notes',
   ]
+
   const clean = {}
   for (const field of allowed) {
     if (patch[field] !== undefined) clean[field] = patch[field]
@@ -224,6 +227,17 @@ export async function uploadWrapperPhoto(wrapperKey, file, token) {
   })
   return result.path
 }
+
+export async function uploadWrapperPhotoAsset(wrapperKey, file, token, { kind = 'photo', fixed } = {}) {
+  const result = await designerMedia('POST', '', {
+    token,
+    query: { wrapper: wrapperKey, kind, name: file.name || 'wrapper.jpg', fixed: fixed || undefined },
+    body: file,
+    contentType: file.type || 'image/jpeg',
+  })
+  return result.path
+}
+
 
 export async function removeWrapperPhoto(path, token) {
   await designerMedia('DELETE', '', { token, query: { path, storageProvider: 'supabase' } })

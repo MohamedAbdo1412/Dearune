@@ -9,8 +9,10 @@ import {
   removeWrapperPhoto,
   resolveWrapperPhotoUrl,
   updateWrapper,
-  uploadWrapperPhoto,
+  uploadWrapperPhotoAsset,
 } from '@/services/wrappers'
+import { optimizeAndThumbnail } from '@/lib/image-optimizer'
+
 import { DISPLAY_STATES, DISPLAY_STATE_META, getCatalogItemState } from '@/services/catalog'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -153,6 +155,16 @@ export function Wrappers() {
 
   const onPickPhoto = async (row, file) => {
     if (!file) return
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file')
+      return
+    }
+    // Validate size (max 20MB before compression)
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error('Image is too large (max 20MB)')
+      return
+    }
     const token = await currentAccessToken().catch(() => null)
     if (!token) {
       toast.error('Not signed in')
@@ -160,20 +172,32 @@ export function Wrappers() {
     }
     setPhotoBusyId(row.id)
     try {
-      const previous = row.image_url
-      const path = await uploadWrapperPhoto(row.key, file, token)
-      await updateWrapper(row.id, { image_url: path })
-      if (previous && isWrapperStoragePath(previous) && previous !== path) {
-        await removeWrapperPhoto(previous, token).catch(() => null)
+      const previousImage = row.image_url
+      const previousThumb = row.thumbnail_url
+      // Optimize and generate thumbnail
+      const { optimized, thumbnail } = await optimizeAndThumbnail(file)
+      // Upload optimized full size and thumbnail
+      const [imagePath, thumbPath] = await Promise.all([
+        uploadWrapperPhotoAsset(row.key, optimized, token, { kind: 'photo', fixed: 'photo' }),
+        uploadWrapperPhotoAsset(row.key, thumbnail, token, { kind: 'photo', fixed: 'photo-thumb' }),
+      ])
+      await updateWrapper(row.id, { image_url: imagePath, thumbnail_url: thumbPath })
+      // Clean up previous files if they were stored paths
+      if (previousImage && isWrapperStoragePath(previousImage) && previousImage !== imagePath) {
+        await removeWrapperPhoto(previousImage, token).catch(() => null)
       }
-      toast.success('Photo updated')
+      if (previousThumb && isWrapperStoragePath(previousThumb) && previousThumb !== thumbPath) {
+        await removeWrapperPhoto(previousThumb, token).catch(() => null)
+      }
+      toast.success('Photo optimized and uploaded')
       await reload()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not upload the photo')
+      toast.error(err instanceof Error ? err.message : 'Could not upload and optimize the photo')
     } finally {
       setPhotoBusyId(null)
     }
   }
+
 
   const onRemovePhoto = async (row) => {
     const token = await currentAccessToken().catch(() => null)
@@ -181,7 +205,8 @@ export function Wrappers() {
     setPhotoBusyId(row.id)
     try {
       if (isWrapperStoragePath(row.image_url)) await removeWrapperPhoto(row.image_url, token)
-      await updateWrapper(row.id, { image_url: '' })
+      if (row.thumbnail_url && isWrapperStoragePath(row.thumbnail_url)) await removeWrapperPhoto(row.thumbnail_url, token)
+      await updateWrapper(row.id, { image_url: '', thumbnail_url: '' })
       toast.success('Photo removed')
       await reload()
     } catch (err) {
@@ -190,6 +215,7 @@ export function Wrappers() {
       setPhotoBusyId(null)
     }
   }
+
 
   const create = async () => {
     const key = newWrapper.key.trim()
@@ -275,7 +301,7 @@ export function Wrappers() {
                 <CardContent className="space-y-4">
                   <div className="flex gap-4">
                     <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg border bg-muted">
-                      {photoUrls[row.id] ? (
+                      {(photoUrls[row.id] || (row.thumbnail_url ? photoUrls[row.id] : null)) ? (
                         <img src={photoUrls[row.id]} alt={row.name} className="h-full w-full object-cover" />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-muted-foreground">
@@ -283,6 +309,7 @@ export function Wrappers() {
                         </div>
                       )}
                     </div>
+
                     <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
                       <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50">
                         {photoBusy ? <Loader2Icon className="size-3.5 animate-spin" /> : <ImagePlus className="size-3.5" />}
