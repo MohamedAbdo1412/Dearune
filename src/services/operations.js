@@ -124,7 +124,7 @@ export function toOperation(row) {
     designerName,
     designerCode: row.designer_code ?? '',
 
-    recipientName: row.recipient_name ?? shipping?.recipient_name ?? project?.title ?? '',
+    recipientName: row.recipient_name ?? row.project_title ?? '',
     customerPhone: row.customer_phone ?? '',
     trackingCode: row.tracking_code ?? '',
     provider: row.provider ?? '',
