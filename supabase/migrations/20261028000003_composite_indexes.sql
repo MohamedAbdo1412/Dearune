@@ -4,21 +4,34 @@
 -- Added to support common query patterns in admin and worker dashboards.
 -- ============================================================================
 
--- physical_products: common filters by project + status + archived
-create index if not exists physical_products_project_status_idx
-  on public.physical_products (project_id, status)
+-- physical_products: common filters by project + milestone + archived
+-- Note: status column was dropped in 20261025000001, replaced with milestone timestamps
+create index if not exists physical_products_project_sold_idx
+  on public.physical_products (project_id, sold_at)
+  where archived_at is null;
+
+create index if not exists physical_products_project_manufactured_idx
+  on public.physical_products (project_id, manufacturing_completed_at)
+  where archived_at is null;
+
+create index if not exists physical_products_project_shipped_idx
+  on public.physical_products (project_id, shipped_at)
+  where archived_at is null;
+
+create index if not exists physical_products_project_delivered_idx
+  on public.physical_products (project_id, delivered_at)
   where archived_at is null;
 
 create index if not exists physical_products_project_milestone_idx
   on public.physical_products (project_id, manufacturing_completed_at, shipped_at, delivered_at, sold_at)
   where archived_at is null;
 
--- sold_orders: common filters by project + status + date range
-create index if not exists sold_orders_project_status_idx
-  on public.sold_orders (project_id, status, sold_at desc);
+-- sales_log (was sold_orders): common filters by project + status + date range
+create index if not exists sales_log_project_status_idx
+  on public.sales_log (project_id, status, sold_at desc);
 
-create index if not exists sold_orders_designer_status_idx
-  on public.sold_orders (designer_id, status, sold_at desc)
+create index if not exists sales_log_designer_status_idx
+  on public.sales_log (designer_id, status, sold_at desc)
   where status = 'completed';
 
 -- projects: common filters by designer + status + payment + date range
