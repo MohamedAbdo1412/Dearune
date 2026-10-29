@@ -14,9 +14,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS templates_public_path_unique
   WHERE public_path IS NOT NULL;
 
 -- 3. Add check constraint for public_path format
-ALTER TABLE public.templates
-  ADD CONSTRAINT IF NOT EXISTS templates_public_path_format
-  CHECK (public_path IS NULL OR public_path ~ '^[a-z][a-z0-9_-]{0,63}$');
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint 
+    WHERE conname = 'templates_public_path_format' 
+    AND conrelid = 'public.templates'::regclass
+  ) THEN
+    ALTER TABLE public.templates
+      ADD CONSTRAINT templates_public_path_format
+      CHECK (public_path IS NULL OR public_path ~ '^[a-z][a-z0-9_-]{0,63}$');
+  END IF;
+END $$;
 
 -- 4. Add display_name column - defaults to name if not set
 UPDATE public.templates 
