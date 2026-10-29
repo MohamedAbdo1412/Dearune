@@ -10,7 +10,7 @@ import {
   previousStageIn,
   templateStagesFor,
 } from '@/templates/stages'
-import { MEMORIAL_TEMPLATE } from '@/templates/memorial-message'
+import { MEMORIAL_TEMPLATE } from '@/templates/memorial-message/v1'
 import { TEMPLATE_REGISTRY, templateRegistry } from '@/templates'
 
 describe('template contract', () => {

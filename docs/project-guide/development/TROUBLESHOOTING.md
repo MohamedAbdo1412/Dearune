@@ -231,6 +231,41 @@ empty `.paper-blank` sheet even though the admin uploaded a preview.
 
 ---
 
+### 14. `external-link` Preview Is Blank or the Check Fails
+
+**Symptom:** the proof page says "The link could not be checked", the iframe
+stays empty, or the frame never appears.
+
+**Cause, in order of likelihood:**
+
+1. **The destination refuses framing.** Many sites send `X-Frame-Options` or
+   `frame-ancestors`. The stage reports this as `embeddable: 'no'` and offers a
+   new tab — this is expected, not a broken link, and **the book can still be
+   confirmed and printed**.
+2. **The check itself failed.** `link-check` requires a live designer JWT and is
+   rate limited (20/min). A 401 means sign in again; a 429 means wait a moment.
+   The `try again` button re-runs it.
+3. **The page answered an error status.** A 403/404 from a bot filter is shown
+   as HTTP `<status>` with an explanation; it never blocks confirmation, because
+   the page can still open in a phone browser.
+4. **`http://` destination on an https page.** Browsers block mixed-content
+   frames. The stage says so and offers the new tab. Prefer the site's `https://`
+   address on a printed code.
+5. **CSP blocked the frame.** `public/_headers` must keep `frame-src … https:`
+   (it exists for this preview). If the header was tightened, no destination can
+   ever be embedded; existing redirects are unaffected.
+
+**Check:**
+- [ ] DevTools → Network → `POST /functions/v1/link-check` → response fields
+      `reachable`, `status`, `embeddable`
+- [ ] DevTools → Console: a `frame-ancestors`/`X-Frame-Options` refusal is the
+      site's policy, not a Dearune error
+- [ ] Confirm the saved row: `select payload from projects where id = '…';`
+      → `{ language, destinationUrl }`
+- [ ] Scan/preview `/message/<public_id>?token=…` and confirm the redirect target
+
+---
+
 ## Debugging Tools
 
 ### Browser Console

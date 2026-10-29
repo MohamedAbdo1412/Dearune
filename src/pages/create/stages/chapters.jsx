@@ -95,6 +95,31 @@ export function WrapperSheet() {
   )
 }
 
+export function LinkSheet() {
+  return (
+    <ChapterPage
+      folio={7}
+      script="chapter the fourth"
+      title="The destination"
+      body="A printed code is only as good as where it leads. Give it one address —
+            a page that already exists, held still for whoever scans."
+    />
+  )
+}
+
+export function LinkProofSheet() {
+  return (
+    <ChapterPage
+      folio={9}
+      script="chapter the fifth"
+      title="The proof"
+      body="Before the seal, the page is looked at from here: does it answer, and will
+            it allow itself to be framed? A site that refuses a preview is still a
+            site you may send someone to."
+    />
+  )
+}
+
 export function LockSheet() {
   return (
     <ChapterPage

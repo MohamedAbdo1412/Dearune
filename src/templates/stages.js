@@ -28,6 +28,9 @@ export const SHARED_TEMPLATE_STAGES = [WRAPPER_STAGE, REVIEW_STAGE, POLICIES_STA
 // derive from this map.
 export const TEMPLATE_SEQUENCES = {
   'memorial-message': ['memorial.language', 'memorial.editor', WRAPPER_STAGE, 'memorial.password', REVIEW_STAGE, POLICIES_STAGE],
+  // No lock: this paper publishes no letter, only a destination. The wrapper
+  // and the close/terms pages are the same shared pages every paper inherits.
+  'external-link': ['external.link', 'external.preview', WRAPPER_STAGE, REVIEW_STAGE, POLICIES_STAGE],
 }
 
 export function templateStagesFor(slug) {

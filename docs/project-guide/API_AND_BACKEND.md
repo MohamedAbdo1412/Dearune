@@ -4,7 +4,7 @@ This document describes all API endpoints, Edge Functions, RPCs, and backend ser
 
 ## Edge Functions Overview
 
-All 16 Edge Functions are written in Deno + TypeScript and deployed via Supabase. Shared utilities in `_shared/`.
+All 17 Edge Functions are written in Deno + TypeScript and deployed via Supabase. Shared utilities in `_shared/`.
 
 | Function | Auth | Path | Purpose |
 |---|---|---|---|
@@ -22,6 +22,7 @@ All 16 Edge Functions are written in Deno + TypeScript and deployed via Supabase
 | `drive-create-upload` | Admin/Designer | `/functions/v1/drive-create-upload` | Google Drive upload session |
 | `drive-delete-media` | Admin/Designer | `/functions/v1/drive-delete-media` | Drive media deletion |
 | `drive-media` | Admin/Designer | `/functions/v1/drive-media` | Drive media streaming |
+| `link-check` | Designer JWT | `/functions/v1/link-check` | Reachability + framing check for `external-link` |
 | `project-media` | Public token | `/functions/v1/project-media` | Public media signed URLs/redirects |
 | `worker-designers` | Worker JWT | `/functions/v1/worker-designers` | Worker designer management |
 
@@ -193,6 +194,17 @@ const passcodeHash = await bcrypt.hash(passcode, 12);
 - Wrapper must be active + offered for template
 - Media refs must be under designer's namespace
 - Password → SHA-256 hash stored in payload
+- `external-link` stores only `{ language, destinationUrl }`; the destination is re-validated with `sanitizeDestination` (`_shared/link-check.ts`) — absolute http(s), no credentials, no private/internal host
+
+### `link-check` (`supabase/functions/link-check/index.ts`)
+
+**Auth:** Designer JWT · **Rate limit:** 20/min per designer (`link-check:<id>`)
+
+| Method | Action | Body | Response |
+|---|---|---|---|
+| `POST` | Check one destination | `{ url }` | `{ ok, reachable, status, finalUrl, redirected, embeddable, blockedBy, reason }` |
+
+The only endpoint that makes an outbound request. It follows redirects manually and re-validates every hop against private/internal hosts (SSRF), with a timeout and a redirect cap. `embeddable` reflects the destination's own `X-Frame-Options` / `frame-ancestors` (`yes` / `no` / `unknown`); a `no` is never bypassed — the book offers a new tab instead. `reachable: false` is advisory: sign-in walls, bot filters and JS-only pages can still open on a phone. Responses carry enum reasons and a status code only — never an internal address, port or server error text — and neither the URL nor its query string is logged.
 
 ### `designer-templates` (`supabase/functions/designer-templates/index.ts`)
 
@@ -323,8 +335,10 @@ selection of `not_available` rows client-side (`getCatalogItemState`).
 | Function | Purpose |
 |---|---|
 | `get_public_message(p_public_id, p_bump?)` | Legacy public message (deprecated) |
-| `get_public_project_message(p_public_id, p_token)` | Public message with token |
+| `get_public_project_message(p_public_id, p_token, p_password?)` | Public project reader (token + optional password); returns `template_slug` and, for `external-link`, the saved `destination` |
 | `allocate_message_public_id()` | Mint public_id |
+
+The project reader publishes only when `message_active`, the token matches and the letter is not password-protected. `p_password` is accepted for API compatibility but does not unlock a locked project. `destination` is read from the saved `projects.payload` — never from a scan-time parameter — so a printed QR can only ever forward to the address stored with the order.
 
 ## Service Layer (Client-Side)
 
@@ -380,6 +394,7 @@ consume_rate_limit(
 **Applied To:**
 - `project-media`: 60/min per `public_id`
 - `designer-projects`: 10/min per designer
+- `link-check`: 20/min per designer
 - `worker-designers`: 30/min per worker
 
 ## Error Response Format

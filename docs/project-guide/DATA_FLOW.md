@@ -161,6 +161,13 @@ QR Scan → /message/:publicId?token=xxx → project-media Edge Function → Sig
 5. Not expired: `first_activated_at + 2 years > now()`
 6. Requested media path exists in payload
 
+**`external-link` papers** use the same flow and the same QR: the code always
+opens `/message/:publicId?token=…`. The resolver (`get_public_project_message`)
+returns `template_slug` plus the saved `destination`, and `PublicMessage`
+performs `window.location.replace(destination)`. The destination is never taken
+from the scan URL, so a printed code cannot be re-pointed; a project whose
+destination is missing shows a controlled "not set" page rather than guessing.
+
 ---
 
 ### 5. Media Storage & Retrieval Flow

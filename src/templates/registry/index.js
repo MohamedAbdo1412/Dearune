@@ -1,4 +1,5 @@
 import { MEMORIAL_TEMPLATE_V1 } from '../memorial-message/v1'
+import { EXTERNAL_LINK_TEMPLATE_V1 } from '../external-link/v1'
 import { TEMPLATE_SEQUENCES } from '../stages'
 
 // Centralized registry of all templates and their versions
@@ -22,6 +23,25 @@ const TEMPLATE_DEFINITIONS = {
         },
         // Derive from stages for this slug
         stages: [...(TEMPLATE_SEQUENCES['memorial-message'] ?? [])],
+      },
+    },
+  },
+  'external-link': {
+    slug: 'external-link',
+    name: 'External Link',
+    defaultVersion: 1,
+    versions: {
+      1: {
+        version: 1,
+        module: EXTERNAL_LINK_TEMPLATE_V1,
+        manifest: {
+          template: 'external-link',
+          version: 1,
+          name: 'External Link',
+          description: 'A printed QR code that opens a page the designer chooses.',
+          renderAspectRatio: 3 / 4,
+        },
+        stages: [...(TEMPLATE_SEQUENCES['external-link'] ?? [])],
       },
     },
   },

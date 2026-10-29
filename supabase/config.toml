@@ -47,6 +47,9 @@ verify_jwt = false
 [functions.designer-projects]
 verify_jwt = false
 
+[functions.link-check]
+verify_jwt = false
+
 [functions.admin-operations]
 verify_jwt = false
 

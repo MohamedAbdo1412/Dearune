@@ -7,6 +7,7 @@ import { getTemplate, getCurrentTemplateVersion, resolveTemplateVersion, templat
 
 export const TEMPLATE_REGISTRY = {
   'memorial-message': getTemplate('memorial-message'),
+  'external-link': getTemplate('external-link'),
 }
 
 // Drawn thumbnails for templates that exist in the database + studio but do

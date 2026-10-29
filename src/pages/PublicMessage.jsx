@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { Sparkles, Lock } from 'lucide-react'
 import { fetchPublicMessage, publicMediaUrl, projectMediaUrl, isAdminSession } from '@/services/messages'
 import { Brand } from '@/components/brand'
 import { formatDate } from '@/services/format'
 import MemorialLetter from '@/templates/memorial-message/v1/MemorialLetter'
+import { normalizeExternalUrl } from '@/services/externalLink'
 import '@/styles/book.css'
 
 const STATES = {
@@ -75,6 +76,29 @@ export function PublicMessage() {
     await load(password)
     setUnlocking(false)
   }
+
+  // An `external-link` paper publishes no words: the saved destination is the
+  // whole message. The URL comes from the resolver (which reads it off the
+  // project row, never from the scan), and is re-checked here so a malformed
+  // stored value can never send a scanner somewhere unsafe.
+  const destination = useMemo(() => {
+    if (state !== STATES.ready || payload?.template_slug !== 'external-link') return null
+    return normalizeExternalUrl(payload?.destination)
+  }, [state, payload])
+
+  const redirected = Boolean(destination?.ok)
+
+  useEffect(() => {
+    if (!redirected) return
+    // `replace`, not `assign`: the QR link should not sit in the history behind
+    // the destination — pressing Back lands on the previous page, not on a
+    // Dearune that instantly forwards again.
+    window.location.replace(destination.url)
+  }, [redirected, destination?.url])
+
+  const missingDestination = state === STATES.ready
+    && payload?.template_slug === 'external-link'
+    && !redirected
 
   if (state === STATES.loading) {
     return (
@@ -159,6 +183,45 @@ export function PublicMessage() {
           <h1 className="font-heading text-3xl tracking-tight">We couldn't reach this message</h1>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
             Something went wrong while opening it. Please try again in a moment.
+          </p>
+          <Link to="/" className="mt-8 text-sm underline underline-offset-4 hover:text-foreground">
+            Return to Dearune
+          </Link>
+        </div>
+      </MessageFrame>
+    )
+  }
+
+  if (redirected) {
+    return (
+      <MessageFrame>
+        <div className="mx-auto flex min-h-[55vh] max-w-md flex-col items-center justify-center text-center">
+          <Sparkles className="mb-4 text-muted-foreground/50" />
+          <h1 className="font-heading text-3xl tracking-tight">Taking you there…</h1>
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+            This Dearune opens a page its designer chose for you.
+          </p>
+          <a
+            href={destination.url}
+            rel="noopener noreferrer"
+            className="mt-8 break-all text-sm underline underline-offset-4 hover:text-foreground"
+          >
+            {destination.url}
+          </a>
+        </div>
+      </MessageFrame>
+    )
+  }
+
+  if (missingDestination) {
+    return (
+      <MessageFrame>
+        <div className="mx-auto flex min-h-[55vh] max-w-md flex-col items-center justify-center text-center">
+          <Sparkles className="mb-4 text-muted-foreground/50" />
+          <h1 className="font-heading text-3xl tracking-tight">This link is not set</h1>
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+            This Dearune was made to open a page, but no destination was saved with
+            it. Please ask whoever sent it to you for another way in.
           </p>
           <Link to="/" className="mt-8 text-sm underline underline-offset-4 hover:text-foreground">
             Return to Dearune

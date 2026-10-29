@@ -60,6 +60,45 @@ This document provides a code-level reference for all significant functions, com
 
 ## Services
 
+### `src/services/externalLink.js`
+
+The `external-link` paper's client-side rules and the thin call to the
+`link-check` edge function.
+
+| Export | Type | Description |
+|---|---|---|
+| `EXTERNAL_URL_MAX_LENGTH` | `number` | 2048 — the printable limit |
+| `EXTERNAL_URL_REASONS` | `object` | `empty`, `malformed`, `scheme`, `credentials`, `blocked-host`, `too-long` |
+| `externalUrlMessage(reason, lang)` | `string` | English/Arabic copy for a rejected destination |
+| `normalizeExternalUrl(raw)` | `{ ok, url?, host?, reason? }` | Trim + absolute http(s) only, no credentials |
+| `checkExternalLink(url, token)` | `Promise<LinkInspection>` | `POST /functions/v1/link-check` |
+
+### `src/templates/validate.js`
+
+| Export | Type | Description |
+|---|---|---|
+| `validateTemplateDraft(slug, draft, lang)` | `string[]` | Dispatches to `validateExternalLink` or `validateMemorial`; used by review, terms and submit |
+
+### `src/services/projectPayload.js`
+
+| Export | Type | Description |
+|---|---|---|
+| `parseProjectPayload(raw)` | `LetterDraft \| null` | A letter payload (requires `body`) |
+| `parseExternalLinkPayload(raw)` | `{ language, destinationUrl } \| null` | The `external-link` payload |
+| `parseAnyProjectPayload(slug, raw)` | `{ kind, draft }` | `letter`, `external-link` or `unknown` for the project sheet |
+
+### `supabase/functions/_shared/link-check.ts`
+
+Pure, unit-tested destination logic shared by the `link-check` function, the
+submit path and the migration's contract.
+
+| Export | Description |
+|---|---|
+| `parseTarget(raw)` / `sanitizeDestination(raw)` | Print/save rules (absolute http(s), no credentials, no private host) |
+| `isBlockedHost(hostname)` | Loopback, RFC1918, link-local/metadata, CGNAT, IPv6 ULA/link-local, decimal/hex IPv4, `.internal`/`.local`/`.home.arpa` |
+| `frameVerdict(headers, ancestorOrigin)` | `{ embeddable: 'yes' \| 'no' \| 'unknown', blockedBy }` from `X-Frame-Options` / `frame-ancestors` |
+| `inspectDestination(raw, options)` | Reachability with manual, re-validated redirects, timeout and redirect cap; `options.fetchImpl` injectable for tests |
+
 ### `src/services/constants.js`
 
 | Export | Type | Description |

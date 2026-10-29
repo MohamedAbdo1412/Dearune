@@ -207,6 +207,35 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 X-Frame-Options: DENY
 ```
 
+The production CSP is the one in `public/_headers` (it is the enforced header;
+the `index.html` meta above is the older reference). Its `frame-src` is
+`'self' blob: https:` — the `https:` entry exists for one reason only: the
+`external-link` proof page may embed the designer's destination so they can see
+what the printed code will open. `frame-ancestors` on our own pages is
+unchanged, and an `http:` destination is never framed on an https page (browser
+mixed-content blocking, plus the stage explains it) — only `https:` is allowed
+to arrive in a frame.
+
+### Outbound URL checks (`link-check`)
+
+The `external-link` preview is the only place Dearune makes an outbound request
+on a designer's behalf. It is treated as an SSRF surface:
+
+- designer JWT required, rate limited per designer;
+- target must parse as absolute `http(s)`, with no embedded credentials;
+- literal private/internal hosts are refused (`localhost`, loopback, RFC1918,
+  link-local/cloud metadata, CGNAT, IPv6 loopback/ULA/link-local, decimal/hex
+  IPv4, `.internal`/`.local`/`.home.arpa`), and a public name that resolves to a
+  private address is refused when the runtime exposes `Deno.resolveDns`;
+- redirects are followed **manually** (`redirect: 'manual'`), each hop is
+  re-validated before it is contacted, and the chain is capped;
+- the response exposes enum reasons + an HTTP status only — never an internal
+  address, port or server error text — and the URL/query string is not logged.
+
+The preview never defeats a destination's `X-Frame-Options`/`frame-ancestors`:
+a refusal is reported as a refusal, with an `rel="noopener noreferrer"` link
+instead of an embedded frame.
+
 ### CORS (Edge Functions)
 
 ```typescript

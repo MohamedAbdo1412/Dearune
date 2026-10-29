@@ -27,7 +27,7 @@
 // guarded so the module is safe to import in node test environments.
 
 import { isDraftUnlocked, sealJson, unsealJson } from './draftCrypto'
-import { BASE_STAGES, STATUS_STAGE, SUBMITTED_STAGE, templateStagesFor } from '@/templates/stages'
+import { BASE_STAGES, SHARED_TEMPLATE_STAGES, STATUS_STAGE, SUBMITTED_STAGE, TEMPLATE_SEQUENCES, templateStagesFor } from '@/templates/stages'
 
 export const DRAFT_VERSION = 3
 
@@ -46,7 +46,12 @@ export {
 } from '@/templates/stages'
 
 export function isTemplateStage(stage) {
-  return !!stage && stage.startsWith('memorial.')
+  if (!stage) return false
+  if (SHARED_TEMPLATE_STAGES.includes(stage)) return false
+  // A template page is one that belongs to any registered sequence — the
+  // memorial's `memorial.*` pages and the external link's `external.*` pages
+  // alike. Shared book pages (wrapper/review/policies) are not template pages.
+  return Object.values(TEMPLATE_SEQUENCES).some((sequence) => sequence.includes(stage))
 }
 
 export function draftRef(designerId, projectId) {
@@ -121,9 +126,26 @@ export function normalizeMediaRef(raw) {
 export function normalizeTemplateDraft(slug, raw) {
   if (!slug || !raw || typeof raw !== 'object') return null
   if (slug === 'memorial-message') return normalizeMemorialDraft(raw)
+  if (slug === 'external-link') return normalizeExternalLinkDraft(raw)
   const bag = {}
   for (const [key, value] of Object.entries(raw)) bag[key] = value
   return bag
+}
+
+// Whitelist for the external-link draft: the page's language and the one
+// destination it prints. A letter's words/prints/sound must never ride along
+// in this paper's draft (and vice versa).
+const EXTERNAL_LINK_DRAFT_FIELDS = ['destinationUrl']
+
+function normalizeExternalLinkDraft(raw) {
+  const out = { language: raw.language === 'ar' ? 'ar' : 'en' }
+  for (const key of EXTERNAL_LINK_DRAFT_FIELDS) {
+    // Stored longer than the printable limit on purpose: a 3000-character
+    // paste must come back as-is so the form can say "too long", not as a
+    // silently cut URL that happens to pass the length rule.
+    out[key] = typeof raw[key] === 'string' ? raw[key].slice(0, 4096) : ''
+  }
+  return out
 }
 
 // Whitelist for the memorial draft so hints of a password/secret can never

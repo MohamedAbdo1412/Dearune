@@ -111,12 +111,13 @@ This document catalogs every first-party source file in the Dearune repository. 
 | `draft.js` | Draft state management (localStorage + IndexedDB) | `saveDraft()`, `loadDraft()`, `clearDraft()` | @/services/draftCrypto, @/services/draftMediaStore |
 | `draftCrypto.js` | AES-GCM encryption (Web Crypto) | `encryptDraft()`, `decryptDraft()`, `deriveKey()` | Web Crypto API |
 | `draftMediaStore.js` | Media persistence (localStorage + IndexedDB) | `saveMedia()`, `loadMedia()`, `deleteMedia()` | indexedDB, localStorage |
+| `externalLink.js` | `external-link` destination rules + `link-check` call | `normalizeExternalUrl()`, `externalUrlMessage()`, `checkExternalLink()`, `EXTERNAL_URL_MAX_LENGTH` | @/lib/supabase |
 | `format.js` | Date/money formatting | `formatDate()`, `formatDateTime()`, `formatMoney()` | Intl.DateTimeFormat, Intl.NumberFormat |
 | `media.js` | Media upload/download (Supabase/Drive) | `initMessageUpload()`, `initLabelUpload()`, `uploadResumableFile()`, `downloadMedia()` | @/lib/supabase, @/services/drive (via invoke) |
 | `operations.js` | Admin operations API | `fetchOperations()`, `fetchOperationEvents()`, `toOperation()`, `updateOperation()`, `archiveOperations()`, `statusCounts()` | @/lib/supabase, @/services/constants |
 | `operationsReview.js` | Print batch validation | `reviewBatch()`, `downloadWorkerOperationsCsv()` | @/services/operations, @/services/qrPaper |
 | `pdf.js` | PDF generators (insert, shipping, receipt) | `buildInsertPdf()`, `buildShippingPdf()`, `buildReceiptPdf()`, `downloadPdf()` | pdf-lib, @/services/qr, @/services/format |
-| `projectPayload.js` | Letter payload parsing/validation | `parseProjectPayload()`, `validatePayload()` | - |
+| `projectPayload.js` | Project payload parsing (letter + external link) | `parseProjectPayload()`, `parseExternalLinkPayload()`, `parseAnyProjectPayload()` | - |
 | `projects.js` | Project CRUD (admin) | `fetchProjects()`, `createProject()`, `updateProject()` | @/lib/supabase |
 | `qa.js` | Admin QA API | `fetchQaRecord()`, `parseQrValue()` | @/lib/supabase |
 | `qr.js` | QR code generation | `qrDataUrl()`, `qrContent()` | qrcode, @/services/constants |
@@ -295,7 +296,7 @@ This document catalogs every first-party source file in the Dearune repository. 
 
 ---
 
-### `supabase/migrations/` (37 migrations, chronological)
+### `supabase/migrations/` (39 migrations, chronological)
 
 | File | Purpose |
 |---|---|
@@ -339,10 +340,12 @@ This document catalogs every first-party source file in the Dearune repository. 
 | `20261028000008_fix_worker_milestone_rpcs.sql` | Fix worker milestone RPCs (maintenance, shipping check) |
 | `20261028000009_wrapper_thumbnails.sql` | Wrapper thumbnails |
 | `20261028000010_rate_limit.sql` | Rate limit (duplicate, kept for history) |
+| `20261101000001_template_enhancements.sql` | Template enhancements (preview images, versions) |
+| `20261102000001_external_link_destination.sql` | Replaces `get_public_project_message` (3 args) returning `template_slug` + validated `destination` for `external-link` |
 
 ---
 
-### `supabase/functions/` (16 Edge Functions)
+### `supabase/functions/` (17 Edge Functions)
 
 | Function | Auth | Purpose |
 |---|---|---|
@@ -360,17 +363,19 @@ This document catalogs every first-party source file in the Dearune repository. 
 | `drive-create-upload/index.ts` | Admin/Designer | Google Drive upload session |
 | `drive-delete-media/index.ts` | Admin/Designer | Drive media deletion |
 | `drive-media/index.ts` | Admin/Designer | Drive media streaming |
+| `link-check/index.ts` | Designer JWT | Reachability + framing check for a destination URL (SSRF-guarded) |
 | `project-media/index.ts` | Public token | Public media signed URLs/redirects |
 | `worker-designers/index.ts` | Worker JWT | Worker designer management |
 | `_shared/auth.ts` | - | Auth helpers (admin, designer, worker JWT) |
 | `_shared/cors.ts` | - | CORS, JSON responses, request parsing |
 | `_shared/drive.ts` | - | Google Drive OAuth2, upload, download |
+| `_shared/link-check.ts` | - | Pure destination rules: parse/sanitize, private-host guard, framing verdict, redirect-safe inspection |
 | `_shared/env.ts` | - | Env validation |
 | `_shared/supabase.ts` | - | Service/anon client factories |
 
 ---
 
-### `tests/` (21 files)
+### `tests/` (22 files)
 
 | File | Purpose |
 |---|---|
@@ -380,6 +385,7 @@ This document catalogs every first-party source file in the Dearune repository. 
 | `bosta-export.test.js` | Bosta Excel export |
 | `catalog-state.test.js` | Catalog state management |
 | `dearune-ops.test.js` | Dearune operations |
+| `external-link.test.js` | External-link URL rules, SSRF/framing checks, draft contract |
 | `invoke-sdk.test.js` | SDK invocation |
 | `operations-db.test.js` | Operations DB queries |
 | `operations-list.test.js` | Operations list shaping |

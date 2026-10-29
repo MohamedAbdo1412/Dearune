@@ -3,7 +3,8 @@ import MemorialLetter from '@/templates/memorial-message/v1/MemorialLetter'
 import { useMemorialMedia } from '@/templates/memorial-message/v1/useMemorialMedia'
 
 import { Fleuron } from '@/components/book/ornaments'
-import { parseProjectPayload } from '@/services/projectPayload'
+import { parseAnyProjectPayload } from '@/services/projectPayload'
+import { normalizeExternalUrl } from '@/services/externalLink'
 
 // A single handed-over book, read-only. The letter is served from the
 // project's server-side payload and its media resolve through the designer's
@@ -13,15 +14,23 @@ import { parseProjectPayload } from '@/services/projectPayload'
 // The payload is the design: nothing here may substitute a sample when a
 // project cannot be read. A missing or malformed payload shows an honest
 // "could not be read" state instead of fabricating words.
+//
+// A paper is not always a letter. `external-link` stores one destination and
+// no words, so its sheet shows the link the printed code will open instead of
+// asking for a body it never had.
 
 const NULL_MEDIA_DRAFT = { photos: [null, null, null], audio: null }
 
 export default function ProjectSheet({ project, token, templates, onBack }) {
-  const draft = useMemo(() => parseProjectPayload(project?.payload), [project])
+  const read = useMemo(
+    () => parseAnyProjectPayload(project?.template_slug, project?.payload),
+    [project]
+  )
+  const draft = read.kind === 'letter' ? read.draft : null
   // The media hook must always run; when there is no letter there is nothing
   // to resolve, so it only sees an empty frame.
   const { photoUrls, audioUrl } = useMemorialMedia(draft ?? NULL_MEDIA_DRAFT, token)
-  const lang = draft?.language === 'ar' ? 'ar' : 'en'
+  const lang = (read.draft?.language ?? 'en') === 'ar' ? 'ar' : 'en'
   const t = (en, ar) => (lang === 'ar' ? ar : en)
 
   const closedAt = project?.submitted_at && !Number.isNaN(Date.parse(project.submitted_at))
@@ -37,7 +46,7 @@ export default function ProjectSheet({ project, token, templates, onBack }) {
     ? new Intl.DateTimeFormat(lang === 'ar' ? 'ar' : 'en-GB', { dateStyle: 'medium' }).format(new Date(expires))
     : null
 
-  if (!draft) {
+  if (!read.draft) {
     return (
       <div className="settle stage-root">
         <div className="page-script">the book</div>
@@ -67,6 +76,9 @@ export default function ProjectSheet({ project, token, templates, onBack }) {
     )
   }
 
+  const isExternal = read.kind === 'external-link'
+  const destination = isExternal ? normalizeExternalUrl(read.draft.destinationUrl) : null
+
   return (
     <div className="settle stage-root">
       <div className="page-script">{t('handed over', 'تم التسليم')}</div>
@@ -76,9 +88,30 @@ export default function ProjectSheet({ project, token, templates, onBack }) {
 
       <Fleuron />
 
-      <div className="review-letter">
-        <MemorialLetter draft={draft} photoUrls={photoUrls} audio={draft.audio} audioUrl={audioUrl} />
-      </div>
+      {isExternal ? (
+        <div className="link-receipt">
+          <span className="d-label">{t('the destination', 'الوجهة')}</span>
+          {destination?.ok ? (
+            <a className="link-url" href={destination.url} target="_blank" rel="noopener noreferrer" dir="ltr">
+              {destination.url}
+            </a>
+          ) : (
+            <span className="link-url link-url--missing">
+              {t('No printable destination is stored with this record.', 'لا وجهة قابلة للطباعة محفوظة مع هذا السجل.')}
+            </span>
+          )}
+          <p className="draft-note">
+            {t(
+              'The printed code opens this page through Dearune.',
+              'يفتح الرمز المطبوع هذه الصفحة عبر ديرون.'
+            )}
+          </p>
+        </div>
+      ) : (
+        <div className="review-letter">
+          <MemorialLetter draft={draft} photoUrls={photoUrls} audio={draft.audio} audioUrl={audioUrl} />
+        </div>
+      )}
 
       <div className="review-meta">
         <span className="draft-note">{paper || t('chosen paper', 'الورق المختار')}{paperVersion ? ` · ${paperVersion}` : ''}</span>

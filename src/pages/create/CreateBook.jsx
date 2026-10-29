@@ -45,12 +45,13 @@ import PoliciesStage from './stages/PoliciesStage'
 import SubmittedStage from './stages/SubmittedStage'
 import ProjectsBook from './stages/ProjectsBook'
 import ProjectSheet from './stages/ProjectSheet'
-import { TitleSheet, ReceiverSheet, PapersSheet, LanguageSheet, WrapperSheet, LockSheet, CloseSheet, PoliciesSheet, SubmittedSheet, ClosedBookSheet, UnwrittenSheet, ChapterPage } from './stages/chapters'
+import { TitleSheet, ReceiverSheet, PapersSheet, LanguageSheet, WrapperSheet, LockSheet, CloseSheet, PoliciesSheet, SubmittedSheet, ClosedBookSheet, UnwrittenSheet, ChapterPage, LinkSheet, LinkProofSheet } from './stages/chapters'
 
 import MemorialLetter from '@/templates/memorial-message/v1/MemorialLetter'
-import { validateMemorial } from '@/templates/memorial-message/v1/MemorialEditorStage'
 import { useMemorialMedia } from '@/templates/memorial-message/v1/useMemorialMedia'
 import { MEMORIAL_TEMPLATE } from '@/templates/memorial-message/v1'
+import { validateTemplateDraft } from '@/templates/validate'
+import { normalizeExternalUrl, externalUrlMessage } from '@/services/externalLink'
 
 
 import { useReducedMotion, useIsMobile } from '@/hooks/use-media'
@@ -611,8 +612,14 @@ export default function CreateBook() {
     const stored = await loadTemplateDraft(designer.id, chosenSlug, projectId)
     const atSubmit = stored ?? memorial
     const lang = atSubmit.language === 'ar' ? 'ar' : 'en'
-    const problems = validateMemorial(atSubmit, lang)
+    // Each paper answers for itself: a letter needs words and a signature, the
+    // external-link paper needs one printable destination. Shared pages and
+    // this submit path ask the same question.
+    const problems = validateTemplateDraft(chosenSlug, atSubmit, lang)
     if (problems.length) throw new Error(problems[0])
+    const isExternal = chosenSlug === 'external-link'
+    const destination = isExternal ? normalizeExternalUrl(atSubmit.destinationUrl) : null
+    if (isExternal && !destination?.ok) throw new Error(externalUrlMessage(destination?.reason ?? 'empty', lang))
     const token = getDesignerToken()
     const now = new Date().toISOString()
 
@@ -639,22 +646,29 @@ export default function CreateBook() {
     }
 
     const photos = []
-    for (let i = 0; i < 3; i += 1) {
-      const local = atSubmit.photos?.[i]
-      photos.push(local ? await serverRefFor(local, 'photo') : null)
+    if (!isExternal) {
+      for (let i = 0; i < 3; i += 1) {
+        const local = atSubmit.photos?.[i]
+        photos.push(local ? await serverRefFor(local, 'photo') : null)
+      }
     }
-    const audio = atSubmit.audio ? await serverRefFor(atSubmit.audio, 'audio') : null
+    const audio = isExternal ? null : atSubmit.audio ? await serverRefFor(atSubmit.audio, 'audio') : null
 
-    const serverDraft = {
-      language: atSubmit.language,
-      greeting: atSubmit.greeting || '',
-      closing: atSubmit.closing || '',
-      senderName: atSubmit.senderName || '',
-      body: atSubmit.body || '',
-      photos,
-      audio,
-      passwordSet: Boolean(atSubmit.passwordSet),
-    }
+    // What travels to the server is this paper's payload, nothing else. The
+    // external-link paper stores only its destination; the letter stores the
+    // words and the media references.
+    const serverDraft = isExternal
+      ? { language: atSubmit.language === 'ar' ? 'ar' : 'en', destinationUrl: destination.url }
+      : {
+        language: atSubmit.language,
+        greeting: atSubmit.greeting || '',
+        closing: atSubmit.closing || '',
+        senderName: atSubmit.senderName || '',
+        body: atSubmit.body || '',
+        photos,
+        audio,
+        passwordSet: Boolean(atSubmit.passwordSet),
+      }
     let project
     try {
       ({ project } = await createProject(token, {
@@ -665,7 +679,7 @@ export default function CreateBook() {
         policyVersion: DEARUNE_POLICY_VERSION,
         policiesAcceptedAt: now,
         wrapperType,
-        letterPassword: passwordRef.current || null,
+        letterPassword: isExternal ? null : passwordRef.current || null,
       }))
     } catch (cause) {
       // The archive may have moved under the letter (a paper or wrapper the
@@ -800,6 +814,8 @@ export default function CreateBook() {
     unwritten: nestLabels ? 'الأوراق' : 'the papers',
     'memorial.language': nestLabels ? 'اللغة' : 'the tongue',
     'memorial.editor': nestLabels ? 'صفحة الكلام' : 'the speaking page',
+    'external.link': nestLabels ? 'الأوراق' : 'the papers',
+    'external.preview': nestLabels ? 'الرابط' : 'the link',
     'wrapper': nestLabels ? 'التغليف' : 'the wrapper',
     'memorial.password': nestLabels ? 'القفل' : 'the lock',
     [REVIEW_STAGE]: nestLabels ? 'الخاتمة' : 'the close',
@@ -839,6 +855,7 @@ export default function CreateBook() {
       const TemplatePage = chosenTemplate?.components?.[key]
       if (TemplatePage) {
         const next = nextStageIn(sequence, key)
+        const previous = previousStageOf[key]
         return (
           <Folio folio={folio}>
             <TemplatePage
@@ -850,6 +867,7 @@ export default function CreateBook() {
               onSelect={handleLanguage}
               onSet={handleSetPassword}
               onNext={next ? () => goTo(next, 'fwd') : undefined}
+              onBack={previous ? () => goTo(previous, 'back') : undefined}
             />
           </Folio>
         )
@@ -920,6 +938,7 @@ export default function CreateBook() {
                 draft={memorial}
                 token={memorialToken}
                 templateName={chosenTemplate.name}
+                templateSlug={chosenSlug}
                 onNext={() => goTo(nextStageIn(sequence, key) ?? POLICIES_STAGE, 'fwd')}
               />
             </Folio>
@@ -930,6 +949,7 @@ export default function CreateBook() {
               <PoliciesStage
                 draft={memorial}
                 templateName={chosenTemplate.name}
+                templateSlug={chosenSlug}
                 receiverName={receiverName}
                 onSubmit={handleSubmit}
               />
@@ -971,6 +991,10 @@ export default function CreateBook() {
           return <LanguageSheet />
         case 'memorial.editor':
           return <EditorProofPage draft={memorial} token={memorialToken} />
+        case 'external.link':
+          return <LinkSheet />
+        case 'external.preview':
+          return <LinkProofSheet />
         case 'wrapper':
           return <WrapperSheet />
         case 'memorial.password':

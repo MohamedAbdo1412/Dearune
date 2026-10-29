@@ -321,6 +321,13 @@ import MemorialLetter from '@/templates/memorial-message/v1/MemorialLetter';
 />
 ```
 
+A paper that publishes no letter is handled by the same reader: when the
+resolver returns `template_slug: 'external-link'`, `PublicMessage` re-validates
+`payload.destination` and performs `window.location.replace(...)` (with a
+visible fallback link and a controlled "not set" state when no destination was
+saved). A missing destination never guesses a URL, and a destination is never
+read from the query string.
+
 ### In Admin Templates Page
 
 ```jsx
@@ -390,6 +397,34 @@ interface LetterPayload {
   letterPasswordHash?: string;  // base64 SHA-256
 }
 ```
+
+### External-link Payload Schema
+
+```typescript
+interface ExternalLinkPayload {
+  language: 'en' | 'ar';
+  destinationUrl: string;   // absolute http(s), no credentials, no private host
+}
+```
+
+Stored by `designer-projects` after `sanitizeDestination` (shared with the
+`link-check` preview and the public resolver). The printed QR does **not** carry
+this URL: it stays `${PUBLIC_SITE_URL}/message/:publicId?token=…`, and the reader
+resolves the destination from the saved row.
+
+### What a paper owns vs what the book owns
+
+| Concern | Owner |
+|---|---|
+| Stage sequence | `TEMPLATE_SEQUENCES` in `src/templates/stages.js` |
+| Only its own pages | `components` keyed by stage; shared pages (`wrapper`, `review`, `policies`) are the book's |
+| Draft fields | `normalizeTemplateDraft(slug, …)` whitelist in `src/services/draft.js` |
+| Readiness / submit validation | `validateTemplateDraft(slug, draft, lang)` in `src/templates/validate.js` |
+| Server payload shape | the `sanitizePayload` branch in `designer-projects`, keyed by slug |
+
+`external-link` is the reference for a non-letter paper: two stages
+(`external.link`, `external.preview`), a one-field payload, a template-aware
+review/terms page, and a public reader branch.
 
 ### Template Manifest
 

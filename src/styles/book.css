@@ -2203,6 +2203,124 @@
   flex-wrap: wrap;
 }
 
+/* ------------------------------------------------------- external link */
+/* The `external-link` paper: one printed destination. The receipt is read on
+   the close/project sheets; the check panel lives on the proof page. */
+.link-destination,
+.link-receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px auto 0;
+  width: 100%;
+  max-width: 54ch;
+  padding: 12px 14px;
+  border: 1px solid rgba(85, 66, 44, 0.26);
+  background: rgba(255, 252, 242, 0.28);
+  text-align: center;
+}
+
+.link-url {
+  font-family: var(--font-text);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  word-break: break-all;
+}
+
+.link-url:hover {
+  color: var(--brass);
+}
+
+.link-url--missing {
+  text-decoration: none;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
+.link-checking {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 12px auto 0;
+  font-family: var(--font-text);
+  font-size: 0.9rem;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.link-verdict {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 10px auto 0;
+  width: 100%;
+  max-width: 54ch;
+  text-align: center;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.link-verdict .d-btn {
+  margin-top: 4px;
+}
+
+.link-preview {
+  flex: 1;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.link-frame {
+  flex: 1;
+  min-height: 180px;
+  width: 100%;
+  border: 1px solid rgba(85, 66, 44, 0.32);
+  background: rgba(255, 252, 242, 0.5);
+}
+
+.link-blocked {
+  margin: 10px auto 0;
+  width: 100%;
+  max-width: 54ch;
+  padding: 10px 14px;
+  border-left: 3px solid var(--brass);
+  background: rgba(255, 252, 242, 0.28);
+  text-align: center;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.link-open {
+  margin: 10px auto 0;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.link-open a {
+  color: var(--brass);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 640px) {
+  .link-preview,
+  .link-frame {
+    min-height: 140px;
+  }
+}
+
+
 /* ------------------------------------------------- the terms (policies) */
 .policy-list {
   width: 100%;

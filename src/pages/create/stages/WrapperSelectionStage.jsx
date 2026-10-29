@@ -23,6 +23,11 @@ export default function WrapperSelectionStage({ template = null, wrappers = null
 
   const list = Array.isArray(wrappers) ? wrappers : null
   const loading = wrappers == null
+  // The next leaf differs by paper: a letter is locked, an external link is
+  // only read once more before the seal. Same button, same place.
+  const nextLabel = template?.slug === 'memorial-message'
+    ? t('to the lock', 'إلى القفل')
+    : t('to the close', 'إلى الخاتمة')
   const selectable = useMemo(
     () => (list ?? []).filter((w) => getCatalogItemState(w).selectable),
     [list]
@@ -147,7 +152,7 @@ export default function WrapperSelectionStage({ template = null, wrappers = null
           onClick={onNext}
           disabled={loading || (selectable.length > 0 && !chosenOk)}
         >
-          {t('to the lock', 'إلى القفل')} →
+          {nextLabel} →
         </button>
       </div>
     </div>

@@ -256,6 +256,7 @@ port = 54324
   drive-create-upload = { verify_jwt = false }
   drive-delete-media = { verify_jwt = false }
   drive-media = { verify_jwt = false }
+  link-check = { verify_jwt = false }
   project-media = { verify_jwt = false }
   worker-designers = { verify_jwt = false }
 

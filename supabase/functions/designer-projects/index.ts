@@ -1,6 +1,7 @@
 import { corsHeaders, errorResponse, handleOptions, jsonResponse, readJson } from '../_shared/cors.ts'
 import { adminClient } from '../_shared/supabase.ts'
 import { randomSecret, requireDesigner } from '../_shared/auth.ts'
+import { sanitizeDestination } from '../_shared/link-check.ts'
 
 // Designer projects: create + read the books a designer has handed over.
 //
@@ -38,6 +39,7 @@ const AVAILABILITY_YEARS = 2
 // were then" instead of silently inheriting a redesigned default.
 const TEMPLATE_VERSIONS: Record<string, number> = {
   'memorial-message': 1,
+  'external-link': 1,
 }
 
 const MAX_LENGTHS: Record<string, number> = {
@@ -92,11 +94,22 @@ function validMediaRef(raw: unknown, designerId: string) {
   }
 }
 
-function sanitizePayload(raw: unknown, designerId: string) {
+// The payload a paper stores is its own. A letter carries words and media; the
+// `external-link` paper carries exactly one thing — the destination the printed
+// QR will open, validated against the same rules the preview used. Anything
+// else in that draft (a stray body, photos from a different paper) is discarded.
+function sanitizePayload(raw: unknown, designerId: string, templateSlug = ''): Record<string, unknown> | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
 
   const language = r.language === 'ar' ? 'ar' : 'en'
+
+  if (templateSlug === 'external-link') {
+    const destinationUrl = sanitizeDestination(r.destinationUrl)
+    if (!destinationUrl) return null
+    return { language, destinationUrl }
+  }
+
   const greeting = cleanText(r.greeting, 'greeting')
   const closing = cleanText(r.closing, 'closing')
   const senderName = cleanText(r.senderName, 'senderName')
@@ -195,8 +208,15 @@ Deno.serve(async (req) => {
     if (!template) return errorResponse('This paper is not offered', 400)
     if (!SELECTABLE_STATES.includes(template.display_state ?? 'normal')) return errorResponse('This paper is resting for now — choose another to continue', 400)
 
-    let payload = sanitizePayload(body.draft, designer.designerId)
-    if (!payload) return errorResponse('The words are not written yet', 400)
+    let payload = sanitizePayload(body.draft, designer.designerId, templateSlug)
+    if (!payload) {
+      return errorResponse(
+        templateSlug === 'external-link'
+          ? 'A valid http(s) destination link is required'
+          : 'The words are not written yet',
+        400
+      )
+    }
     if (body.letterPassword && typeof body.letterPassword === 'string' && body.letterPassword.trim()) {
       try {
         const enc = new TextEncoder().encode(body.letterPassword.trim())
@@ -243,7 +263,7 @@ Deno.serve(async (req) => {
       designer_id: designer.designerId,
       template_slug: templateSlug,
       template_version: TEMPLATE_VERSIONS[templateSlug] ?? 1,
-      title: receiverName || payload.senderName,
+      title: receiverName || (typeof payload.senderName === 'string' ? payload.senderName : ''),
       status: 'submitted',
       payload,
       policy_version: POLICY_VERSION,

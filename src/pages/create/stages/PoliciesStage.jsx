@@ -2,7 +2,7 @@ import { useState } from 'react'
 import DearuneLoader from '@/components/book/DearuneLoader'
 import { Fleuron } from '@/components/book/ornaments'
 import { DEARUNE_POLICY, DEARUNE_POLICY_VERSION } from '@/policies/dearunePolicy'
-import { validateMemorial } from '@/templates/memorial-message/v1/MemorialEditorStage'
+import { validateTemplateDraft } from '@/templates/validate'
 
 
 // The last spread of the pipeline. The letter is set and reviewed; this page
@@ -16,14 +16,14 @@ import { validateMemorial } from '@/templates/memorial-message/v1/MemorialEditor
 // mid-way; it is designed to be retried without duplicating anything, and this
 // page owns the busy/error states around it.
 
-export default function PoliciesStage({ draft, templateName, receiverName, onSubmit }) {
+export default function PoliciesStage({ draft, templateName, templateSlug, receiverName, onSubmit }) {
   const lang = draft.language === 'ar' ? 'ar' : 'en'
   const t = (en, ar) => (lang === 'ar' ? ar : en)
   const [accepted, setAccepted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
-  const problems = validateMemorial(draft, lang)
+  const problems = validateTemplateDraft(templateSlug, draft, lang)
 
   const handleSubmit = async () => {
     if (!accepted) return
