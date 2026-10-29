@@ -19,9 +19,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useMedia } from '@/hooks/use-media'
 import { optimizeAndThumbnail } from '@/lib/image-optimizer'
 import { cn } from '@/lib/utils'
-import { Progress } from '@/components/ui/progress'
-import { Separator } from '@/components/ui/separator'
-import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog'
 import { currentAccessToken } from '@/lib/supabase'
 
 const rowKey = (templateId, wrapperId) => `${templateId}:${wrapperId}`
@@ -517,7 +514,7 @@ export function Templates() {
             <div className="space-y-2">
               <Label>Preview Image</Label>
               <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e.target.files?.[0])} disabled={uploadingImage} />
-              {uploadingImage && <Progress value={uploadProgress} />}
+              {uploadingImage && <p className="text-xs text-muted-foreground">{uploadProgress}%</p>}
               {previewImage && <p className="text-xs text-muted-foreground">Uploaded</p>}
               {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
             </div>
@@ -564,7 +561,7 @@ export function Templates() {
             <div className="space-y-2">
               <Label>Preview Image</Label>
               <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e.target.files?.[0])} disabled={uploadingImage} />
-              {uploadingImage && <Progress value={uploadProgress} />}
+              {uploadingImage && <p className="text-xs text-muted-foreground">{uploadProgress}%</p>}
               {previewImage && <p className="text-xs text-muted-foreground">Uploaded</p>}
               {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
             </div>
