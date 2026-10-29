@@ -266,6 +266,41 @@ stays empty, or the frame never appears.
 
 ---
 
+### 15. `External Link To Dearune` Shows "Being Bound" / Opens the Unwritten Page
+
+**Symptom:** the paper appears in the chooser (so it is enabled in the archive),
+but its card is stamped **being bound** and pressing it turns to *"This paper is
+still being drawn"* instead of the address page. Memorial Message still works.
+
+**Cause:** a paper's chapters are chosen by the **code** the archive stores in
+`templates.slug` (`TEMPLATE_SEQUENCES` in `src/templates/stages.js` →
+`'external-link'`). The Admin Templates editor does not expose `slug` (it edits
+the customer-visible `public_path` instead), and the Create form derives a slug
+from the name, so a row created as *External Link To Dearune* can be stored as
+`external-link-to-dearune`. No book is bound to that code, so the chooser draws
+the placeholder and the pipeline never reaches `external.link`.
+
+A stale bundle is **not** the cause when the card is `being bound`: the card
+label comes from the same registry that draws the pages, and the deployed
+bundle already carries it.
+
+**Fix:** apply
+`supabase/migrations/20261102000002_external_link_slug_alignment.sql`. It is
+idempotent, matches the row by name / display name / public path / normalised
+slug, renames it to `external-link`, and carries any projects started under the
+old spelling across. It does **not** touch `public_path`, so preview images
+under `templates/<public_path>/` keep resolving.
+
+**Check:**
+- [ ] `select slug, public_path, enabled, deleted_at from templates where name ilike '%external%';`
+      → `external-link`
+- [ ] Hard-reload Create: the card reads **open**, the right page is *"the address
+      the code will open"*
+- [ ] No second `external-link` row exists (the migration refuses to create a
+      duplicate; two candidate rows are a human decision)
+
+---
+
 ## Debugging Tools
 
 ### Browser Console

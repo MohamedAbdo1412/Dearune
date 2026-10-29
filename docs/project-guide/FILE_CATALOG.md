@@ -342,6 +342,7 @@ This document catalogs every first-party source file in the Dearune repository. 
 | `20261028000010_rate_limit.sql` | Rate limit (duplicate, kept for history) |
 | `20261101000001_template_enhancements.sql` | Template enhancements (preview images, versions) |
 | `20261102000001_external_link_destination.sql` | Replaces `get_public_project_message` (3 args) returning `template_slug` + validated `destination` for `external-link` |
+| `20261102000002_external_link_slug_alignment.sql` | Aligns the `External Link To Dearune` row's `templates.slug` with the pipeline code `external-link` (and carries existing projects over), so the chooser can bind its book |
 
 ---
 
