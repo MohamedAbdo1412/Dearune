@@ -1,41 +1,22 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { Link } from 'react-router-dom'
-import { Loader2Icon, Plus, Save, Image, Edit2, Eye, X, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Loader2Icon, Plus, Save, Edit2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { fetchTemplates, updateTemplate, createTemplate, updateTemplateIdentity, updateTemplatePreview } from '@/services/templates'
-import { findOption, saveTemplateWrapperOption, wrapperLabel } from '@/services/wrappers'
-import { DISPLAY_STATES, DISPLAY_STATE_META, getCatalogItemState } from '@/services/catalog'
-import { templateMiniFor, listTemplates, getCurrentTemplateVersion, setCurrentTemplateVersion, getTemplateVersions, isVersionRegistered } from '@/templates'
+import { fetchTemplates, updateTemplate, createTemplate, updateTemplateIdentity, updateTemplatePreview, isTemplateStoragePath, resolveTemplateImageUrl, uploadTemplateAsset, TEMPLATE_SLUG_RE } from '@/services/templates'
+import { getCatalogItemState } from '@/services/catalog'
+import { templateMiniFor } from '@/templates'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useAppSettings } from '@/hooks/use-app-settings'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { optimizeAndThumbnail } from '@/lib/image-optimizer'
-import { cn } from '@/lib/utils'
 import { currentAccessToken } from '@/lib/supabase'
 
-const rowKey = (templateId, wrapperId) => `${templateId}:${wrapperId}`
-
 export function Templates() {
-  const { settings } = useAppSettings()
-  const maintenance = Boolean(settings?.maintenance_mode)
   const [templates, setTemplates] = useState(null)
-  const [wrappers, setWrappers] = useState([])
-  const [options, setOptions] = useState([])
-  const [draft, setDraft] = useState({})
-  const [savingKey, setSavingKey] = useState(null)
-  const [orderDraft, setOrderDraft] = useState({})
-  const [savingTemplateId, setSavingTemplateId] = useState(null)
-  const [versionDraft, setVersionDraft] = useState({})
-  const [savingVersionSlug, setSavingVersionSlug] = useState(null)
-  const [availableVersions, setAvailableVersions] = useState({})
-  
+
   // New template creation/editing state
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -59,146 +40,45 @@ export function Templates() {
   const [previewImage, setPreviewImage] = useState(null)
   const [thumbnailPreview, setThumbnailPreview] = useState(null)
   const [uploadError, setUploadError] = useState('')
+  // Rows store a storage PATH; the card needs a signed URL to paint it.
+  const [previewUrls, setPreviewUrls] = useState({})
+
+  const resolvePreviews = useCallback(async (rows) => {
+    const token = await currentAccessToken().catch(() => null)
+    if (!token) return
+    const entries = await Promise.all(
+      (rows ?? []).map(async (row) => {
+        const source = isTemplateStoragePath(row.preview_image_url)
+          ? row.preview_image_url
+          : isTemplateStoragePath(row.thumbnail_url)
+            ? row.thumbnail_url
+            : null
+        return [row.id, source ? await resolveTemplateImageUrl(source, token) : null]
+      }),
+    )
+    setPreviewUrls(Object.fromEntries(entries))
+  }, [])
 
   const reload = useCallback(async () => {
     try {
       const data = await fetchTemplates()
       setTemplates(data.templates)
-      setWrappers(data.wrappers)
-      setOptions(data.options)
-      const next = {}
-      for (const option of data.options) {
-        next[rowKey(option.template_id, option.wrapper_id)] = {
-          enabled: option.enabled !== false,
-          price: option.price_override == null ? '' : String(option.price_override),
-          cost: option.cost_override == null ? '' : String(option.cost_override),
-        }
-      }
-      setDraft(next)
-      const orders = {}
-      for (const template of data.templates) orders[template.id] = String(template.sort_order ?? 0)
-      setOrderDraft(orders)
-      try {
-        const versionsMap = {}
-        const versionDraftMap = {}
-        for (const template of data.templates) {
-          const versions = getTemplateVersions(template.slug)
-          versionsMap[template.slug] = versions
-          versionDraftMap[template.slug] = String(getCurrentTemplateVersion(template.slug) || versions[0] || 1)
-        }
-        setAvailableVersions(versionsMap)
-        setVersionDraft(versionDraftMap)
-      } catch (e) {}
+      void resolvePreviews(data.templates)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not load templates')
     }
-  }, [])
+  }, [resolvePreviews])
 
   useEffect(() => {
     void reload()
   }, [reload])
 
-  const saveTemplateRow = async (template, patch) => {
-    setSavingTemplateId(template.id)
-    try {
-      await updateTemplate(template.id, patch)
-      if ('enabled' in patch) {
-        toast.success(patch.enabled ? `${template.name} is on the shelf` : `${template.name} is hidden from Create`)
-      } else if ('display_state' in patch) {
-        toast.success(`${template.name}: ${DISPLAY_STATE_META[patch.display_state]?.label ?? patch.display_state}`)
-      } else {
-        toast.success('Display order saved')
-      }
-      await reload()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not save this paper')
-    } finally {
-      setSavingTemplateId(null)
-    }
-  }
-
-  const saveTemplateVersion = async (template) => {
-    const slug = template.slug
-    const version = Number(versionDraft[slug])
-    if (!version) return
-    if (!isVersionRegistered(slug, version)) {
-      toast.error('Selected version is not registered')
+  const handleImageUpload = async (file, templateSlug) => {
+    if (!file) return
+    if (!TEMPLATE_SLUG_RE.test(String(templateSlug ?? ''))) {
+      setUploadError('Set a valid public path (slug) first — the preview is stored under it.')
       return
     }
-    setSavingVersionSlug(slug)
-    try {
-      setCurrentTemplateVersion(slug, version)
-      if (template?.id) {
-        await updateTemplate(template.id, { current_version: version })
-      }
-      toast.success(`${template.name} now uses version ${version}`)
-      await reload()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not update version')
-    } finally {
-      setSavingVersionSlug(null)
-    }
-  }
-
-  const orderIsClean = (template) =>
-    String(template.sort_order ?? 0) === String(Number(orderDraft[template.id] ?? '') || 0)
-
-  const blankDraft = () => ({ enabled: true, price: '', cost: '' })
-
-  const draftFor = (templateId, wrapper) => draft[rowKey(templateId, wrapper.id)] ?? {
-    enabled: false,
-    price: '',
-    cost: '',
-  }
-
-  const originalFor = (templateId, wrapper) => {
-    const option = findOption(options, templateId, wrapper.id)
-    return {
-      exists: Boolean(option),
-      enabled: option ? option.enabled !== false : false,
-      price: option?.price_override == null ? '' : String(option.price_override),
-      cost: option?.cost_override == null ? '' : String(option.cost_override),
-    }
-  }
-
-  const setField = (templateId, wrapperId, patch) => {
-    setDraft((current) => {
-      const key = rowKey(templateId, wrapperId)
-      const existing = current[key] ?? blankDraft()
-      return { ...current, [key]: { ...existing, ...patch } }
-    })
-  }
-
-  const saveRow = async (templateId, wrapper) => {
-    const key = rowKey(templateId, wrapper.id)
-    const value = draft[key] ?? blankDraft()
-    setSavingKey(key)
-    try {
-      await saveTemplateWrapperOption({
-        templateId,
-        wrapperId: wrapper.id,
-        enabled: value.enabled,
-        priceOverride: value.price.trim() === '' ? null : Number(value.price),
-        costOverride: value.cost.trim() === '' ? null : Number(value.cost),
-      })
-      toast.success('Offering saved')
-      await reload()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not save this offering')
-    } finally {
-      setSavingKey(null)
-    }
-  }
-
-  const effective = (value, base) => {
-    const num = Number(value === '' || value == null ? base : value)
-    return Number.isFinite(num) && num >= 0 ? num : 0
-  }
-
-  const currency = 'EGP'
-
-  const handleImageUpload = async (file) => {
-    if (!file) return
     if (!file.type.startsWith('image/')) {
       setUploadError('Please select an image file')
       return
@@ -225,12 +105,11 @@ export function Templates() {
       setUploadProgress(50)
       const token = await currentAccessToken()
       if (!token) throw new Error('No auth token')
-      const { uploadDesignerMedia } = await import('@/services/media')
-      const mediaRef = await uploadDesignerMedia(optimized, { token })
-      setPreviewImage(mediaRef.key || mediaRef.path)
+      const mediaPath = await uploadTemplateAsset(templateSlug, optimized, token, { fixed: 'preview' })
+      setPreviewImage(mediaPath)
       setUploadProgress(75)
-      const thumbRef = await uploadDesignerMedia(thumbnail, { token })
-      setThumbnailPreview(thumbRef.key || thumbRef.path)
+      const thumbPath = await uploadTemplateAsset(templateSlug, thumbnail, token, { fixed: 'preview-thumb' })
+      setThumbnailPreview(thumbPath)
       setUploadProgress(100)
       toast.success('Template preview image uploaded')
     } catch (err) {
@@ -243,15 +122,13 @@ export function Templates() {
     }
   }
 
-  const handleImageChange = (e) => {
-    const file = e.target.files?.[0]
-    if (file) handleImageUpload(file)
-  }
-
-  const clearPreviewImage = () => {
+  const openCreateDialog = () => {
+    // Never carry a preview uploaded for a previous draft into a new one.
     setPreviewImage(null)
     setThumbnailPreview(null)
     setUploadError('')
+    setUploadProgress(0)
+    setCreateDialogOpen(true)
   }
 
   const handleCreateTemplate = async () => {
@@ -263,7 +140,7 @@ export function Templates() {
       toast.error('Public path (slug) is required')
       return
     }
-    if (!/^[a-z][a-z0-9_-]{0,63}$/.test(newTemplate.slug)) {
+    if (!TEMPLATE_SLUG_RE.test(newTemplate.slug)) {
       toast.error('Public path must be lowercase, start with a letter, and contain only letters, numbers, hyphens, and underscores')
       return
     }
@@ -316,6 +193,12 @@ export function Templates() {
       display_state: template.display_state || 'normal',
       enabled: template.enabled !== false,
     })
+    // Seed the preview state with what the row already holds, so saving the
+    // dialog persists exactly these values unless a new image is uploaded.
+    setPreviewImage(template.preview_image_url || null)
+    setThumbnailPreview(template.thumbnail_url || null)
+    setUploadError('')
+    setUploadProgress(0)
     setEditDialogOpen(true)
   }
 
@@ -329,7 +212,7 @@ export function Templates() {
       toast.error('Public path is required')
       return
     }
-    if (!/^[a-z][a-z0-9_-]{0,63}$/.test(editForm.public_path)) {
+    if (!TEMPLATE_SLUG_RE.test(editForm.public_path)) {
       toast.error('Public path must be lowercase, start with a letter, and contain only letters, numbers, hyphens, and underscores')
       return
     }
@@ -350,6 +233,13 @@ export function Templates() {
           enabled: editForm.enabled,
         })
       }
+      const originalPreview = editingTemplate.preview_image_url || ''
+      const originalThumb = editingTemplate.thumbnail_url || ''
+      const nextPreview = previewImage || ''
+      const nextThumb = thumbnailPreview || ''
+      if (nextPreview !== originalPreview || nextThumb !== originalThumb) {
+        await updateTemplatePreview(editingTemplate.id, nextPreview, nextThumb)
+      }
       toast.success('Template updated')
       setEditDialogOpen(false)
       setEditingTemplate(null)
@@ -369,21 +259,15 @@ export function Templates() {
   const rowsFor = useMemo(() => {
     const list = templates ?? []
     return list.map((template) => {
-      const state = getCatalogItemState(template)
+      const item = getCatalogItemState(template)
       const Mini = templateMiniFor(template.slug)
-      const rows = []
-      for (const wrapper of wrappers) {
-        const original = originalFor(template.id, wrapper)
-        const value = draftFor(template.id, wrapper)
-        const isDirty =
-          original.exists !== (value.enabled && (value.price !== '' || value.cost !== '')) ||
-          (original.exists && (original.enabled !== value.enabled || original.price !== value.price || original.cost !== value.cost)) ||
-          (!original.exists && value.enabled)
-        rows.push({ wrapper, original, value, isDirty, key: rowKey(template.id, wrapper.id) })
-      }
-      return { template, item: state, Mini, rows }
+      // A stored object path is not an image: use the resolved signed URL,
+      // while a plain URL (or empty) passes straight through.
+      const stored = template.preview_image_url || template.thumbnail_url || ''
+      const previewUrl = previewUrls[template.id] ?? (isTemplateStoragePath(stored) ? '' : stored)
+      return { template, item, Mini, previewUrl }
     })
-  }, [templates, wrappers, options, draft])
+  }, [templates, previewUrls])
 
   return (
     <div className="space-y-6">
@@ -395,7 +279,7 @@ export function Templates() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={() => setCreateDialogOpen(true)}>
+          <Button size="sm" variant="outline" onClick={openCreateDialog}>
             <Plus className="size-4" />
             Add template
           </Button>
@@ -408,7 +292,7 @@ export function Templates() {
         <Card><CardContent className="py-16 text-center text-sm text-muted-foreground">No templates yet.</CardContent></Card>
       ) : (
         <div className="space-y-6">
-          {(rowsFor || []).map(({ template: t, item, Mini }) => (
+          {(rowsFor || []).map(({ template: t, item, Mini, previewUrl }) => (
             <Card key={t.id}>
               <CardHeader>
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -442,10 +326,8 @@ export function Templates() {
                   <Label className="text-sm font-medium">Preview Image</Label>
                   <div className="flex items-center gap-4">
                     <div className="relative w-32 h-24 bg-muted rounded-lg overflow-hidden border border-border flex-shrink-0">
-                      {t.preview_image_url ? (
-                        <img src={t.preview_image_url} alt={`${t.name} preview`} className="w-full h-full object-cover" />
-                      ) : t.thumbnail_url ? (
-                        <img src={t.thumbnail_url} alt={`${t.name} thumbnail`} className="w-full h-full object-cover" />
+                      {previewUrl ? (
+                        <img src={previewUrl} alt={`${t.name} preview`} className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">No preview</div>
                       )}
@@ -512,7 +394,8 @@ export function Templates() {
             </div>
             <div className="space-y-2">
               <Label>Preview Image</Label>
-              <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e.target.files?.[0])} disabled={uploadingImage} />
+              <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e.target.files?.[0], newTemplate.slug)} disabled={uploadingImage} />
+              <p className="text-xs text-muted-foreground">Stored under templates/{newTemplate.slug || '<slug>'}/</p>
               {uploadingImage && <p className="text-xs text-muted-foreground">{uploadProgress}%</p>}
               {previewImage && <p className="text-xs text-muted-foreground">Uploaded</p>}
               {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
@@ -559,7 +442,8 @@ export function Templates() {
             </div>
             <div className="space-y-2">
               <Label>Preview Image</Label>
-              <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e.target.files?.[0])} disabled={uploadingImage} />
+              <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e.target.files?.[0], editingTemplate?.slug)} disabled={uploadingImage} />
+              <p className="text-xs text-muted-foreground">Stored under templates/{editingTemplate?.slug || '<slug>'}/</p>
               {uploadingImage && <p className="text-xs text-muted-foreground">{uploadProgress}%</p>}
               {previewImage && <p className="text-xs text-muted-foreground">Uploaded</p>}
               {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}

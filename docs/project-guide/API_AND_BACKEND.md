@@ -160,9 +160,14 @@ const passcodeHash = await bcrypt.hash(passcode, 12);
 
 | Method | Action | Query Params | Body | Response |
 |---|---|---|---|---|
-| `GET` | Download/Signed URL | `path`, `storageProvider?`, `wrapper?` | - | `{ url }` or redirect |
-| `POST` | Upload | `kind=photo\|audio`, `name`, `fixed?` | File bytes | `{ path, storageProvider, ... }` |
+| `GET` | Download/Signed URL | `path`, `storageProvider?` | - | `{ url }` or `{ drive: true }` |
+| `POST` | Upload | `kind=photo\|audio`, `name`, `fixed?`, `wrapper?`, `template?` | File bytes | `{ path, storageProvider, ... }` |
 | `DELETE` | Delete | `path`, `storageProvider?` | - | `{ removed: path }` |
+
+**Namespaces:**
+- `{designerId}/memorial-message/…` — designer drafts (designer or admin writes; designer reads own only)
+- `wrappers/<key>/…` — wrapper catalog photos (admin writes; any studio member reads)
+- `templates/<slug>/…` — template preview images, `slug` = `templates.slug` (admin writes; any studio member reads)
 
 **Upload Features:**
 - Magic byte sniffing (JPEG, PNG, WebP, GIF, MP3, WAV, OGG, WebM, M4A)

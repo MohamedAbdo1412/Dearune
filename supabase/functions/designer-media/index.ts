@@ -19,6 +19,18 @@ const BUCKET = 'designer-drafts'
 const ROOT_FOLDER = 'Dearune Designer Drafts'
 const SIGNED_URL_TTL = 3000 // 50 minutes
 
+// Studio-owned asset namespaces, kept in the same private bucket as the
+// designer drafts: `wrappers/<key>/…` for the wrapper catalog and
+// `templates/<key>/…` (key = the template's slug) for template previews.
+const WRAPPER_KEY_RE = /^[a-z][a-z0-9_]{0,29}$/
+const TEMPLATE_KEY_RE = /^[a-z][a-z0-9_-]{0,63}$/
+const WRAPPER_ASSET_PATH_RE = /^wrappers\/[a-z][a-z0-9_]{0,29}\/[A-Za-z0-9_][A-Za-z0-9._-]*$/
+const TEMPLATE_ASSET_PATH_RE = /^templates\/[a-z][a-z0-9_-]{0,63}\/[A-Za-z0-9_][A-Za-z0-9._-]*$/
+
+function isStudioAssetPath(path: string): boolean {
+  return WRAPPER_ASSET_PATH_RE.test(path) || TEMPLATE_ASSET_PATH_RE.test(path)
+}
+
 const KIND_LIMITS: Record<string, number> = {
   photo: 20 * 1024 * 1024,
   audio: 60 * 1024 * 1024,
@@ -156,15 +168,20 @@ Deno.serve(async (req) => {
   // Uploading and deleting a BOOK's drafts stay designer-only: an admin
   // never touches drafts another account owns.
   //
-  // The one exception is the wrapper catalog: its photos live under
-  // `wrappers/<key>/…` in the same private bucket, are uploaded and removed
-  // by an admin only (Settings → Wrappers), and are readable by any studio
-  // member — the designer needs them to show the arrival options in Create.
+  // The exception is the studio-owned catalog assets: wrapper photos
+  // (`wrappers/<key>/…`, Settings → Wrappers) and template previews
+  // (`templates/<slug>/…`, Templates → Preview image) live in the same
+  // private bucket, are uploaded and removed by an admin only, and are
+  // readable by any studio member — the designer needs wrapper photos to show
+  // the arrival options in Create.
   const url = new URL(req.url)
   const path = url.searchParams.get('path') ?? ''
   const providerHint = url.searchParams.get('storageProvider')
   const wrapperKey = url.searchParams.get('wrapper') ?? ''
+  const templateKey = url.searchParams.get('template') ?? ''
   const isWrapperAsset = path.startsWith('wrappers/') || Boolean(wrapperKey)
+  const isTemplateAsset = path.startsWith('templates/') || Boolean(templateKey)
+  const isStudioAsset = isWrapperAsset || isTemplateAsset
 
   let designerId = ''
   let isAdmin = false
@@ -175,8 +192,8 @@ Deno.serve(async (req) => {
     else designerId = who.designerId
   }
   if (req.method !== 'GET') {
-    if (wrapperKey && !isAdmin) return errorResponse('Only the studio can set a wrapper', 403)
-    if (!wrapperKey && isAdmin) return errorResponse('Admins do not own drafts', 403)
+    if (isStudioAsset && !isAdmin) return errorResponse('Only the studio can set a studio asset', 403)
+    if (!isStudioAsset && isAdmin) return errorResponse('Admins do not own drafts', 403)
   }
 
   // -- Upload ---------------------------------------------------------------
@@ -208,12 +225,21 @@ Deno.serve(async (req) => {
     }
     const mimeType = sniffed.startsWith('audio/mp4') ? 'audio/m4a' : sniffed
 
-    // Wrapper catalog photos always live in Supabase storage (the designer
-    // interface must show them without any Drive dependency), under the
-    // wrapper's key so a re-upload replaces the previous photo in place.
-    if (wrapperKey) {
-      if (!/^[a-z][a-z0-9_]{0,29}$/.test(wrapperKey)) return errorResponse('Unknown wrapper', 400)
-      const objectName = `wrappers/${wrapperKey}/${fixedName || crypto.randomUUID()}${extensionFor(mimeType, originalName)}`
+    // Studio-owned assets (wrapper catalog photos and template previews)
+    // always live in Supabase storage — the designer interface must show
+    // wrappers without any Drive dependency, and the admin screens need the
+    // template previews to paint — under the owner's key so a re-upload
+    // replaces the previous photo in place. Uploads address them by KEY, never
+    // by a raw path.
+    if (isStudioAsset && !wrapperKey && !templateKey) {
+      return errorResponse('Name the wrapper or template', 400)
+    }
+    if (wrapperKey || templateKey) {
+      const namespace = wrapperKey ? 'wrappers' : 'templates'
+      const key = wrapperKey || templateKey
+      const keyRe = wrapperKey ? WRAPPER_KEY_RE : TEMPLATE_KEY_RE
+      if (!keyRe.test(key)) return errorResponse(wrapperKey ? 'Unknown wrapper' : 'Unknown template', 400)
+      const objectName = `${namespace}/${key}/${fixedName || crypto.randomUUID()}${extensionFor(mimeType, originalName)}`
       const { error } = await sb.storage.from(BUCKET).upload(objectName, bytes, {
         contentType: mimeType,
         cacheControl: '3600',
@@ -237,9 +263,9 @@ Deno.serve(async (req) => {
   // -- Delete ---------------------------------------------------------------
   if (req.method === 'DELETE') {
     if (!path) return errorResponse('Nothing to remove', 400)
-    if (path.startsWith('wrappers/')) {
-      if (!isAdmin) return errorResponse('Only the studio can change a wrapper', 403)
-      if (!/^wrappers\/[a-z][a-z0-9_]{0,29}\/[^/]+$/.test(path)) return errorResponse('Not a wrapper photo', 403)
+    if (path.startsWith('wrappers/') || path.startsWith('templates/')) {
+      if (!isAdmin) return errorResponse('Only the studio can change a studio asset', 403)
+      if (!isStudioAssetPath(path)) return errorResponse('Not a studio asset', 403)
       await sb.storage.from(BUCKET).remove([path])
       return jsonResponse({ removed: path })
     }
@@ -265,8 +291,8 @@ Deno.serve(async (req) => {
   if (req.method === 'GET') {
     if (!path) return errorResponse('Nothing to resolve', 400)
 
-    const streaming = !isWrapperAsset && url.searchParams.get('dl') === '1'
-    const provider = isWrapperAsset
+    const streaming = !isStudioAsset && url.searchParams.get('dl') === '1'
+    const provider = isStudioAsset
       ? 'supabase'
       : providerHint === 'google_drive' ? 'google_drive' : providerHint === 'supabase' ? 'supabase' : await resolveStorageProvider(sb)
 
@@ -302,11 +328,12 @@ Deno.serve(async (req) => {
     // happens server-side so no bucket wiring ever leaks). The object must
     // live in a designer's namespace; a designer may only sign their own,
     // while an admin session may sign any book the studio has taken on.
-    // Wrapper catalog photos are shared studio assets: any signed-in studio
-    // member may resolve them (the object name itself carries the wrapper
-    // key, which is validated against the catalog shape above).
-    if (path.startsWith('wrappers/')) {
-      if (!/^wrappers\/[a-z][a-z0-9_]{0,29}\/[^/]+$/.test(path)) return errorResponse('Not a wrapper photo', 403)
+    // Studio-owned assets (wrapper catalog photos, template previews) are
+    // shared: any signed-in studio member may resolve them (the object name
+    // itself carries the owner key, which is validated against the catalog
+    // shape above).
+    if (path.startsWith('wrappers/') || path.startsWith('templates/')) {
+      if (!isStudioAssetPath(path)) return errorResponse('Not a studio asset', 403)
       const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_TTL)
       if (error || !data?.signedUrl) return errorResponse('Photo unavailable', 404)
       return jsonResponse({ url: data.signedUrl })

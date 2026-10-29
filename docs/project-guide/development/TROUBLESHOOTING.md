@@ -153,6 +153,51 @@ build: {
 
 ---
 
+### 11. `designer-media` 403 on an Admin Upload (template preview / wrapper photo)
+
+**Error:** `POST /functions/v1/designer-media?name=…` → `403 {"error":"Admins do not own drafts"}`
+
+**Cause:** an admin upload without a studio namespace. The function only lets an
+admin write *studio-owned* assets, which are named by `wrappers/<key>/…` or
+`templates/<slug>/…`; a bare upload is a **designer draft** and stays
+designer-only (that is what keeps one designer out of another's book).
+
+**Fix:** call the upload with the owning key, always with a `kind`:
+
+```js
+// template preview (Templates → Preview image)
+await uploadTemplateAsset(template.slug, file, token, { fixed: 'preview' })
+// wrapper photo (Settings → Wrappers)
+await uploadWrapperPhotoAsset(wrapper.key, file, token, { fixed: 'photo' })
+```
+
+A URL containing only `name=` (no `kind`, no `wrapper`/`template`) is the
+signature of this bug. Stored paths resolve to signed URLs with
+`resolveTemplateImageUrl()` / `resolveWrapperPhotoUrl()` before rendering —
+a raw `templates/…` or `wrappers/…` path is not an image.
+
+---
+
+### 12. `token?grant_type=refresh_token` → 400 in the Console
+
+**Error:** `xwge….supabase.co/auth/v1/token?grant_type=refresh_token:1 Failed to load resource: 400`
+
+**Cause:** the refresh token in this browser's storage is no longer valid —
+typically after a `supabase db reset`/re-seed (users and sessions are wiped),
+a password change, or the same account signing in and out elsewhere. Supabase
+rejects the stale token once, supabase-js then clears the session and emits
+`SIGNED_OUT`; `RequireAdmin`/`WorkerGate` follow with a redirect to login.
+
+**Check:**
+- [ ] Signing in again clears it (expected — nothing to fix)
+- [ ] It repeats on every load → check for two tabs fighting over the same
+      session, or a stale service worker; clear site data once
+
+**Not a bug:** a one-off 400 here is the correct response to an unusable
+refresh token. It must not be "fixed" by disabling token refresh.
+
+---
+
 ## Debugging Tools
 
 ### Browser Console

@@ -39,15 +39,24 @@ This document describes the complete file storage system in Dearune, including u
 **Path Structure:**
 ```
 designer-drafts/
-└── {designerId}/
-    └── memorial-message/
-        ├── {fixed|uuid}.{ext}     # Template slots (fixed) or drafts (uuid)
-        ├── {uuid}.webp            # Compressed images
-        └── {uuid}.{ext}           # Audio files
+├── {designerId}/
+│   └── memorial-message/
+│       ├── {fixed|uuid}.{ext}     # Template slots (fixed) or drafts (uuid)
+│       ├── {uuid}.webp            # Compressed images
+│       └── {uuid}.{ext}           # Audio files
+├── wrappers/
+│   └── {key}/                     # Wrapper catalog photos (admin-owned)
+│       ├── photo.webp             # Fixed name → re-upload replaces it
+│       └── photo-thumb.webp
+└── templates/
+    └── {slug}/                    # Template previews (admin-owned, slug = templates.slug)
+        ├── preview.webp
+        └── preview-thumb.webp
 ```
 
 **Key Features:**
-- **Path namespacing**: All objects under `{designerId}/` - prevents cross-designer access
+- **Path namespacing**: All drafts under `{designerId}/` - prevents cross-designer access
+- **Studio assets**: `wrappers/<key>/…` and `templates/<slug>/…` are shared-read (admin writes only)
 - **Upsert for template slots**: Fixed names (e.g., `cover.webp`) use upsert
 - **Random UUIDs for drafts**: Prevents collision
 - **Signed URLs**: 50-minute TTL (configurable via `SIGNED_URL_TTL`)
@@ -55,6 +64,7 @@ designer-drafts/
 
 **Access Control:**
 - Designer: Own namespace only (`path.startsWith('${designerId}/')`)
+- Designer: May resolve (read) studio assets (`wrappers/…`, `templates/…`)
 - Admin: Full access via service role
 - Public: Never direct access (via `project-media` with token)
 
@@ -371,9 +381,10 @@ if (!path.startsWith(`${designerId}/`)) {
   return errorResponse('Not yours to remove', 403);
 }
 
-// Wrapper assets under shared namespace (admin only)
-if (path.startsWith('wrappers/')) {
-  if (!isAdmin) return errorResponse('Only the studio can set a wrapper', 403);
+// Studio assets under shared namespaces (admin writes only)
+if (path.startsWith('wrappers/') || path.startsWith('templates/')) {
+  if (!isAdmin) return errorResponse('Only the studio can change a studio asset', 403);
+  if (!isStudioAssetPath(path)) return errorResponse('Not a studio asset', 403);
 }
 ```
 

@@ -435,6 +435,23 @@ QR_CARD_BOX, QR_BOX, IMAGE_LAYERS, PAPER_TEXTURE_RECT
 
 ---
 
+### `src/services/templates.js`
+
+| Export | Type | Description |
+|---|---|---|
+| `fetchTemplates()` | `Promise<{ templates, pricing, wrappers, options }>` | Full admin catalog |
+| `updateTemplate(templateId, patch)` | `Promise<Template>` | Update a template's admin-owned fields |
+| `createTemplate(template)` | `Promise<Template>` | Create a template |
+| `updateTemplateIdentity(templateId, { display_name, public_path })` | `Promise<Template>` | Update display name / public path |
+| `updateTemplatePreview(templateId, preview_image_url, thumbnail_url)` | `Promise<Template>` | Persist preview image paths |
+| `updatePricingRow(pricingId, patch)` | `Promise<void>` | Update a legacy pricing row |
+| `TEMPLATE_SLUG_RE` | `RegExp` | `^[a-z][a-z0-9_-]{0,63}$` — the slug rule the edge function enforces |
+| `isTemplateStoragePath(imageUrl)` | `boolean` | True for `templates/<slug>/…` object paths |
+| `uploadTemplateAsset(templateSlug, file, token, { fixed? })` | `Promise<string>` | Upload a preview/thumbnail under the template's slug |
+| `resolveTemplateImageUrl(imageUrl, token)` | `Promise<string \| null>` | Signed URL for a stored path; plain URLs pass through |
+
+---
+
 ## Hooks
 
 ### `src/hooks/use-app-settings.ts`
