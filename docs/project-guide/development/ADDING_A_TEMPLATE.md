@@ -338,6 +338,16 @@ const { templates } = await fetchTemplates();
 // templates[i].versions from registry
 ```
 
+### The card's artwork
+
+The chooser card on `/create` paints the preview the admin uploaded for that
+paper, not a CSS sketch of it. Templates → **Preview image** writes
+`templates/<slug>/preview.webp` (≤1600px) plus `preview-thumb.webp` (≤400px)
+into `preview_image_url` / `thumbnail_url`; `designer-templates` returns those
+columns and `templatePreviewSource()` + `resolveTemplateImageUrl()` sign the
+chosen one for the session. Adding a paper therefore means uploading its
+artwork — `CardMini` is optional decoration and no longer the card preview.
+
 ---
 
 ## Template Development Checklist
@@ -347,7 +357,7 @@ const { templates } = await fetchTemplates();
 - [ ] Create `letterDefaults.js` (EN/AR)
 - [ ] Create letter renderer (`NewTemplateLetter.jsx`)
 - [ ] Create editor stage (`NewTemplateEditorStage.jsx`)
-- [ ] Create mini card (`NewTemplateCardMini.jsx`)
+- [ ] Upload the paper's preview image on **Templates** (the chooser card paints the upload; a `CardMini` is optional)
 - [ ] Add to `TEMPLATE_DEFINITIONS` in `registry/index.js`
 - [ ] Add to `TEMPLATE_SEQUENCES` in `stages.js`
 - [ ] Add migration for `templates` table insert
@@ -455,7 +465,7 @@ test('renders template correctly in PDF', async () => {
 - [ ] Create `letterDefaults.js` (EN/AR)
 - [ ] Create letter renderer (`NewTemplateLetter.jsx`)
 - [ ] Create editor stage (`NewTemplateEditorStage.jsx`)
-- [ ] Create mini card (`NewTemplateCardMini.jsx`)
+- [ ] Upload the paper's preview image on **Templates** (the chooser card paints the upload; a `CardMini` is optional)
 - [ ] Add to `TEMPLATE_DEFINITIONS` in `registry/index.js`
 - [ ] Add to `TEMPLATE_SEQUENCES` in `stages.js`
 - [ ] Add migration for `templates` table insert

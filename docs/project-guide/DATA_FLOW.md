@@ -70,6 +70,14 @@ User Input → Client State → Media Upload → Draft Encryption → Submit →
 6. **Database Insert**: Creates `projects` row + `physical_products` units via `ensure_physical_products` RPC
 7. **QR Generation**: `public_id` + `public_token` generated for QR code
 
+**Before any of that — choosing the paper.** `/create` asks
+`designer-templates` for the archive; each row carries the admin's uploaded
+card art as storage paths (`thumbnail_url`, `preview_image_url`, legacy
+`image_url`). `TemplateSelectionStage` signs the chosen one through
+`designer-media` and paints it. The admin Templates screen writes those same
+columns, so the image an admin uploads is the image the customer chooses from
+(no CSS mock-up in between).
+
 **Data Artifacts:**
 - `projects` row: `payload` (encrypted draft refs), `public_id`, `public_token`, `wrapper_type`, `template_slug`, `status`
 - `physical_products` rows: one per unit, `reference` (DR + 11 digits), milestone timestamps

@@ -265,7 +265,7 @@ This document catalogs every first-party source file in the Dearune repository. 
 |---|---|
 | `MemorialLetter.jsx` | 7.9KB - Letter renderer (view/edit modes) |
 | `MemorialEditorStage.jsx` | Editor stage for CreateBook |
-| `MemorialCardMini.jsx` | Mini card preview |
+| `MemorialCardMini.jsx` | Draws the CSS mini card — retained, but the chooser card now paints the uploaded `preview_image_url` instead |
 | `MemorialLanguageStage.jsx` | Language selection |
 | `MemorialPasswordStage.jsx` | Password protection |
 | `MessageAudio.jsx` | Audio player/recorder |

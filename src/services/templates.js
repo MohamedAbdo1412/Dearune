@@ -121,8 +121,33 @@ export async function updatePricingRow(pricingId, patch) {
 
 export const TEMPLATE_SLUG_RE = /^[a-z][a-z0-9_-]{0,63}$/
 
+// The shape the edge function will sign: `templates/<slug>/<file>`. The
+// legacy seed wrote `templates/<slug>.png` (an object that never existed), so
+// a bare prefix check would try to sign nonsense — match the real shape.
+const TEMPLATE_ASSET_PATH_RE = /^templates\/[a-z][a-z0-9_-]{0,63}\/[A-Za-z0-9_][A-Za-z0-9._-]*$/
+
 export function isTemplateStoragePath(imageUrl) {
-  return typeof imageUrl === 'string' && imageUrl.startsWith('templates/')
+  return typeof imageUrl === 'string' && TEMPLATE_ASSET_PATH_RE.test(imageUrl)
+}
+
+// Which stored value a selection card paints, in one place so the admin shelf
+// and Create can never disagree: the generated thumbnail (a 400px rendition of
+// the same composition) first, then the full uploaded preview, then the legacy
+// `image_url` column for rows that predate the uploader. Values that are
+// neither signable storage paths nor real URLs (e.g. the seed's
+// `templates/classic-letter.png`) are ignored rather than rendered broken.
+export function templatePreviewSource(template) {
+  if (!template) return ''
+  const candidates = [template.thumbnail_url, template.preview_image_url, template.image_url]
+  return candidates.find(isDisplayableImageRef) ?? ''
+}
+
+function isDisplayableImageRef(value) {
+  if (typeof value !== 'string') return false
+  const ref = value.trim()
+  if (!ref) return false
+  if (isTemplateStoragePath(ref)) return true
+  return /^(https?:\/\/|\/\/|\/|data:image\/)/i.test(ref)
 }
 
 // Upload one template preview (or its thumbnail) under the template's slug.

@@ -9,8 +9,14 @@ export const TEMPLATE_REGISTRY = {
   'memorial-message': getTemplate('memorial-message'),
 }
 
-// Visual thumbnails for templates that exist in the database + studio but do
-// not yet have a drawn pipeline. Enough to keep the choosing of papers honest.
+// Drawn thumbnails for templates that exist in the database + studio but do
+// not yet have a drawn pipeline.
+//
+// NOT THE CARD PREVIEW ANY MORE. The paper chooser (and the admin Templates
+// shelf) paint the image the admin uploaded — `preview_image_url` /
+// `thumbnail_url` via `templatePreviewSource` in `src/services/templates.js`.
+// These minis stay as optional decoration; nothing renders them on a selection
+// card, so an upload is what a customer sees.
 export const NAMED_TEMPLATE_MINIS = {
   'classic-letter': ClassicLetterMini,
   'word-and-wax': WaxWordMini,
@@ -25,6 +31,8 @@ export function templateRegistry(slug, version) {
   return newTemplateRegistry(slug, version) ?? null
 }
 
+// Optional decoration only — selection cards use the admin's uploaded preview
+// (`templatePreviewSource`), never this mini.
 export function templateMiniFor(slug) {
   if (TEMPLATE_REGISTRY[slug]?.CardMini) return TEMPLATE_REGISTRY[slug].CardMini
   // Also try to resolve from current version

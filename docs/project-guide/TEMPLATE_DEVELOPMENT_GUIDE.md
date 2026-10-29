@@ -330,6 +330,24 @@ const { templates } = await fetchTemplates();
 // templates[i].versions from registry
 ```
 
+### The Preview Image (what the chooser card paints)
+
+A template's card on `/create` is the image the admin uploaded — not a CSS
+sketch of the paper. The upload lives on the Templates screen and writes the
+storage paths into the row:
+
+| Column | Holds |
+|---|---|
+| `preview_image_url` | `templates/<slug>/preview.webp` (≤1600px, webp) |
+| `thumbnail_url` | `templates/<slug>/preview-thumb.webp` (≤400px, webp) |
+| `image_url` | legacy column, read as the oldest fallback |
+
+`designer-templates` returns those columns, `templatePreviewSource()` picks
+one, and `resolveTemplateImageUrl()` signs it through `designer-media` for the
+current session. So adding a paper means **uploading its artwork on
+Templates**; nothing in `src/templates/` has to draw a thumbnail. A `CardMini`
+component is optional decoration and is no longer used for the selection card.
+
 ## Template Development Checklist
 
 - [ ] Create `src/templates/new-template/v1/` with all components
@@ -337,7 +355,7 @@ const { templates } = await fetchTemplates();
 - [ ] Create `letterDefaults.js` (EN/AR)
 - [ ] Create letter renderer (`NewTemplateLetter.jsx`)
 - [ ] Create editor stage (`NewTemplateEditorStage.jsx`)
-- [ ] Create mini card (`NewTemplateCardMini.jsx`)
+- [ ] Upload the paper's preview image on **Templates** (the chooser card paints the upload; a `CardMini` is optional)
 - [ ] Add to `TEMPLATE_DEFINITIONS` in `registry/index.js`
 - [ ] Add to `TEMPLATE_SEQUENCES` in `stages.js`
 - [ ] Add migration for `templates` table insert
@@ -437,7 +455,7 @@ test('renders template correctly in PDF', async () => {
 - [ ] Create `letterDefaults.js` (EN/AR)
 - [ ] Create letter renderer (`NewTemplateLetter.jsx`)
 - [ ] Create editor stage (`NewTemplateEditorStage.jsx`)
-- [ ] Create mini card (`NewTemplateCardMini.jsx`)
+- [ ] Upload the paper's preview image on **Templates** (the chooser card paints the upload; a `CardMini` is optional)
 - [ ] Add to `TEMPLATE_DEFINITIONS` in `registry/index.js`
 - [ ] Add to `TEMPLATE_SEQUENCES` in `stages.js`
 - [ ] Add migration for `templates` table insert

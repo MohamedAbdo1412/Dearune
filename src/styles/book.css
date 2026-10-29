@@ -1325,10 +1325,24 @@
 }
 
 .paper-art {
-  width: min(132px, 64%);
+  width: min(176px, 68%);
   aspect-ratio: 210 / 297;
   display: grid;
   place-items: center;
+}
+
+/* The admin's uploaded preview, framed like a plate on the card. `contain`
+   keeps the whole composition visible whatever shape the image is; the sheet
+   behind it fills the proportion so no card looks a different size. */
+.paper-photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background:
+    linear-gradient(140deg, var(--paper-0), var(--paper-2));
+  border: 1px solid rgba(90, 70, 46, 0.3);
+  box-shadow: 0 2px 6px rgba(50, 34, 16, 0.3);
 }
 
 .paper-blank {

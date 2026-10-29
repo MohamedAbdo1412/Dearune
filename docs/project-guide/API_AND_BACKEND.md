@@ -202,14 +202,31 @@ const passcodeHash = await bcrypt.hash(passcode, 12);
 ```typescript
 {
   templates: Array<{
-    id, slug, name, description, enabled,
-    display_state, current_version,
-    wrapperOptions: Array<{ wrapper, price, cost, enabled }>
+    id, slug, name, display_name, description, public_path,
+    image_url,           // legacy column — oldest fallback for the card art
+    preview_image_url,   // the image the admin uploaded on Templates (storage path)
+    thumbnail_url,       // 400px rendition of that same upload
+    print_config, sort_order, display_state, created_at,
+    wrappers: Array<{
+      id, key, name, name_ar, description, description_ar, image_url,
+      display_state, base_price, production_cost,
+      estimated_production_days, display_order, created_at,
+      option: { price_override, cost_override, display_order }
+    }>
   }>
 }
 ```
 
-**Filters:** `enabled=true`, `deleted_at IS NULL`, `display_state IN ('normal','new')`
+**Card artwork:** `thumbnail_url` / `preview_image_url` hold private-bucket
+paths (`templates/<slug>/…`), not URLs. Create signs them per session through
+`designer-media?path=…` with the designer JWT — see `templatePreviewSource`
+(which column a card paints) and `resolveTemplateImageUrl` in
+`src/services/templates.js`. The admin Templates screen resolves the same pair
+with its own session, so one row drives both previews.
+
+**Filters:** `enabled=true`, `deleted_at IS NULL`. `display_state` is returned
+as-is: Create draws the NEW seal or the "resting" veil from it, and refuses
+selection of `not_available` rows client-side (`getCatalogItemState`).
 
 ### `project-media` (`supabase/functions/project-media/index.ts`)
 

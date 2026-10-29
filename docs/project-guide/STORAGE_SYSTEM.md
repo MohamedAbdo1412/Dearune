@@ -68,6 +68,18 @@ designer-drafts/
 - Admin: Full access via service role
 - Public: Never direct access (via `project-media` with token)
 
+**Template previews are the card art (one row, two screens):**
+the admin Templates screen uploads to `templates/<slug>/preview.webp` (full,
+≤1600px) plus `preview-thumb.webp` (≤400px), and persists the PATHS in
+`templates.thumbnail_url` / `templates.preview_image_url` — never a public URL.
+Both the admin cards and the `/create` paper chooser paint the same row:
+`templatePreviewSource` (in `src/services/templates.js`) picks the column and
+`resolveTemplateImageUrl` signs it through `designer-media?path=…` with the
+caller's session (admin session or designer JWT). Replacing an image upserts
+the same object names, so both screens show the new artwork on their next
+resolve without any code or catalog change. A template with no readable image
+falls back to a blank sheet on `/create`.
+
 ### 2. Google Drive (Optional)
 
 **Configuration:**

@@ -1,9 +1,8 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Loader2Icon, Plus, Save, Edit2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { fetchTemplates, updateTemplate, createTemplate, updateTemplateIdentity, updateTemplatePreview, isTemplateStoragePath, resolveTemplateImageUrl, uploadTemplateAsset, TEMPLATE_SLUG_RE } from '@/services/templates'
+import { fetchTemplates, updateTemplate, createTemplate, updateTemplateIdentity, updateTemplatePreview, isTemplateStoragePath, resolveTemplateImageUrl, templatePreviewSource, uploadTemplateAsset, TEMPLATE_SLUG_RE } from '@/services/templates'
 import { getCatalogItemState } from '@/services/catalog'
-import { templateMiniFor } from '@/templates'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -45,14 +44,9 @@ export function Templates() {
 
   const resolvePreviews = useCallback(async (rows) => {
     const token = await currentAccessToken().catch(() => null)
-    if (!token) return
     const entries = await Promise.all(
       (rows ?? []).map(async (row) => {
-        const source = isTemplateStoragePath(row.preview_image_url)
-          ? row.preview_image_url
-          : isTemplateStoragePath(row.thumbnail_url)
-            ? row.thumbnail_url
-            : null
+        const source = templatePreviewSource(row)
         return [row.id, source ? await resolveTemplateImageUrl(source, token) : null]
       }),
     )
@@ -260,12 +254,12 @@ export function Templates() {
     const list = templates ?? []
     return list.map((template) => {
       const item = getCatalogItemState(template)
-      const Mini = templateMiniFor(template.slug)
       // A stored object path is not an image: use the resolved signed URL,
-      // while a plain URL (or empty) passes straight through.
-      const stored = template.preview_image_url || template.thumbnail_url || ''
-      const previewUrl = previewUrls[template.id] ?? (isTemplateStoragePath(stored) ? '' : stored)
-      return { template, item, Mini, previewUrl }
+      // while a plain URL (or empty) passes straight through. The source is
+      // chosen in ONE place (`templatePreviewSource`), shared with Create.
+      const source = templatePreviewSource(template)
+      const previewUrl = previewUrls[template.id] ?? (isTemplateStoragePath(source) ? '' : source)
+      return { template, item, previewUrl }
     })
   }, [templates, previewUrls])
 
@@ -292,18 +286,11 @@ export function Templates() {
         <Card><CardContent className="py-16 text-center text-sm text-muted-foreground">No templates yet.</CardContent></Card>
       ) : (
         <div className="space-y-6">
-          {(rowsFor || []).map(({ template: t, item, Mini, previewUrl }) => (
+          {(rowsFor || []).map(({ template: t, item, previewUrl }) => (
             <Card key={t.id}>
               <CardHeader>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex flex-wrap items-start gap-3">
-                    <div className="hidden h-20 w-14 shrink-0 overflow-hidden rounded-md border bg-muted/40 sm:grid sm:place-items-center">
-                      {Mini ? (
-                        <div className="grid h-full w-full place-items-center p-1 [&_svg]:max-h-full [&_svg]:max-w-full">
-                          <Mini />
-                        </div>
-                      ) : null}
-                    </div>
                     <div className="min-w-0">
                       <CardTitle className="font-heading text-xl">{t.display_name || t.name}</CardTitle>
                       <CardDescription className="font-mono text-xs">/{t.slug}</CardDescription>
@@ -325,9 +312,9 @@ export function Templates() {
                 <div className="space-y-3">
                   <Label className="text-sm font-medium">Preview Image</Label>
                   <div className="flex items-center gap-4">
-                    <div className="relative w-32 h-24 bg-muted rounded-lg overflow-hidden border border-border flex-shrink-0">
+                    <div className="relative w-28 aspect-[210/297] bg-muted rounded-lg overflow-hidden border border-border flex-shrink-0">
                       {previewUrl ? (
-                        <img src={previewUrl} alt={`${t.name} preview`} className="w-full h-full object-cover" />
+                        <img src={previewUrl} alt={`${t.name} preview`} className="w-full h-full object-contain" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">No preview</div>
                       )}

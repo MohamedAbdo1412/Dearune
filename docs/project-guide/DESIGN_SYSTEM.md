@@ -252,6 +252,25 @@ body, button, input, textarea, select {
 </Card>
 ```
 
+### Create Page Paper Card (`src/styles/book.css`)
+
+The template chooser draws each paper as `.paper-card` (selection ring
+`.is-chosen`, veil `.is-unavailable`, `.is-coming` for unbound papers). Its
+artwork frame is `.paper-art` — a fixed `210 / 297` plate — and the uploaded
+preview inside it is `.paper-photo`:
+
+```jsx
+<span className="paper-art">
+  {src ? <img className="paper-photo" src={src} alt="" loading="lazy" /> : <span className="paper-blank" />}
+</span>
+```
+
+`.paper-photo` uses `object-fit: contain` on a paper-toned sheet so the whole
+uploaded composition stays visible at any aspect ratio; `.paper-blank` is the
+neutral fallback (a blank sheet, no drawn mini). Never place the admin's
+preview image as a CSS `background` behind the old decorative mini — the image
+must be the card's visible artwork.
+
 ### Form Pattern (React Hook Form + Zod)
 
 ```jsx

@@ -446,7 +446,8 @@ QR_CARD_BOX, QR_BOX, IMAGE_LAYERS, PAPER_TEXTURE_RECT
 | `updateTemplatePreview(templateId, preview_image_url, thumbnail_url)` | `Promise<Template>` | Persist preview image paths |
 | `updatePricingRow(pricingId, patch)` | `Promise<void>` | Update a legacy pricing row |
 | `TEMPLATE_SLUG_RE` | `RegExp` | `^[a-z][a-z0-9_-]{0,63}$` — the slug rule the edge function enforces |
-| `isTemplateStoragePath(imageUrl)` | `boolean` | True for `templates/<slug>/…` object paths |
+| `isTemplateStoragePath(imageUrl)` | `boolean` | True for signable `templates/<slug>/<file>` object paths |
+| `templatePreviewSource(template)` | `string` | Which stored value a selection card paints: `thumbnail_url` → `preview_image_url` → legacy `image_url`, ignoring unresolvable leftovers |
 | `uploadTemplateAsset(templateSlug, file, token, { fixed? })` | `Promise<string>` | Upload a preview/thumbnail under the template's slug |
 | `resolveTemplateImageUrl(imageUrl, token)` | `Promise<string \| null>` | Signed URL for a stored path; plain URLs pass through |
 

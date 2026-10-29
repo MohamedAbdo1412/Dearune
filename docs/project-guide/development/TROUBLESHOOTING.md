@@ -198,6 +198,39 @@ refresh token. It must not be "fixed" by disabling token refresh.
 
 ---
 
+### 13. Template Card on `/create` Shows the Blank Sheet (no image)
+
+**Symptom:** the paper chooser lists a template by name, but its card is the
+empty `.paper-blank` sheet even though the admin uploaded a preview.
+
+**Cause, in order of likelihood:**
+
+1. **The row has no image columns set.** The chooser paints
+   `thumbnail_url` → `preview_image_url` → legacy `image_url`
+   (`templatePreviewSource`). A Templates → Edit upload that was never saved
+   leaves the column empty; re-open Edit, upload, and press Save.
+2. **The upload landed but the save didn't.** `updateTemplatePreview` only runs
+   when the value changed; watch the Network tab for the `templates` PATCH. If
+   it 403s, the admin session is gone (new migration/RLS).
+3. **The stored value is the legacy seed** `templates/<slug>.png` — an object
+   that never existed. `templatePreviewSource` ignores it on purpose; upload a
+   real preview.
+4. **Signing failed for this session.** The column holds a private path, so
+   `resolveTemplateImageUrl` must sign it through
+   `GET designer-media?path=templates/<slug>/preview-thumb.webp`. A 401 means
+   the designer JWT expired (sign in again); a 403 means the path does not match
+   `templates/<slug>/<file>`.
+5. **`designer-templates` was not redeployed** after the columns were added to
+   its `select`. The function returns no image fields at all until deployed.
+
+**Check:**
+- [ ] `select thumbnail_url, preview_image_url, image_url from templates where slug = '…';`
+- [ ] DevTools → Network → `designer-media?path=templates/` returns `{ url }`
+- [ ] Compare the admin card (same helpers, admin session) — if it paints, the
+      row and the object are fine and the problem is the designer session
+
+---
+
 ## Debugging Tools
 
 ### Browser Console

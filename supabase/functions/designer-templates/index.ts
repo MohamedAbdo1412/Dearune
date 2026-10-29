@@ -14,6 +14,14 @@ import { requireDesigner } from '../_shared/auth.ts'
 //     "resting" veil and refuse selection (`not_available`).
 // Order is `sort_order ASC, created_at ASC` — the admin's arrangement.
 //
+// THE CARD'S ART COMES FROM HERE TOO: `preview_image_url` (the image the admin
+// uploaded on Templates) with `thumbnail_url` beside it and the legacy
+// `image_url` as the oldest fallback. The columns carry storage PATHS, not
+// URLs — Create resolves them to short-lived signed links through
+// `designer-media` (`templatePreviewSource` / `resolveTemplateImageUrl` in
+// `src/services/templates.js`). Admin and customer cards therefore paint the
+// same object from the same row; replace the image and both follow.
+//
 // Each template carries the wrappers it offers (from the wrapper catalog:
 // `template_wrapper_options` joined to `wrapper_types`). An option row that
 // is disabled or whose wrapper is INACTIVE is not offered (hidden); an
@@ -58,7 +66,7 @@ Deno.serve(async (req) => {
   const [{ data, error }, { data: optionRows, error: optionError }] = await Promise.all([
     sb
       .from('templates')
-      .select('id, slug, name, description, image_url, print_config, sort_order, display_state, created_at')
+      .select('id, slug, name, display_name, description, image_url, preview_image_url, thumbnail_url, public_path, print_config, sort_order, display_state, created_at')
       .eq('enabled', true)
       .is('deleted_at', null)
       .order('sort_order', { ascending: true })
