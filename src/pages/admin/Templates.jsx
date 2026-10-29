@@ -16,7 +16,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { useMedia } from '@/hooks/use-media'
 import { optimizeAndThumbnail } from '@/lib/image-optimizer'
 import { cn } from '@/lib/utils'
 import { currentAccessToken } from '@/lib/supabase'
@@ -55,7 +54,6 @@ export function Templates() {
   const [savingEdit, setSavingEdit] = useState(false)
   
   // Image upload state
-  const { upload: uploadMedia } = useMedia()
   const [uploadingImage, setUploadingImage] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [previewImage, setPreviewImage] = useState(null)
@@ -227,11 +225,12 @@ export function Templates() {
       setUploadProgress(50)
       const token = await currentAccessToken()
       if (!token) throw new Error('No auth token')
-      const mediaRef = await uploadMedia(optimized, { token, kind: 'photo', fixed: 'preview' })
-      setPreviewImage(mediaRef.path)
+      const { uploadDesignerMedia } = await import('@/services/media')
+      const mediaRef = await uploadDesignerMedia(optimized, { token })
+      setPreviewImage(mediaRef.key || mediaRef.path)
       setUploadProgress(75)
-      const thumbRef = await uploadMedia(thumbnail, { token, kind: 'photo', fixed: 'thumb' })
-      setThumbnailPreview(thumbRef.path)
+      const thumbRef = await uploadDesignerMedia(thumbnail, { token })
+      setThumbnailPreview(thumbRef.key || thumbRef.path)
       setUploadProgress(100)
       toast.success('Template preview image uploaded')
     } catch (err) {
