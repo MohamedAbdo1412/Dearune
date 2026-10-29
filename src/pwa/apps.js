@@ -29,9 +29,9 @@ export const MAIN_MANIFEST = '/manifest.webmanifest'
 export const DEARUNE_APPS = [
   {
     id: 'qa',
-    name: 'Dearune QA',
+    name: 'QA',
     label: 'QA',
-    shortName: 'Dearune QA',
+    shortName: 'QA',
     description:
       'Scan QR codes and verify Dearune messages, references and production information.',
     /** the existing admin route — where the desk already lives */
@@ -47,9 +47,9 @@ export const DEARUNE_APPS = [
   },
   {
     id: 'operations',
-    name: 'Dearune Operations',
+    name: 'Operations',
     label: 'Operations',
-    shortName: 'Dearune Ops',
+    shortName: 'Ops',
     description:
       'Manage orders, production stages, manufacturing information and operational documents.',
     route: '/admin/operations',
@@ -62,9 +62,9 @@ export const DEARUNE_APPS = [
   },
   {
     id: 'designer',
-    name: 'Dearune Designer',
+    name: 'Designer',
     label: 'Designer',
-    shortName: 'Dearune Design',
+    shortName: 'Designer',
     description: 'Access design work and prepare personalized customer messages.',
     route: '/admin/designers',
     startUrl: '/admin/designers',
