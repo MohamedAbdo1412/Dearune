@@ -1181,7 +1181,7 @@ grant execute on function public.shipping_carrier(text) to authenticated, servic
 -- Columns are renamed (`qr_target`/`qr_ready` → the four named QR facts), so the
 -- view is dropped and recreated rather than replaced. Nothing else depends on
 -- it, and the select grant is restored immediately.
-drop view if exists public.ops_orders;
+drop view if exists public.ops_orders cascade;
 
 create view public.ops_orders
 with (security_invoker = true) as

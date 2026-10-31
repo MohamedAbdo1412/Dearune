@@ -15,6 +15,7 @@ import { Templates } from '@/pages/admin/Templates'
 import { Wrappers } from '@/pages/admin/Wrappers'
 import { Settings } from '@/pages/admin/Settings'
 import { Operations } from '@/pages/admin/Operations'
+import { FullData } from '@/pages/admin/FullData'
 import { QaScanner } from '@/pages/admin/QaScanner'
 import { Users } from '@/pages/admin/Users'
 import { UserDetail } from '@/pages/admin/UserDetail'
@@ -211,6 +212,10 @@ export default function App() {
         <Route path="operations/shipping" element={<Operations section="shipping" />} />
         <Route path="operations/delivery" element={<Operations section="delivery" />} />
         <Route path="operations/after-sale" element={<Operations section="after-sale" />} />
+        {/* The Unopened Messages subsection — filtered by message_active + recipient_opened_at */}
+        <Route path="operations/unopened" element={<Operations section="unopened" />} />
+        {/* Full Data — the administrative master view (one row per Dearune) */}
+        <Route path="full-data" element={<FullData />} />
         {/* The QA desk — the admin-only scanner. The public /qa/* benches above
             are visual pages and stay out of the admin menu. */}
         <Route path="qa" element={<QaScanner />} />

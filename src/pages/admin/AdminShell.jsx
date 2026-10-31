@@ -16,6 +16,7 @@ import {
   Smartphone,
   MessageCircle,
   Wallet,
+  Database,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
@@ -41,6 +42,7 @@ const NAV_ITEMS = [
   // The three installable apps. The section they open is the same section.
   { to: '/admin/apps', label: 'Apps', icon: Smartphone },
   { to: '/admin/operations', label: 'Operations', icon: Factory },
+  { to: '/admin/full-data', label: 'Full Data', icon: Database },
   { to: '/admin/designers', label: 'Designers', icon: Users },
   { to: '/admin/templates', label: 'Templates', icon: Palette },
   { to: '/admin/wrappers', label: 'Wrappers', icon: Package },

@@ -17,7 +17,6 @@ import {
   moveToAfterSale,
   refundState,
   shipmentStateLabel,
-  startMaking,
 } from '@/services/ops-orders'
 import {
   AlertDialog,
@@ -223,24 +222,6 @@ export function OrderDetailSheet({
             <Separator />
 
             {/* ---- stage actions ------------------------------------------- */}
-            {order.milestone === 'sold' && !order.is_digital && (
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Making</p>
-                <p className="text-xs text-muted-foreground">
-                  The order is sold but no workshop unit is being made yet. Starting Making opens production for this one
-                  order — same Dearune ID, same QR.
-                </p>
-                <Button
-                  size="sm"
-                  disabled={busy === 'start' || maintenance}
-                  onClick={() => void run('start', () => startMaking(order.project_id), 'Moved to Making')}
-                >
-                  {busy === 'start' ? <Loader2Icon className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-                  Start making
-                </Button>
-              </div>
-            )}
-
             {order.milestone === 'making' && (
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Making</p>

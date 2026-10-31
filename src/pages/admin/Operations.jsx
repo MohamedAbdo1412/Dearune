@@ -20,8 +20,11 @@ import {
   fetchMilestoneCounts,
   fetchOrders,
   fetchUnitIdsForProjects,
+  fetchUnopenedCount,
   moveToAfterSale,
+  runBulkTransition,
   sectionByKey,
+  summarizeBulkResults,
 } from '@/services/ops-orders'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -72,9 +75,13 @@ export function Operations({ section = 'making' }) {
   const [refreshToken, setRefreshToken] = useState(0)
 
   const [counts, setCounts] = useState(null)
+  const [unopenedCount, setUnopenedCount] = useState(0)
   const [designers, setDesigners] = useState([])
   const [selected, setSelected] = useState(() => new Set())
   const [busyId, setBusyId] = useState(null)
+  const [bulkAction, setBulkAction] = useState(null)
+  const [bulkConfirm, setBulkConfirm] = useState(false)
+  const [bulkResults, setBulkResults] = useState(null)
 
   const [detail, setDetail] = useState(null)
   const [detailOpen, setDetailOpen] = useState(false)
@@ -144,6 +151,16 @@ export function Operations({ section = 'making' }) {
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    let active = true
+    fetchUnopenedCount()
+      .then((count) => active && setUnopenedCount(count))
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [refreshToken])
 
   const onFilterChange = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }))
@@ -215,6 +232,97 @@ export function Operations({ section = 'making' }) {
     }
   }
 
+  // Bulk actions — each section gets the actions appropriate to its stage.
+  const bulkActionConfig = {
+    making: [
+      { key: 'making-complete', label: 'Mark made', transition: 'making-complete', reason: 'Bulk making complete' },
+    ],
+    shipping: [
+      { key: 'export-egypt-post', label: 'Export Egypt Post manifest', transition: 'manifest-export', carrier: 'egypt_post' },
+      { key: 'export-bosta', label: 'Export Bosta upload', transition: 'manifest-export', carrier: 'bosta' },
+      { key: 'ship', label: 'Mark shipped', transition: 'ship', requireTracking: true },
+    ],
+    delivery: [
+      { key: 'deliver', label: 'Mark delivered', transition: 'deliver', reason: 'Bulk delivered' },
+    ],
+    'after-sale': [
+      { key: 'refund', label: 'Record refunds…', transition: 'record-refund-bulk' },
+    ],
+    unopened: [],
+  }
+
+  const startBulkAction = (action) => {
+    if (selectedRows.length === 0) return
+    setBulkAction(action)
+    setBulkConfirm(true)
+  }
+
+  const executeBulkAction = async () => {
+    if (!bulkAction || selectedRows.length === 0) return
+    setBulkConfirm(false)
+    setBulkResults(null)
+
+    const projectIds = selectedRows.map((order) => order.project_id)
+
+    try {
+      let result
+      if (bulkAction.transition === 'manifest-export') {
+        // Manifest export uses a different flow — open the export dialog
+        // For now, we'll handle this in the dialog component
+        toast.info('Opening manifest export…')
+        setBulkAction(null)
+        return
+      }
+      if (bulkAction.transition === 'record-refund-bulk') {
+        // Refund bulk opens a dialog for per-order amounts
+        toast.info('Opening bulk refund dialog…')
+        setBulkAction(null)
+        return
+      }
+      if (bulkAction.transition === 'ship') {
+        // Shipping requires carrier and tracking per order — validate first
+        const missingTracking = selectedRows.filter((order) => !order.tracking_code && !order.carrier_reference)
+        if (missingTracking.length > 0) {
+          toast.error(`${missingTracking.length} order(s) missing tracking number`)
+          setBulkResults({
+            summary: `${selectedRows.length - missingTracking.length} ready, ${missingTracking.length} missing tracking`,
+            failed: missingTracking.map((order) => ({ project_id: order.project_id, error: 'Missing tracking' })),
+          })
+          return
+        }
+        // Group by carrier for the bulk call
+        const byCarrier = selectedRows.reduce((acc, order) => {
+          const carrier = order.carrier || 'bosta'
+          if (!acc[carrier]) acc[carrier] = []
+          acc[carrier].push({ projectId: order.project_id, tracking: order.tracking_code || order.carrier_reference })
+          return acc
+        }, {})
+        const allResults = []
+        for (const [carrier, orders] of Object.entries(byCarrier)) {
+          result = await runBulkTransition(orders.map((o) => o.projectId), 'ship', { carrier, tracking: orders.map((o) => o.tracking) })
+          allResults.push(...(result.results ?? []))
+        }
+        setBulkResults(summarizeBulkResults(allResults))
+      } else {
+        result = await runBulkTransition(projectIds, bulkAction.transition, { reason: bulkAction.reason })
+        setBulkResults(summarizeBulkResults(result.results ?? []))
+      }
+      if (result?.results) {
+        toast.success(result.results.filter((r) => r.ok).length > 0 ? 'Bulk action completed' : 'Bulk action completed with errors')
+      }
+      refresh()
+      setSelected(new Set())
+    } catch (err) {
+      toast.error(messageOf(err))
+    } finally {
+      setBulkAction(null)
+    }
+  }
+
+  const clearBulkResults = () => {
+    setBulkResults(null)
+  }
+
   const printOrders = async (orders) => {
     const active = (orders ?? []).filter((order) => !order.archived_at)
     if (active.length === 0) {
@@ -264,7 +372,7 @@ export function Operations({ section = 'making' }) {
         </div>
       </div>
 
-      <OperationsSectionNav activeKey={section} counts={counts} />
+      <OperationsSectionNav activeKey={section} counts={counts} unopenedCount={unopenedCount} />
 
       <OperationsFilterBar
         section={section}
@@ -278,19 +386,37 @@ export function Operations({ section = 'making' }) {
       />
 
       {selectedRows.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2.5">
-          <span className="text-sm text-muted-foreground">{selectedRows.length} selected</span>
-          <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
-            {section === 'making' ? (
-              <Button size="sm" onClick={() => void printOrders(selectedRows)}>
-                <Printer className="size-4" />
-                Print papers
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2.5">
+            <span className="text-sm text-muted-foreground">{selectedRows.length} selected</span>
+            <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+              {section === 'making' ? (
+                <Button size="sm" onClick={() => void printOrders(selectedRows)}>
+                  <Printer className="size-4" />
+                  Print papers
+                </Button>
+              ) : null}
+              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                Clear selection
               </Button>
-            ) : null}
-            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-              Clear selection
-            </Button>
+            </div>
           </div>
+          {bulkActionConfig[section]?.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-primary/5 px-3 py-2.5">
+              <span className="text-sm font-medium text-primary">Bulk actions:</span>
+              {bulkActionConfig[section].map((action) => (
+                <Button
+                  key={action.key}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => startBulkAction(action)}
+                  disabled={maintenance}
+                >
+                  {action.label}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -444,6 +570,55 @@ export function Operations({ section = 'making' }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {bulkConfirm && bulkAction && (
+        <AlertDialog
+          open={bulkConfirm}
+          onOpenChange={(open) => {
+            if (!open) setBulkConfirm(false)
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirm bulk action: {bulkAction.label}</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will apply <strong>{bulkAction.label}</strong> to <strong>{selectedRows.length}</strong> selected order(s).
+                Each order is processed individually — you will see per-order success or failure with reasons.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setBulkConfirm(false)}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => void executeBulkAction()}>
+                Confirm {bulkAction.label}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {bulkResults && (
+        <AlertDialog open={true} onOpenChange={clearBulkResults}>
+          <AlertDialogContent className="max-w-2xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Bulk action result</AlertDialogTitle>
+              <AlertDialogDescription>{bulkResults.summary}</AlertDialogDescription>
+            </AlertDialogHeader>
+            {bulkResults.failures.length > 0 && (
+              <div className="mt-4 max-h-60 overflow-auto space-y-2">
+                {bulkResults.failures.map((failure, index) => (
+                  <div key={index} className="rounded-md border bg-destructive/10 p-3 text-sm">
+                    <p className="font-medium">{failure.project_id}</p>
+                    <p className="text-destructive">{failure.error ?? failure.message}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            <AlertDialogFooter>
+              <AlertDialogAction onClick={clearBulkResults}>Dismiss</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   )
 }

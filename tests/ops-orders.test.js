@@ -52,18 +52,20 @@ function build({ section = 'making', filters = {}, sortKey = 'newest' } = {}) {
 }
 
 describe('sections', () => {
-  it('has exactly four subsections of one record set', () => {
+  it('has exactly five subsections of one record set', () => {
     expect(ORDER_SECTIONS.map((section) => section.key)).toEqual([
       'making',
       'shipping',
       'delivery',
       'after-sale',
+      'unopened',
     ])
     expect(ORDER_SECTIONS.map((section) => section.path)).toEqual([
       '/admin/operations',
       '/admin/operations/shipping',
       '/admin/operations/delivery',
       '/admin/operations/after-sale',
+      '/admin/operations/unopened',
     ])
   })
 
@@ -81,11 +83,13 @@ describe('sections', () => {
   it('scopes each section to its milestones of the one enum', () => {
     // Making is both 'sold' (no work started yet) and 'making'; nothing else is
     // duplicated, so every order appears in exactly one production section.
+    // Unopened is a filter on message_active + recipient_opened_at, not a milestone window.
     expect(ORDER_SECTIONS.map((section) => [section.key, section.milestones])).toEqual([
       ['making', ['sold', 'making']],
       ['shipping', ['shipping']],
       ['delivery', ['delivery', 'delivered']],
       ['after-sale', ['after_sale']],
+      ['unopened', ['sold', 'making', 'shipping', 'delivery', 'delivered', 'after_sale']],
     ])
   })
 
@@ -325,7 +329,7 @@ describe('presentation helpers', () => {
 
   it('offers one next action per state', () => {
     expect(nextAction({ milestone: 'configured' })).toBeNull()
-    expect(nextAction({ milestone: 'sold', is_digital: false })).toEqual({ key: 'making-start', label: 'Start making' })
+    expect(nextAction({ milestone: 'sold', is_digital: false })).toEqual({ key: 'making-complete', label: 'Finish Making' })
     expect(nextAction({ milestone: 'sold', is_digital: true })).toBeNull()
     expect(nextAction({ milestone: 'making' })).toEqual({ key: 'making-complete', label: 'Finish Making' })
     expect(nextAction({ milestone: 'shipping' })).toEqual({ key: 'ship', label: 'Mark shipped' })

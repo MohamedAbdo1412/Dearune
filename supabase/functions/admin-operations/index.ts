@@ -16,20 +16,21 @@ import { requireAdmin } from '../_shared/auth.ts'
 // The database has the final word, so a future caller cannot skip the rules.
 //
 // Actions
-//   ensure            Make sure a Dearune's physical units exist (idempotent).
-//   making-start      Enter the workshop (paid physical Dearune).
-//   making-complete   Making → Shipping.
-//   shipment-save     Persist the carrier choice before hand-off.
-//   ship              Shipping → Delivery. Hand-off AND leaving the queue.
-//   deliver           Delivery → Delivered. A state, not an archive.
-//   after-sale        Delivered → After-Sale.
-//   record-refund     Record money returned (manual ledger, no provider call).
-//   manifest-preview  Match a carrier manifest against orders. Read-only.
-//   manifest-commit   Store the manifest snapshot and ship the resolved rows.
-//   update            Correct a unit's own notes. Never touches an id.
-//   archive / restore Hide units from the workshop views. Never deletes.
-//   update-contact    Correct the delivery phone against its real owner.
-//   update-designer   Correct the Designer name / ID against its real owner.
+//   ensure               Make sure a Dearune's physical units exist (idempotent).
+//   making-complete      Making → Shipping.
+//   shipment-save        Persist the carrier choice before hand-off.
+//   ship                 Shipping → Delivery. Hand-off AND leaving the queue.
+//   deliver              Delivery → Delivered. A state, not an archive.
+//   after-sale           Delivered → After-Sale.
+//   record-refund        Record money returned (manual ledger, no provider call).
+//   manifest-preview     Match a carrier manifest against orders. Read-only.
+//   manifest-commit      Store the manifest snapshot and ship the resolved rows.
+//   manifest-export      Generate a carrier export workbook (Egypt Post / Bosta).
+//   bulk-transition      Run a transition (making-complete, ship, deliver, after-sale) over many orders.
+//   update               Correct a unit's own notes. Never touches an id.
+//   archive / restore    Hide units from the workshop views. Never deletes.
+//   update-contact       Correct the delivery phone against its real owner.
+//   update-designer      Correct the Designer name / ID against its real owner.
 
 type Row = Record<string, unknown>
 
@@ -526,15 +527,6 @@ Deno.serve(async (req) => {
   }
 
   // -- making ---------------------------------------------------------------
-  if (action === 'making-start') {
-    const projectId = asText(body.projectId, 64)
-    if (!projectId) return errorResponse('Missing Dearune id', 400)
-
-    const result = await callRpc(sb, 'ops_start_work_order', { p_project_id: projectId, p_actor: admin.id })
-    if (result.error) return errorResponse(result.error, result.conflict ? 409 : 400)
-    return jsonResponse({ ok: true, project: result.data })
-  }
-
   if (action === 'making-complete') {
     const projectId = asText(body.projectId, 64)
     if (!projectId) return errorResponse('Missing Dearune id', 400)
@@ -612,6 +604,196 @@ Deno.serve(async (req) => {
     })
     if (result.error) return errorResponse(result.error, result.conflict ? 409 : 400)
     return jsonResponse({ ok: true, project: result.data })
+  }
+
+  // -- bulk transitions -------------------------------------------------------
+  // Runs a transition over many orders, returning per-order results.
+  // This reuses the same ops_* RPCs the individual actions use, so the
+  // validation, idempotency and audit trail are identical.
+  if (action === 'bulk-transition') {
+    const projectIds = Array.isArray(body.projectIds) ? body.projectIds.map((id) => asText(id, 64)).filter(Boolean) : []
+    const transition = asText(body.transition, 30)
+    if (!projectIds.length) return errorResponse('Select at least one order', 400)
+    if (!['making-complete', 'ship', 'deliver', 'after-sale'].includes(transition)) {
+      return errorResponse('Unknown transition', 400)
+    }
+
+    const results = []
+    for (const projectId of projectIds) {
+      let result
+      if (transition === 'making-complete') {
+        // For making-complete, ensure physical products exist first (idempotent)
+        const project = await loadProject(sb, projectId)
+        if (project && !(await isDigitalWrapper(sb, asText(project.wrapper_type, 30)))) {
+          await callRpc(sb, 'ops_start_work_order', { p_project_id: projectId, p_actor: admin.id })
+          await sb.rpc('ensure_physical_products', { p_project_id: projectId, p_units: 1, p_actor: admin.id })
+        }
+        result = await callRpc(sb, 'ops_making_complete', {
+          p_project_id: projectId,
+          p_actor: admin.id,
+          p_reason: asText(body.reason, 300) || 'Bulk making complete',
+        })
+      } else if (transition === 'ship') {
+        const carrier = asText(body.carrier, 30)
+        const tracking = asText(body.tracking, 80)
+        if (!CARRIERS.includes(carrier)) {
+          results.push({ projectId, ok: false, error: 'Invalid carrier' })
+          continue
+        }
+        if (!tracking) {
+          results.push({ projectId, ok: false, error: 'Missing tracking number' })
+          continue
+        }
+        result = await callRpc(sb, 'ops_ship', {
+          p_project_id: projectId,
+          p_carrier: carrier,
+          p_tracking: tracking,
+          p_manifest_id: asText(body.manifestId, 64) || null,
+          p_actor: admin.id,
+          p_at: asTimestamp(body.at),
+        })
+      } else if (transition === 'deliver') {
+        result = await callRpc(sb, 'ops_deliver', {
+          p_project_id: projectId,
+          p_actor: admin.id,
+          p_at: asTimestamp(body.at),
+          p_reason: asText(body.reason, 300) || 'Bulk delivered',
+        })
+      } else if (transition === 'after-sale') {
+        result = await callRpc(sb, 'ops_after_sale', {
+          p_project_id: projectId,
+          p_actor: admin.id,
+          p_reason: asText(body.reason, 300) || 'Bulk moved to After-Sale',
+        })
+      }
+      results.push({
+        projectId,
+        ok: !result.error,
+        error: result.error ?? null,
+        milestone: result.data?.milestone ?? null,
+      })
+    }
+    return jsonResponse({ ok: true, results })
+  }
+
+  // -- manifest export --------------------------------------------------------
+  // Generates a carrier export workbook (Egypt Post or Bosta) for the selected
+  // orders. The workbook is recorded in shipment_manifests with direction='export'
+  // so there is an audit trail, but no order is marked as shipped.
+  if (action === 'manifest-export') {
+    const projectIds = Array.isArray(body.projectIds) ? body.projectIds.map((id) => asText(id, 64)).filter(Boolean) : []
+    const carrier = asText(body.carrier, 30)
+    if (!projectIds.length) return errorResponse('Select at least one order', 400)
+    if (!CARRIERS.includes(carrier)) return errorResponse('Choose Bosta or Egypt Post', 400)
+
+    // Fetch the orders with their shipping details
+    const { data: orders, error } = await sb
+      .from('ops_orders')
+      .select(
+        'project_id, canonical_id, recipient_name, customer_phone, address_line1, address_line2, city, state_province, governorate, district, postal_code, country, special_instructions, carrier, carrier_reference, tracking_code, milestone, sold_id, unit_reference, unit_count, is_digital, title, public_id, public_token, wrapper_type, template_slug, sale_price, currency, paid_at, shipped_at, arrived_at, milestone_updated_at, message_active, recipient_opened_at, recipient_open_count'
+      )
+      .in('project_id', projectIds)
+    if (error) return errorResponse('Could not fetch orders', 500)
+
+    // Build the workbook using the carrier adapters
+    const ExcelJS = (await import('exceljs')).default
+    let workbook
+    let filename
+
+    if (carrier === 'egypt_post') {
+      // Load the Egypt Post template
+      const templateUrl = new URL('../assets/productionDocuments/Egypt Post Manifest.xlsx', import.meta.url).href
+      const templateResponse = await fetch(templateUrl)
+      if (!templateResponse.ok) return errorResponse('Could not load Egypt Post template', 500)
+      const templateBytes = await templateResponse.arrayBuffer()
+      workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(templateBytes)
+
+      const sheet = workbook.getWorksheet('Sheet1')
+      if (!sheet) return errorResponse('Egypt Post template missing Sheet1', 500)
+
+      // Write orders starting at row 2 (row 1 is headers)
+      let rowNum = 2
+      for (const order of orders ?? []) {
+        if (order.is_digital) continue // Digital orders don't ship
+        if (!order.tracking_code && !order.carrier_reference) continue // No tracking = can't export
+
+        sheet.getCell(rowNum, 1).value = rowNum - 1 // Package_Serial
+        sheet.getCell(rowNum, 2).value = order.title ?? 'Dearune letter' // Description
+        sheet.getCell(rowNum, 3).value = 0.1 // Total_Weight (placeholder)
+        sheet.getCell(rowNum, 4).value = 'Small' // Package_volume
+        sheet.getCell(rowNum, 5).value = Number(order.sale_price ?? 0) // COD_Value
+        sheet.getCell(rowNum, 6).value = order.special_instructions ?? '' // Item_Special_Notes
+        sheet.getCell(rowNum, 7).value = order.recipient_name ?? '' // Customer_Name
+        sheet.getCell(rowNum, 8).value = order.customer_phone ?? '' // Mobile_No
+        sheet.getCell(rowNum, 9).value = order.address_line1 ?? '' // Street
+        sheet.getCell(rowNum, 10).value = order.city ?? '' // City
+        sheet.getCell(rowNum, 11).value = order.canonical_id // Package_Ref. Number
+        sheet.getCell(rowNum, 12).value = 'Dearune Studio' // Merchant_Name
+        sheet.getCell(rowNum, 13).value = 'Main Warehouse' // Warehouse_Name
+        sheet.getCell(rowNum, 14).value = 'yes' // HasPOD
+        sheet.getCell(rowNum, 15).value = 'Dearune Studio' // SellerName
+        sheet.getCell(rowNum, 16).value = order.tracking_code ?? order.carrier_reference ?? '' // Post_Id
+
+        rowNum++
+      }
+
+      filename = `Egypt-Post-Manifest-Export-${new Date().toISOString().slice(0, 10)}.xlsx`
+    } else if (carrier === 'bosta') {
+      // Load the Bosta template
+      const templateUrl = new URL('../assets/productionDocuments/Bosta Upload Template AR V3.5.xlsx', import.meta.url).href
+      const templateResponse = await fetch(templateUrl)
+      if (!templateResponse.ok) return errorResponse('Could not load Bosta template', 500)
+      const templateBytes = await templateResponse.arrayBuffer()
+      workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(templateBytes)
+
+      const sheet = workbook.getWorksheet('Add orders here')
+      if (!sheet) return errorResponse('Bosta template missing "Add orders here" sheet', 500)
+
+      // Write orders starting at row 3 (row 2 is headers)
+      let rowNum = 3
+      for (const order of orders ?? []) {
+        if (order.is_digital) continue // Digital orders don't ship
+        if (!order.tracking_code && !order.carrier_reference) continue
+
+        sheet.getCell(rowNum, 1).value = order.recipient_name ?? '' // * اسم العميل
+        sheet.getCell(rowNum, 2).value = order.customer_phone ?? '' // * تليفون
+        sheet.getCell(rowNum, 4).value = order.city ?? '' // * المدينة
+        sheet.getCell(rowNum, 6).value = [order.address_line1, order.address_line2].filter(Boolean).join(', ') // * العنوان
+        sheet.getCell(rowNum, 10).value = order.special_instructions ?? '' // ملاحظات
+        sheet.getCell(rowNum, 12).value = Number(order.sale_price ?? 0) // قيمة التحصيل النقدي
+        sheet.getCell(rowNum, 13).value = 1 // عدد القطع
+        sheet.getCell(rowNum, 14).value = `Dearune letter - ${order.canonical_id}` // وصف الشحنة
+        sheet.getCell(rowNum, 15).value = order.canonical_id // مرجع الطلب
+        sheet.getCell(rowNum, 16).value = Number(order.sale_price ?? 0) // قيمة الشحنة
+        sheet.getCell(rowNum, 26).value = 'normal' // نوع الشحنة
+
+        rowNum++
+      }
+
+      filename = `Bosta-Upload-Export-${new Date().toISOString().slice(0, 10)}.xlsx`
+    }
+
+    // Save the manifest record with direction='export'
+    const buffer = await workbook.xlsx.writeBuffer()
+    const { data: manifest, error: manifestError } = await sb
+      .from('shipment_manifests')
+      .insert({
+        carrier,
+        filename,
+        row_count: (orders ?? []).filter((o) => !o.is_digital && (o.tracking_code || o.carrier_reference)).length,
+        file_bytes: Array.from(new Uint8Array(buffer)),
+        direction: 'export',
+        imported_by: admin.id,
+      })
+      .select('id')
+      .single()
+    if (manifestError) return errorResponse('Could not save manifest record', 500)
+
+    // Return the workbook as base64 for the frontend to download
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)))
+    return jsonResponse({ ok: true, manifestId: manifest.id, filename, base64, carrier, rowCount: rowNum - (carrier === 'egypt_post' ? 2 : 3) })
   }
 
   // -- refunds --------------------------------------------------------------

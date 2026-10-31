@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Factory, LifeBuoy, PackageCheck, Truck } from 'lucide-react'
+import { Factory, LifeBuoy, MessageCircle, PackageCheck, Truck } from 'lucide-react'
 import { ORDER_SECTIONS } from '@/services/ops-orders'
 import { cn } from '@/lib/utils'
 
@@ -14,6 +14,7 @@ const ICONS = {
   shipping: Truck,
   delivery: PackageCheck,
   'after-sale': LifeBuoy,
+  unopened: MessageCircle,
 }
 
 function sectionTotal(counts, section) {
@@ -22,13 +23,14 @@ function sectionTotal(counts, section) {
   return counts[section.milestone] ?? 0
 }
 
-export function OperationsSectionNav({ activeKey, counts }) {
+export function OperationsSectionNav({ activeKey, counts, unopenedCount = 0 }) {
   return (
-    <nav aria-label="Operations subsections" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+    <nav aria-label="Operations subsections" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
       {ORDER_SECTIONS.map((section) => {
         const Icon = ICONS[section.key] ?? Factory
         const active = section.key === activeKey
-        const total = sectionTotal(counts, section)
+        let total = sectionTotal(counts, section)
+        if (section.key === 'unopened') total = unopenedCount
         return (
           <Link
             key={section.key}

@@ -1,4 +1,4 @@
-import { ChevronRight, Loader2Icon, Printer } from 'lucide-react'
+import { ChevronRight, Loader2Icon, Printer, MessageSquare, ExternalLink } from 'lucide-react'
 import { formatDateTime, formatMoney } from '@/services/format'
 import { carrierLabel } from '@/services/carriers'
 import { QR_BLOCKED_LABELS } from '@/services/qrState'
@@ -6,6 +6,7 @@ import {
   MILESTONE_LABELS,
   isDelivered,
   nextAction,
+  orderTitle,
   refundState,
   rowStateClass,
   shipmentStateLabel,
@@ -47,12 +48,57 @@ function IdCell({ order }) {
   )
 }
 
-function RecipientCell({ order }) {
+function DearuneNameCell({ order }) {
+  const title = orderTitle(order)
+  const recipient = order.recipient_name
   return (
     <span className="block">
-      <span className="block truncate text-sm">{order.recipient_name || '—'}</span>
-      <span className="block truncate text-xs text-muted-foreground">{order.customer_phone || 'no number on file'}</span>
+      <span className="block truncate text-sm font-medium">{title}</span>
+      {recipient && recipient !== title && (
+        <span className="block truncate text-xs text-muted-foreground">Handed to: {recipient}</span>
+      )}
+      {!recipient && (
+        <span className="block truncate text-xs text-muted-foreground">—</span>
+      )}
     </span>
+  )
+}
+
+function MessageInfoCell({ order }) {
+  return (
+    <span className="block">
+      <span className="block truncate text-xs text-muted-foreground">
+        {order.message_active ? 'Published' : 'Not published'}
+        {order.message_activated_at ? ` · Activated ${formatDateTime(order.message_activated_at)}` : ''}
+        {order.recipient_opened_at ? ` · Opened ${formatDateTime(order.recipient_opened_at)}` : ' · Never opened'}
+        {order.recipient_open_count > 0 ? ` (${order.recipient_open_count}x)` : ''}
+      </span>
+    </span>
+  )
+}
+
+function OpenMessageButton({ order, onOpen }) {
+  if (!order.public_id || !order.public_token) {
+    return (
+      <Button size="sm" variant="ghost" disabled title="No public link available">
+        <MessageSquare className="size-4" />
+        <span className="sr-only">Open message</span>
+      </Button>
+    )
+  }
+  const url = `/message/${order.public_id}?token=${encodeURIComponent(order.public_token)}`
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+      title="Open the recipient's message (preview only — does not count as a recipient open)"
+    >
+      <MessageSquare className="size-4" />
+      <ExternalLink className="size-3" />
+      <span>Open message</span>
+    </a>
   )
 }
 
@@ -103,6 +149,7 @@ export function OrderTable({
   const showCarrier = section === 'shipping' || section === 'delivery' || section === 'after-sale'
   const showRefund = section === 'after-sale' || section === 'delivery'
   const showMaking = section === 'making'
+  const showUnopened = section === 'unopened'
 
   return (
     <>
@@ -203,7 +250,11 @@ export function OrderTable({
                 <Checkbox checked={allSelected} onCheckedChange={onSelectAll} aria-label="Select every visible order" />
               </TableHead>
               <TableHead>Dearune</TableHead>
-              <TableHead>Recipient</TableHead>
+              {showUnopened ? (
+                <TableHead>Message</TableHead>
+              ) : (
+                <TableHead>Recipient</TableHead>
+              )}
               <TableHead className="hidden lg:table-cell">Designer</TableHead>
               {showMaking ? <TableHead className="hidden xl:table-cell">Units</TableHead> : null}
               {showCarrier ? <TableHead>Shipment</TableHead> : null}
@@ -238,13 +289,26 @@ export function OrderTable({
                       <IdCell order={order} />
                     </button>
                   </TableCell>
-                  <TableCell>
-                    <RecipientCell order={order} />
-                  </TableCell>
-                  <TableCell className="hidden lg:table-cell">
-                    <span className="block truncate text-sm">{order.designer_name || '—'}</span>
-                    <span className="block truncate text-xs text-muted-foreground">{order.designer_code || ''}</span>
-                  </TableCell>
+                  {showUnopened ? (
+                    <>
+                      <TableCell>
+                        <DearuneNameCell order={order} />
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        <MessageInfoCell order={order} />
+                      </TableCell>
+                    </>
+                  ) : (
+                    <>
+                      <TableCell>
+                        <DearuneNameCell order={order} />
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        <span className="block truncate text-sm">{order.designer_name || '—'}</span>
+                        <span className="block truncate text-xs text-muted-foreground">{order.designer_code || ''}</span>
+                      </TableCell>
+                    </>
+                  )}
                   {showMaking ? (
                     <TableCell className="hidden xl:table-cell">
                       <span className="text-sm tabular-nums">{Number(order.unit_count) || 0}</span>
@@ -290,12 +354,16 @@ export function OrderTable({
                           <span className="sr-only">Print papers</span>
                         </Button>
                       ) : null}
-                      <ActionButton
-                        order={order}
-                        onAction={onAction}
-                        onOpen={onOpen}
-                        busy={busyId === order.project_id}
-                      />
+                      {showUnopened ? (
+                        <OpenMessageButton order={order} onOpen={onOpen} />
+                      ) : (
+                        <ActionButton
+                          order={order}
+                          onAction={onAction}
+                          onOpen={onOpen}
+                          busy={busyId === order.project_id}
+                        />
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

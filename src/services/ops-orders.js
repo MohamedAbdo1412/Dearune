@@ -69,6 +69,9 @@ export const ORDER_COLUMNS = [
   'qr_activated',
   'qr_openable',
   'qr_blocked_reason',
+  'message_activated_at',
+  'recipient_opened_at',
+  'recipient_open_count',
 ].join(', ')
 
 // ---------------------------------------------------------------------------
@@ -105,6 +108,15 @@ export const ORDER_SECTIONS = [
     path: '/admin/operations/after-sale',
     description: 'Refunds, complaints, corrections and post-delivery history.',
   },
+  {
+    key: 'unopened',
+    milestones: ['sold', 'making', 'shipping', 'delivery', 'delivered', 'after_sale'],
+    label: 'Unopened Messages',
+    path: '/admin/operations/unopened',
+    description:
+      'Published Dearunes whose recipient has not opened the letter yet. Opening one here is a preview, not a recipient read.',
+    unopened: true,
+  },
 ]
 
 // `delivered` is a real milestone but not a section of its own: a delivered
@@ -112,6 +124,12 @@ export const ORDER_SECTIONS = [
 // After-Sale. This is what makes the "Delivered" action a state change rather
 // than an archive.
 export const DELIVERY_MILESTONES = ['delivery', 'delivered']
+
+// The Unopened Messages section is a filter on message_active + recipient_opened_at
+// rather than a milestone window, so it gets its own flag on the section object.
+export function isUnopenedSection(key) {
+  return key === 'unopened'
+}
 
 export function sectionByKey(key) {
   return ORDER_SECTIONS.find((section) => section.key === key) ?? ORDER_SECTIONS[0]
@@ -164,6 +182,9 @@ export const ORDER_SORTS = [
   { key: 'delivered', label: 'Delivered on', column: 'shipment_delivered_at' },
   { key: 'refunded', label: 'Refunded amount', column: 'refunded_amount' },
   { key: 'price', label: 'Sale price', column: 'sale_price' },
+  // Unopened-specific sorts
+  { key: 'activated', label: 'Message activated', column: 'message_activated_at' },
+  { key: 'opened', label: 'First opened', column: 'recipient_opened_at' },
 ]
 
 export function sortDefinition(key) {
@@ -216,10 +237,16 @@ function dayEnd(value) {
 export function applyOrderFilters(query, { section, filters = {}, sortKey = 'newest' } = {}) {
   const definition = sectionByKey(section)
 
-  // A section is a window onto the one milestone column. Delivery shows both
-  // `delivery` and `delivered` because a delivered parcel stays on that screen
-  // until it is moved to After-Sale.
-  query = query.in('milestone', definition.milestones)
+  // The Unopened Messages section is NOT a milestone window — it is a filter
+  // on message_active + recipient_opened_at over the same ops_orders view.
+  if (isUnopenedSection(section)) {
+    query = query.eq('message_active', true).is('recipient_opened_at', null)
+  } else {
+    // A section is a window onto the one milestone column. Delivery shows both
+    // `delivery` and `delivered` because a delivered parcel stays on that screen
+    // until it is moved to After-Sale.
+    query = query.in('milestone', definition.milestones)
+  }
 
   const search = sanitizeSearch(filters.query)
   if (search) {
@@ -252,11 +279,20 @@ export function applyOrderFilters(query, { section, filters = {}, sortKey = 'new
   if (movedFrom) query = query.gte('milestone_updated_at', movedFrom)
   if (movedTo) query = query.lte('milestone_updated_at', movedTo)
 
-  const sort = sortDefinition(sortKey)
-  const ascending = Boolean(sort.ascending)
-  query = query.order(sort.column, { ascending, nullsFirst: false })
-  // Deterministic tie-break: the same query always returns the same page.
-  query = query.order('project_id', { ascending: true })
+  // Unopened section has its own sorts; fall back to newest for it.
+  if (!isUnopenedSection(section)) {
+    const sort = sortDefinition(sortKey)
+    const ascending = Boolean(sort.ascending)
+    query = query.order(sort.column, { ascending, nullsFirst: false })
+    // Deterministic tie-break: the same query always returns the same page.
+    query = query.order('project_id', { ascending: true })
+  } else {
+    const sort = sortDefinition(sortKey)
+    const ascending = Boolean(sort.ascending)
+    const column = sort.column === 'created_at' ? 'message_activated_at' : sort.column
+    query = query.order(column, { ascending, nullsFirst: false })
+    query = query.order('project_id', { ascending: true })
+  }
 
   return query
 }
@@ -379,10 +415,6 @@ async function act(action, body = {}) {
   return invokeFunction('admin-operations', { method: 'POST', adminToken, body: { action, ...body } })
 }
 
-export function startMaking(projectId) {
-  return act('making-start', { projectId })
-}
-
 export function completeMaking(projectId, reason = '') {
   return act('making-complete', { projectId, reason })
 }
@@ -493,7 +525,7 @@ export function refundState(order) {
 export function nextAction(order) {
   switch (order?.milestone) {
     case 'sold':
-      return order?.is_digital ? null : { key: 'making-start', label: 'Start making' }
+      return order?.is_digital ? null : { key: 'making-complete', label: 'Finish Making' }
     case 'making':
       return { key: 'making-complete', label: 'Finish Making' }
     case 'shipping':
@@ -505,4 +537,76 @@ export function nextAction(order) {
     default:
       return null
   }
+}
+
+// ---------------------------------------------------------------------------
+// Bulk operations
+// ---------------------------------------------------------------------------
+// Every bulk action reuses the same `ops_*` RPCs the individual actions use.
+// The edge function loops per order and returns per-order results so the UI
+// can report "17 succeeded, 2 missing info, 1 milestone not permitted" with
+// access to the failed records. Selection is by stable project_id, never by
+// row position, so filters, pagination and sorting never shift the selection.
+
+export async function fetchUnopenedCount() {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { count, error } = await supabase
+    .from('ops_orders')
+    .select('project_id', { count: 'exact', head: true })
+    .eq('message_active', true)
+    .is('recipient_opened_at', null)
+  if (error) throw error
+  return count ?? 0
+}
+
+// Run a bulk transition over the selected orders. The edge function action is
+// `bulk-transition` which takes { projectIds, transition, ...args } and returns
+// per-order results.
+export async function runBulkTransition(projectIds, transition, args = {}) {
+  if (!projectIds?.length) return { results: [], summary: { succeeded: 0, failed: 0, total: 0 } }
+  const adminToken = await currentAccessToken()
+  if (!adminToken) throw new Error('Not signed in')
+  return invokeFunction('admin-operations', {
+    method: 'POST',
+    adminToken,
+    body: { action: 'bulk-transition', projectIds, transition, ...args },
+  })
+}
+
+// Summarize bulk results into a human-readable line and an array of failures.
+export function summarizeBulkResults(results) {
+  const succeeded = results.filter((r) => r.ok).length
+  const failed = results.filter((r) => !r.ok)
+  const total = results.length
+  const reasons = failed.reduce((acc, r) => {
+    const reason = r.error ?? r.message ?? 'Unknown error'
+    acc[reason] = (acc[reason] ?? 0) + 1
+    return acc
+  }, {})
+  const reasonLine = Object.entries(reasons)
+    .map(([reason, count]) => `${count} ${reason}`)
+    .join(', ')
+  return {
+    summary: `${succeeded} succeeded${failed.length ? `, ${failed.length} failed` : ''}${reasonLine ? ` (${reasonLine})` : ''}`,
+    succeeded,
+    failed: failed.length,
+    total,
+    failures: failed,
+  }
+}
+
+// Fetch all pages of a filtered query (for bulk export). This is used by the
+// manifest export dialog to export all matching orders, not just the current page.
+export async function fetchAllOrders({ section = 'making', filters = {}, sortKey = 'newest', pageSize = 500 } = {}) {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const allRows = []
+  let page = 0
+  while (true) {
+    const { rows, total } = await fetchOrders({ section, filters, sortKey, page, pageSize })
+    if (rows.length === 0) break
+    allRows.push(...rows)
+    if (allRows.length >= total) break
+    page += 1
+  }
+  return allRows
 }
