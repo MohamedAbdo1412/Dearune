@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PHYSICAL_ID_PATTERN, soldAsId } from '../src/services/constants'
+import { PHYSICAL_ID_PATTERN, soldIdFor } from '../src/services/constants'
 import {
   OPERATIONS_SORTS,
   matchesOperationQuery,
@@ -9,19 +9,21 @@ import {
   validateOperationForPaper,
   viewOperations,
 } from '../src/services/operations'
+import { qrState } from '../src/services/qrState'
 
 const ID = 'DR70700897645'
 
 // A fully-printable unit, in the exact shape `toOperation` produces.
-// Milestones are derived from timestamps, not a stored status field.
+// `status` is a PROJECTION of the order's one milestone — never stored.
 const operation = (overrides = {}) => {
   const base = {
     id: 'op-1',
     reference: ID,
-    soldAs: soldAsId(ID),
+    soldId: 'SOL-000001',
     hasValidId: true,
     unitIndex: 1,
-    status: 'pending',
+    milestone: 'making',
+    status: 'sold',
     notes: '',
     archivedAt: null,
     archived: false,
@@ -40,8 +42,7 @@ const operation = (overrides = {}) => {
     deliveredAt: null,
     messageActive: true,
     messageProtected: false,
-    qrTarget: true,
-    qrReady: true,
+    qr: { destination: true, activated: true, openable: true, blockedReason: null },
     designerId: 'designer-1',
     designerName: 'Nour Adel',
     designerCode: 'DR-100001',
@@ -82,11 +83,14 @@ describe('the canonical physical id', () => {
     expect(PHYSICAL_ID_PATTERN.test(null)).toBe(false)
   })
 
-  it('derives Sold As instead of storing a second identifier', () => {
-    expect(soldAsId(ID)).toBe('SOL-DR70700897645')
-    expect(soldAsId('DR-000001')).toBe('')
-    expect(soldAsId('')).toBe('')
-    expect(soldAsId(undefined)).toBe('')
+  it('derives the Sold ID from the DEARUNE id, never from a unit id', () => {
+    expect(soldIdFor('DR-000021')).toBe('SOL-000021')
+    expect(soldIdFor('DR-123456')).toBe('SOL-123456')
+    // A physical unit is not an order: it has no Sold ID of its own.
+    expect(soldIdFor('DR70700897645')).toBe('')
+    expect(soldIdFor('SOL-DR70700897645')).toBe('')
+    expect(soldIdFor('')).toBe('')
+    expect(soldIdFor(undefined)).toBe('')
   })
 })
 
@@ -101,8 +105,12 @@ describe('shaping a list row', () => {
       designer_code: 'DR-1',
       recipient_name: 'Hana',
       customer_phone: '0109',
-      qr_target: true,
-      qr_ready: false,
+      milestone: 'making',
+      sold_id: 'SOL-000009',
+      qr_destination: true,
+      qr_activated: true,
+      qr_openable: false,
+      qr_blocked_reason: 'password_protected',
       message_active: true,
       archived_at: null,
       paid_at: null,
@@ -111,112 +119,67 @@ describe('shaping a list row', () => {
       delivered_at: null,
     })
     expect(row.reference).toBe(ID)
-    expect(row.soldAs).toBe(`SOL-${ID}`)
+    expect(row.soldId).toBe('SOL-000009')
     expect(row.hasValidId).toBe(true)
     expect(row.unitIndex).toBe(2)
-    expect(row.status).toBe('pending')
+    expect(row.milestone).toBe('making')
+    expect(row.status).toBe('sold')
     expect(row.archived).toBe(false)
-    expect(row.qrReady).toBe(false)
+    expect(row.qr.openable).toBe(false)
+    expect(row.qr.blockedReason).toBe('password_protected')
     expect(row.designerName).toBe('Nour')
-    expect(row.recipientName).toBe('Nour')
+    expect(row.recipientName).toBe('Hana')
     // Missing optional fields become empty strings, never undefined.
     expect(row.notes).toBe('')
     expect(row.specialInstructions).toBe('')
   })
 
-  it('derives sold status from paid_at', () => {
+  it('projects status from the order milestone, never from unit timestamps', () => {
+    const at = (milestone) =>
+      toOperation({
+        id: 'op-9',
+        reference: ID,
+        milestone,
+        qr_destination: true,
+        qr_activated: true,
+        qr_openable: true,
+        qr_blocked_reason: null,
+      }).status
+
+    expect(at('configured')).toBe('pending')
+    expect(at('sold')).toBe('sold')
+    expect(at('making')).toBe('sold')
+    expect(at('shipping')).toBe('manufactured')
+    expect(at('delivery')).toBe('shipped')
+    expect(at('delivered')).toBe('delivered')
+    expect(at('after_sale')).toBe('delivered')
+  })
+
+  it('ignores stale unit stamps once the order has moved on', () => {
+    // A unit that was never re-stamped must not hold the order back.
     const row = toOperation({
       id: 'op-9',
       reference: ID,
-      project_title: 'For Hana',
-      designer_name: 'Nour',
-      designer_code: 'DR-1',
-      recipient_name: 'Hana',
-      customer_phone: '0109',
-      qr_target: true,
-      qr_ready: false,
-      message_active: true,
-      archived_at: null,
-      paid_at: '2026-01-01T00:00:00.000Z',
+      milestone: 'delivery',
       manufactured_at: null,
       shipped_at: null,
       delivered_at: null,
-    })
-    expect(row.status).toBe('sold')
-  })
-
-  it('derives manufactured status from manufacturing_completed_at', () => {
-    const row = toOperation({
-      id: 'op-9',
-      reference: ID,
-      project_title: 'For Hana',
-      designer_name: 'Nour',
-      designer_code: 'DR-1',
-      recipient_name: 'Hana',
-      customer_phone: '0109',
-      qr_target: true,
-      qr_ready: false,
-      message_active: true,
-      archived_at: null,
-      paid_at: '2026-01-01T00:00:00.000Z',
-      manufacturing_completed_at: '2026-01-02T00:00:00.000Z',
-      shipped_at: null,
-      delivered_at: null,
-    })
-    expect(row.status).toBe('manufactured')
-  })
-
-  it('derives shipped status from shipped_at', () => {
-    const row = toOperation({
-      id: 'op-9',
-      reference: ID,
-      project_title: 'For Hana',
-      designer_name: 'Nour',
-      designer_code: 'DR-1',
-      recipient_name: 'Hana',
-      customer_phone: '0109',
-      qr_target: true,
-      qr_ready: false,
-      message_active: true,
-      archived_at: null,
-      paid_at: '2026-01-01T00:00:00.000Z',
-      manufactured_at: '2026-01-02T00:00:00.000Z',
-      shipped_at: '2026-01-03T00:00:00.000Z',
-      delivered_at: null,
+      qr_destination: true,
+      qr_activated: true,
+      qr_openable: true,
+      qr_blocked_reason: null,
     })
     expect(row.status).toBe('shipped')
   })
 
-  it('derives delivered status from delivered_at', () => {
-    const row = toOperation({
-      id: 'op-9',
-      reference: ID,
-      project_title: 'For Hana',
-      designer_name: 'Nour',
-      designer_code: 'DR-1',
-      recipient_name: 'Hana',
-      customer_phone: '0109',
-      qr_target: true,
-      qr_ready: false,
-      message_active: true,
-      archived_at: null,
-      paid_at: '2026-01-01T00:00:00.000Z',
-      manufactured_at: '2026-01-02T00:00:00.000Z',
-      shipped_at: '2026-01-03T00:00:00.000Z',
-      delivered_at: '2026-01-04T00:00:00.000Z',
-    })
-    expect(row.status).toBe('delivered')
-  })
-
   it('marks a row whose id is not canonical, so it can never be printed', () => {
-    const row = toOperation({ id: 'op-9', reference: 'DR-000001', status: 'pending' })
+    const row = toOperation({ id: 'op-9', reference: 'DR-000001', milestone: 'making' })
     expect(row.hasValidId).toBe(false)
-    expect(row.soldAs).toBe('')
     expect(row.unitIndex).toBe(1)
   })
 
   it('marks an archived row as archived', () => {
-    const row = toOperation({ id: 'op-9', reference: ID, status: 'pending', archived_at: '2026-02-01T00:00:00Z' })
+    const row = toOperation({ id: 'op-9', reference: ID, milestone: 'making', archived_at: '2026-02-01T00:00:00Z' })
     expect(row.archived).toBe(true)
     expect(row.archivedAt).toBe('2026-02-01T00:00:00Z')
   })
@@ -224,9 +187,9 @@ describe('shaping a list row', () => {
 
 describe('sorting', () => {
   const three = () => [
-    operation({ id: 'c', reference: 'DR70700000003', createdAt: '2026-02-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z', status: 'shipped', recipientName: 'Zoe' }),
-    operation({ id: 'a', reference: 'DR70700000001', createdAt: '2026-03-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', status: 'pending', recipientName: 'Ahmed' }),
-    operation({ id: 'b', reference: 'DR70700000002', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-04-01T00:00:00Z', status: 'delivered', recipientName: 'Mona' }),
+    operation({ id: 'c', reference: 'DR70700000003', createdAt: '2026-02-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z', milestone: 'delivery', status: 'shipped', recipientName: 'Zoe' }),
+    operation({ id: 'a', reference: 'DR70700000001', createdAt: '2026-03-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', milestone: 'making', status: 'sold', recipientName: 'Ahmed' }),
+    operation({ id: 'b', reference: 'DR70700000002', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-04-01T00:00:00Z', milestone: 'delivered', status: 'delivered', recipientName: 'Mona' }),
   ]
   const ids = (rows) => rows.map((row) => row.reference)
 
@@ -272,6 +235,7 @@ describe('sorting', () => {
 describe('searching', () => {
   const row = operation({
     reference: 'DR70700897645',
+    soldId: 'SOL-000123',
     projectTitle: 'For my sister',
     designerName: 'Nour Adel',
     designerCode: 'DR-100001',
@@ -280,19 +244,19 @@ describe('searching', () => {
     projectReference: 'DR-000123',
   })
 
-  it('finds a unit by its canonical id and by its Sold As form', () => {
+  it('finds a unit by its unit id, its Dearune id and its Sold ID', () => {
     expect(matchesOperationQuery(row, 'DR70700897645')).toBe(true)
-    expect(matchesOperationQuery(row, 'SOL-DR70700897645')).toBe(true)
-    expect(matchesOperationQuery(row, 'SOL-DR70700897646')).toBe(false)
+    expect(matchesOperationQuery(row, 'DR-000123')).toBe(true)
+    expect(matchesOperationQuery(row, 'SOL-000123')).toBe(true)
+    expect(matchesOperationQuery(row, 'SOL-000124')).toBe(false)
   })
 
-  it('finds a unit by customer, designer, dearune or project reference', () => {
+  it('finds a unit by customer, designer or project title', () => {
     expect(matchesOperationQuery(row, 'Mona')).toBe(true)
     expect(matchesOperationQuery(row, 'mona hassan')).toBe(true)
     expect(matchesOperationQuery(row, 'nour')).toBe(true)
     expect(matchesOperationQuery(row, 'DR-100001')).toBe(true)
     expect(matchesOperationQuery(row, 'sister')).toBe(true)
-    expect(matchesOperationQuery(row, 'DR-000123')).toBe(true)
     expect(matchesOperationQuery(row, '01000000001')).toBe(true)
     expect(matchesOperationQuery(row, 'nobody')).toBe(false)
   })
@@ -364,19 +328,32 @@ describe('checking a unit is ready to print', () => {
     expect(result.errors.join(' ')).toMatch(/canonical id/i)
   })
 
-  it('refuses to print a unit whose QR has nowhere to go', () => {
-    expect(validateOperationForPaper(operation({ publicId: '' })).errors.join(' ')).toMatch(/public id/i)
-    expect(validateOperationForPaper(operation({ publicToken: '' })).errors.join(' ')).toMatch(/token/i)
+  it('refuses to print when the QR has nowhere to go', () => {
+    const result = validateOperationForPaper(operation({ qr: qrState({ publicId: '', publicToken: '' }) }))
+    expect(result.ok).toBe(false)
+    expect(result.errors.join(' ')).toMatch(/no public link/i)
+  })
+
+  it('refuses to print a letter that is switched off', () => {
+    const result = validateOperationForPaper(operation({ qr: qrState({ publicId: 'a'.repeat(24), publicToken: 't', messageActive: false }) }))
+    expect(result.ok).toBe(false)
+    expect(result.errors.join(' ')).toMatch(/switched off/i)
+  })
+
+  it('refuses to print a password-protected letter', () => {
+    const result = validateOperationForPaper(operation({ qr: qrState({ publicId: 'a'.repeat(24), publicToken: 't', messageActive: true, passwordSet: true }) }))
+    expect(result.ok).toBe(false)
+    expect(result.errors.join(' ')).toMatch(/password/i)
+  })
+
+  it('still warns about a missing customer number, but does not block', () => {
+    const result = validateOperationForPaper(operation({ customerPhone: '' }))
+    expect(result.ok).toBe(true)
+    expect(result.warnings.join(' ')).toMatch(/customer number/i)
   })
 
   it('refuses to print an unsigned Designer', () => {
     expect(validateOperationForPaper(operation({ designerName: '' })).errors.join(' ')).toMatch(/designer name/i)
     expect(validateOperationForPaper(operation({ designerCode: '' })).errors.join(' ')).toMatch(/designer id/i)
-  })
-
-  it('warns — but does not block — on a letter that will not open yet', () => {
-    const result = validateOperationForPaper(operation({ messageActive: false }))
-    expect(result.ok).toBe(true)
-    expect(result.warnings.join(' ')).toMatch(/not switched on/i)
   })
 })

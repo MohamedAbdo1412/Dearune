@@ -69,16 +69,36 @@ describe('sections', () => {
 
   it('falls back to Making for an unknown section rather than querying nothing', () => {
     expect(sectionByKey('nope')).toBe(ORDER_SECTIONS[0])
-    expect(sectionByKey('shipping').milestone).toBe('shipping')
+    expect(sectionByKey('shipping').milestones).toEqual(['shipping'])
   })
 
   it('keeps delivered inside Delivery', () => {
     expect(DELIVERY_MILESTONES).toEqual(['delivery', 'delivered'])
-    expect(ORDER_SECTIONS.map((section) => section.milestone)).not.toContain('delivered')
+    // `delivered` is a real milestone but not a section of its own.
+    expect(ORDER_SECTIONS.map((section) => section.key)).not.toContain('delivered')
+  })
+
+  it('scopes each section to its milestones of the one enum', () => {
+    // Making is both 'sold' (no work started yet) and 'making'; nothing else is
+    // duplicated, so every order appears in exactly one production section.
+    expect(ORDER_SECTIONS.map((section) => [section.key, section.milestones])).toEqual([
+      ['making', ['sold', 'making']],
+      ['shipping', ['shipping']],
+      ['delivery', ['delivery', 'delivered']],
+      ['after-sale', ['after_sale']],
+    ])
   })
 
   it('labels every milestone the enum can hold', () => {
-    expect(Object.keys(MILESTONE_LABELS)).toEqual(['making', 'shipping', 'delivery', 'delivered', 'after_sale'])
+    expect(Object.keys(MILESTONE_LABELS)).toEqual([
+      'configured',
+      'sold',
+      'making',
+      'shipping',
+      'delivery',
+      'delivered',
+      'after_sale',
+    ])
   })
 })
 
@@ -96,16 +116,15 @@ describe('sanitizeSearch', () => {
 })
 
 describe('applyOrderFilters', () => {
-  it('scopes Making to the making milestone', () => {
+  it('scopes Making to sold and making, so a just-sold order is visible', () => {
     const { only, find } = build({ section: 'making' })
-    expect(only('eq')[0]).toBe('milestone')
-    expect(only('eq')[1]).toBe('making')
-    expect(find('in')).toHaveLength(0)
+    expect(only('in')).toEqual(['milestone', ['sold', 'making']])
+    expect(find('eq')).toHaveLength(0)
   })
 
   it('scopes Shipping to shipping and After-Sale to after_sale', () => {
-    expect(build({ section: 'shipping' }).only('eq')).toEqual(['milestone', 'shipping'])
-    expect(build({ section: 'after-sale' }).only('eq')).toEqual(['milestone', 'after_sale'])
+    expect(build({ section: 'shipping' }).only('in')).toEqual(['milestone', ['shipping']])
+    expect(build({ section: 'after-sale' }).only('in')).toEqual(['milestone', ['after_sale']])
   })
 
   it('scopes Delivery to both delivery and delivered, so a delivered parcel stays visible', () => {
@@ -141,7 +160,6 @@ describe('applyOrderFilters', () => {
       filters: { ...EMPTY_FILTERS, carrier: 'egypt_post', designerId: 'd-1', wrapperType: 'sealed_letter' },
     })
     expect(find('eq').map((call) => call.args)).toEqual([
-      ['milestone', 'making'],
       ['carrier', 'egypt_post'],
       ['designer_id', 'd-1'],
       ['wrapper_type', 'sealed_letter'],
@@ -157,11 +175,11 @@ describe('applyOrderFilters', () => {
 
   it('maps shipment, QR and archive filters onto persisted columns', () => {
     expect(build({ filters: { ...EMPTY_FILTERS, shipment: 'shipped' } }).find('eq')).toEqual([
-      { method: 'eq', args: ['milestone', 'making'] },
       { method: 'eq', args: ['shipment_state', 'shipped'] },
     ])
-    expect(build({ filters: { ...EMPTY_FILTERS, qr: 'ready' } }).find('eq')[1].args).toEqual(['qr_ready', true])
-    expect(build({ filters: { ...EMPTY_FILTERS, qr: 'blocked' } }).find('eq')[1].args).toEqual(['qr_ready', false])
+    // QR readiness is ONE column computed in the database, never two flags.
+    expect(build({ filters: { ...EMPTY_FILTERS, qr: 'ready' } }).only('eq')).toEqual(['qr_openable', true])
+    expect(build({ filters: { ...EMPTY_FILTERS, qr: 'blocked' } }).only('eq')).toEqual(['qr_openable', false])
     expect(build({ filters: { ...EMPTY_FILTERS, archived: 'hide' } }).only('is')).toEqual(['archived_at', null])
     expect(build({ filters: { ...EMPTY_FILTERS, archived: 'only' } }).only('not')).toEqual([
       'archived_at',
@@ -173,7 +191,7 @@ describe('applyOrderFilters', () => {
   it('maps refund states onto the persisted totals', () => {
     expect(build({ filters: { ...EMPTY_FILTERS, refund: 'any' } }).only('gt')).toEqual(['refund_count', 0])
     expect(build({ filters: { ...EMPTY_FILTERS, refund: 'refunded' } }).only('gt')).toEqual(['refunded_amount', 0])
-    expect(build({ filters: { ...EMPTY_FILTERS, refund: 'none' } }).find('eq')[1].args).toEqual(['refund_count', 0])
+    expect(build({ filters: { ...EMPTY_FILTERS, refund: 'none' } }).only('eq')).toEqual(['refund_count', 0])
   })
 
   it('turns a paid date range into whole-day timestamps', () => {
@@ -266,17 +284,22 @@ describe('activeFilters', () => {
 })
 
 describe('presentation helpers', () => {
-  it('reads delivered from the persisted milestone or shipment state', () => {
+  it('reads delivered from the one milestone, never from a shipment copy', () => {
     expect(isDelivered({ milestone: 'delivered' })).toBe(true)
-    expect(isDelivered({ milestone: 'delivery', shipment_state: 'delivered' })).toBe(true)
+    expect(isDelivered({ milestone: 'after_sale' })).toBe(true)
+    // The shipment row is production detail; a stale copy cannot overrule the
+    // order's milestone.
+    expect(isDelivered({ milestone: 'delivery', shipment_state: 'delivered' })).toBe(false)
     expect(isDelivered({ milestone: 'delivery', shipment_state: 'shipped' })).toBe(false)
+    expect(isDelivered({ milestone: 'making' })).toBe(false)
     expect(isDelivered(null)).toBe(false)
   })
 
   it('tints a row from saved state, not from a click', () => {
     expect(rowStateClass({ milestone: 'delivered' })).toBe('bg-emerald-500/[0.07]')
+    expect(rowStateClass({ milestone: 'after_sale' })).toBe('bg-emerald-500/[0.07]')
     expect(rowStateClass({ milestone: 'delivery', shipment_state: 'shipped' })).toBe('bg-sky-500/[0.06]')
-    expect(rowStateClass({ milestone: 'after_sale', refund_count: 1 })).toBe('bg-amber-500/[0.06]')
+    expect(rowStateClass({ milestone: 'making', refund_count: 1 })).toBe('bg-amber-500/[0.06]')
     expect(rowStateClass({ milestone: 'making', archived_at: '2026-10-01' })).toBe('opacity-60')
     expect(rowStateClass({ milestone: 'making' })).toBeUndefined()
   })
@@ -301,13 +324,12 @@ describe('presentation helpers', () => {
   })
 
   it('offers one next action per state', () => {
+    expect(nextAction({ milestone: 'configured' })).toBeNull()
+    expect(nextAction({ milestone: 'sold', is_digital: false })).toEqual({ key: 'making-start', label: 'Start making' })
+    expect(nextAction({ milestone: 'sold', is_digital: true })).toBeNull()
     expect(nextAction({ milestone: 'making' })).toEqual({ key: 'making-complete', label: 'Finish Making' })
     expect(nextAction({ milestone: 'shipping' })).toEqual({ key: 'ship', label: 'Mark shipped' })
     expect(nextAction({ milestone: 'delivery' })).toEqual({ key: 'deliver', label: 'Mark delivered' })
-    expect(nextAction({ milestone: 'delivery', shipment_state: 'delivered' })).toEqual({
-      key: 'after-sale',
-      label: 'Move to After-Sale',
-    })
     expect(nextAction({ milestone: 'delivered' })).toEqual({ key: 'after-sale', label: 'Move to After-Sale' })
     expect(nextAction({ milestone: 'after_sale' })).toBeNull()
   })

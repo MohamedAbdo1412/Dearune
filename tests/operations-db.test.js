@@ -95,7 +95,12 @@ describe('Operations schema', () => {
     expect(names).toContain('reference')
     expect(names).toContain('designer_name')
     expect(names).toContain('customer_phone')
-    expect(names).toContain('qr_ready')
+    expect(names).toContain('qr_openable')
+    expect(names).toContain('qr_blocked_reason')
+    expect(names).toContain('sold_id')
+    // One QR answer, not a flag per guess.
+    expect(names).not.toContain('qr_ready')
+    expect(names).not.toContain('qr_target')
     // The private letter must never ride along to the browser.
     expect(names).not.toContain('payload')
     expect(names).not.toContain('body')
@@ -333,7 +338,7 @@ describe('the list view', () => {
     expect(row.unit_index).toBe(1)
   })
 
-  it('tells the studio whether a paper QR will actually open the letter', async () => {
+  it('tells the studio whether a paper QR will actually open the letter, and why not', async () => {
     const open = await seedProject(db, { designerId, messageActive: true, publicToken: 'token-open' })
     const closed = await seedProject(db, { designerId, messageActive: false, publicToken: 'token-closed' })
     const locked = await seedProject(db, {
@@ -342,13 +347,28 @@ describe('the list view', () => {
       publicToken: 'token-locked',
       payload: { body: 'Secret', passwordSet: true },
     })
-    for (const id of [open.id, closed.id, locked.id]) {
+    const nowhere = await seedProject(db, { designerId, messageActive: true, publicToken: '' })
+    // The column has a generated default, so clear it the way a legacy row would be.
+    await db.query(`update public.projects set public_token = '' where id = $1`, [nowhere.id])
+    for (const id of [open.id, closed.id, locked.id, nowhere.id]) {
       await db.query('select * from public.ensure_physical_products($1, 1, null)', [id])
     }
 
-    expect((await one(db, 'select qr_ready, qr_target from public.operations_units where project_id = $1', [open.id])).qr_ready).toBe(true)
-    expect((await one(db, 'select qr_ready from public.operations_units where project_id = $1', [closed.id])).qr_ready).toBe(false)
-    expect((await one(db, 'select qr_ready from public.operations_units where project_id = $1', [locked.id])).qr_ready).toBe(false)
+    const state = (id) =>
+      one(db, 'select qr_destination, qr_activated, qr_openable, qr_blocked_reason from public.operations_units where project_id = $1', [id])
+
+    expect(await state(open.id)).toEqual({
+      qr_destination: true,
+      qr_activated: true,
+      qr_openable: true,
+      qr_blocked_reason: null,
+    })
+    expect(await state(closed.id)).toMatchObject({ qr_openable: false, qr_blocked_reason: 'not_activated' })
+    expect(await state(locked.id)).toMatchObject({ qr_openable: false, qr_blocked_reason: 'password_protected' })
+    expect(await state(nowhere.id)).toMatchObject({ qr_destination: false, qr_blocked_reason: 'missing_destination' })
+
+    // Restore the unique-token invariant the rest of this file asserts.
+    await db.query(`update public.projects set public_token = 'token-nowhere' where id = $1`, [nowhere.id])
   })
 })
 

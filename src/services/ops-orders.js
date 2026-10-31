@@ -1,4 +1,5 @@
 import { supabase, currentAccessToken, invokeFunction } from '@/lib/supabase'
+import { MILESTONE_LABELS } from './constants'
 
 // Orders — the ONE record the Operations screen works on.
 //
@@ -16,6 +17,8 @@ import { supabase, currentAccessToken, invokeFunction } from '@/lib/supabase'
 export const ORDER_COLUMNS = [
   'project_id',
   'canonical_id',
+  'sold_id',
+  'is_digital',
   'title',
   'public_id',
   'public_token',
@@ -62,38 +65,42 @@ export const ORDER_COLUMNS = [
   'search_references',
   'refunded_amount',
   'refund_count',
-  'qr_target',
-  'qr_ready',
+  'qr_destination',
+  'qr_activated',
+  'qr_openable',
+  'qr_blocked_reason',
 ].join(', ')
 
 // ---------------------------------------------------------------------------
 // Sections
 // ---------------------------------------------------------------------------
+// A section is a WINDOW onto `projects.milestone`, never a place an order is
+// copied to. Moving an order between sections changes one milestone value.
 export const ORDER_SECTIONS = [
   {
     key: 'making',
-    milestone: 'making',
+    milestones: ['sold', 'making'],
     label: 'Making',
     path: '/admin/operations',
     description: 'Printing, QR, assembly and QC. Finishing Making moves the order to Shipping.',
   },
   {
     key: 'shipping',
-    milestone: 'shipping',
+    milestones: ['shipping'],
     path: '/admin/operations/shipping',
     label: 'Shipping',
     description: 'Choose the carrier, record the tracking number and hand the parcel over.',
   },
   {
     key: 'delivery',
-    milestone: 'delivery',
+    milestones: ['delivery', 'delivered'],
     path: '/admin/operations/delivery',
     label: 'Delivery',
     description: 'Parcels with a carrier. Confirm Delivered when the recipient has it.',
   },
   {
     key: 'after-sale',
-    milestone: 'after_sale',
+    milestones: ['after_sale'],
     label: 'After-Sale',
     path: '/admin/operations/after-sale',
     description: 'Refunds, complaints, corrections and post-delivery history.',
@@ -110,13 +117,10 @@ export function sectionByKey(key) {
   return ORDER_SECTIONS.find((section) => section.key === key) ?? ORDER_SECTIONS[0]
 }
 
-export const MILESTONE_LABELS = {
-  making: 'Making',
-  shipping: 'Shipping',
-  delivery: 'Delivery',
-  delivered: 'Delivered',
-  after_sale: 'After-Sale',
-}
+// The words for a milestone come from `constants` so the Admin, Designer and
+// Worker dashboards cannot label the same stage differently.
+export { MILESTONE_LABELS }
+
 
 // ---------------------------------------------------------------------------
 // Reading
@@ -212,11 +216,10 @@ function dayEnd(value) {
 export function applyOrderFilters(query, { section, filters = {}, sortKey = 'newest' } = {}) {
   const definition = sectionByKey(section)
 
-  if (definition.key === 'delivery') {
-    query = query.in('milestone', DELIVERY_MILESTONES)
-  } else {
-    query = query.eq('milestone', definition.milestone)
-  }
+  // A section is a window onto the one milestone column. Delivery shows both
+  // `delivery` and `delivered` because a delivered parcel stays on that screen
+  // until it is moved to After-Sale.
+  query = query.in('milestone', definition.milestones)
 
   const search = sanitizeSearch(filters.query)
   if (search) {
@@ -230,8 +233,8 @@ export function applyOrderFilters(query, { section, filters = {}, sortKey = 'new
   if (text(filters.designerId)) query = query.eq('designer_id', text(filters.designerId))
   if (text(filters.wrapperType)) query = query.eq('wrapper_type', text(filters.wrapperType))
   if (text(filters.shipment)) query = query.eq('shipment_state', text(filters.shipment))
-  if (text(filters.qr) === 'ready') query = query.eq('qr_ready', true)
-  if (text(filters.qr) === 'blocked') query = query.eq('qr_ready', false)
+  if (text(filters.qr) === 'ready') query = query.eq('qr_openable', true)
+  if (text(filters.qr) === 'blocked') query = query.eq('qr_openable', false)
   if (text(filters.archived) === 'only') query = query.not('archived_at', 'is', null)
   if (text(filters.archived) === 'hide') query = query.is('archived_at', null)
 
@@ -430,7 +433,8 @@ export function orderSubtitle(order) {
 }
 
 export function isDelivered(order) {
-  return order?.milestone === 'delivered' || order?.shipment_state === 'delivered'
+  const stage = String(order?.milestone ?? '')
+  return stage === 'delivered' || stage === 'after_sale'
 }
 
 // The row tint comes from the persisted state, never from a local click. A
@@ -488,14 +492,14 @@ export function refundState(order) {
 // and by the detail panel so there is one answer, not two.
 export function nextAction(order) {
   switch (order?.milestone) {
+    case 'sold':
+      return order?.is_digital ? null : { key: 'making-start', label: 'Start making' }
     case 'making':
       return { key: 'making-complete', label: 'Finish Making' }
     case 'shipping':
       return { key: 'ship', label: 'Mark shipped' }
     case 'delivery':
-      return isDelivered(order)
-        ? { key: 'after-sale', label: 'Move to After-Sale' }
-        : { key: 'deliver', label: 'Mark delivered' }
+      return { key: 'deliver', label: 'Mark delivered' }
     case 'delivered':
       return { key: 'after-sale', label: 'Move to After-Sale' }
     default:

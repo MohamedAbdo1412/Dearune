@@ -1,17 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { REVIEW_FIELDS, draftChanges, mergeDraft, reviewBatch } from '../src/services/operationsReview'
-import { soldAsId } from '../src/services/constants'
 
 const ID = 'DR70700897645'
 
-// A complete, printable unit in the shape the Operations screen holds.
+// A complete, printable unit in the shape the Operations screen holds. The Sold
+// ID belongs to the ORDER, not to the unit; `status` is a projection of the
+// order's one milestone.
 const operation = (overrides = {}) => ({
   id: 'op-1',
   reference: ID,
-  soldAs: soldAsId(ID),
+  soldId: 'SOL-000001',
   hasValidId: true,
   unitIndex: 1,
-  status: 'ready_to_print',
+  milestone: 'making',
+  status: 'sold',
   notes: '',
   archived: false,
   archivedAt: null,
@@ -25,6 +27,7 @@ const operation = (overrides = {}) => ({
   customerPhone: '01000000001',
   messageActive: true,
   messageProtected: false,
+  qr: { destination: true, activated: true, openable: true, blockedReason: null },
   ...overrides,
 })
 
@@ -63,7 +66,7 @@ describe('merging a draft over a record', () => {
     // malformed one cannot rewrite the id — it is not a reviewable field.
     const merged = mergeDraft(operation(), { reference: 'DR00000000000', status: 'shipped' })
     expect(merged.reference).toBe(ID)
-    expect(merged.status).toBe('ready_to_print')
+    expect(merged.status).toBe('sold')
     expect(draftChanges(operation(), { reference: 'DR00000000000' })).toEqual([])
   })
 })

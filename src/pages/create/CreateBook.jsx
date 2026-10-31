@@ -962,7 +962,7 @@ export default function CreateBook() {
                 title={activeProject?.title}
                 forName={receiverName}
                 paperName={chosenTemplate.name}
-                receiptId={activeProject?.public_id}
+                receiptId={activeProject?.reference}
                 onCloseBook={handleCloseBook}
               />
             </Folio>

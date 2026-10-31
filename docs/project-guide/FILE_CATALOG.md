@@ -107,7 +107,8 @@ This document catalogs every first-party source file in the Dearune repository. 
 |---|---|---|---|
 | `bosta.js` | Bosta Excel manifest generation | `bostaFilename()`, `buildBostaWorkbook()` | exceljs, @/services/constants |
 | `catalog.js` | Template/wrapper catalog sorting | `sortCatalogItems()`, `getDisplayOrder()` | - |
-| `constants.js` | Constants: patterns, enums, labels, URLs | `PHYSICAL_ID_PATTERN`, `OPERATIONS_STATUS_ORDER`, `STAGE_LABELS`, `publicMessageUrl()`, `soldAsId()` | - |
+| `constants.js` | Constants: patterns, enums, labels, URLs | `DEARUNE_ID_PATTERN`, `soldIdFor()`, `MILESTONE_ORDER`, `MILESTONE_LABELS`, `PROJECT_STAGE_ORDER`, `PROJECT_STAGE_LABELS`, `projectStage()`, `unitStageFromMilestone()`, `nextDearuneAction()`, `PHYSICAL_ID_PATTERN`, `OPERATIONS_STATUS_ORDER`, `publicMessageUrl()` | - |
+| `qrState.js` | The one QR answer in the browser — mirror of SQL `order_qr_state()` | `qrState()`, `qrStateOf()`, `qrBlockedMessage()`, `QR_BLOCKED_LABELS`, `QR_BLOCKED_FIXES` | - |
 | `draft.js` | Draft state management (localStorage + IndexedDB) | `saveDraft()`, `loadDraft()`, `clearDraft()` | @/services/draftCrypto, @/services/draftMediaStore |
 | `draftCrypto.js` | AES-GCM encryption (Web Crypto) | `encryptDraft()`, `decryptDraft()`, `deriveKey()` | Web Crypto API |
 | `draftMediaStore.js` | Media persistence (localStorage + IndexedDB) | `saveMedia()`, `loadMedia()`, `deleteMedia()` | indexedDB, localStorage |
@@ -357,6 +358,9 @@ This document catalogs every first-party source file in the Dearune repository. 
 | `20261102000001_external_link_destination.sql` | Replaces `get_public_project_message` (3 args) returning `template_slug` + validated `destination` for `external-link` |
 | `20261102000002_external_link_slug_alignment.sql` | Aligns the `External Link To Dearune` row's `templates.slug` with the pipeline code `external-link` (and carries existing projects over), so the chooser can bind its book |
 | `20261103000001_order_lifecycle.sql` | **Major**: one canonical identity (`order_references`), one authoritative `projects.milestone` + guard, `ops_*` transition/refund/manifest RPCs, `shipment_manifests`, `refunds`, `ops_orders` / `ops_milestone_counts` / `ops_identity_report` views. See `ORDER_LIFECYCLE.md` |
+| `20261104000001_stage_configured.sql` | Adds `configured` **before** `making` to `public.dearune_milestone` (must stay in its own file: `ALTER TYPE … ADD VALUE` cannot be used in the same transaction that uses the value) |
+| `20261104000002_stage_sold.sql` | Adds `sold` after `configured` — the sale becomes a real stage, so `mark-paid` moves an order instead of stamping a timestamp |
+| `20261104000003_unified_order_model.sql` | **Major**: rewrites `projects_milestone_guard` (seven stages, digital path, override), backfills + dry-run notices, `milestone NOT NULL DEFAULT 'configured'`, Sold-ID reclassification + reference triggers, `order_qr_status` / `order_qr_state`, `shipping_carrier`, every `ops_*` RPC with `p_actor_type`, `ops_revert_milestone`, recreated `ops_orders` / `ops_identity_report` / `ops_milestone_counts` / `operations_units`, rewritten worker RPCs, grants. See `AUTHORITATIVE_ORDER_MODEL.md` |
 
 ---
 
@@ -407,6 +411,7 @@ This document catalogs every first-party source file in the Dearune repository. 
 | `operations-list.test.js` | Operations list shaping |
 | `ops-orders.test.js` | Operations query grammar: search sanitisation, filters, sort allowlist + tie-break, presentation helpers |
 | `order-lifecycle-db.test.js` | PGlite tests for identity, milestone guard, transitions, shipping, refunds, manifests, views and RLS |
+| `unified-order-model.test.js` | PGlite regression suite for the one order model: seven-stage guard (skip/backwards/invent, same-value no-op), digital `sold → delivered`, `order_qr_state` + JS-mirror + view/worker parity, `ops_revert_milestone`, admin↔worker milestone/actor/sold-id parity, and migration idempotency |
 | `order-stage.test.js` | Order stage logic |
 | `pdf.test.js` | PDF generation |
 | `pipeline.test.js` | Full pipeline |

@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { qrContent } from '@/services/qr'
-import { formatProductionDate, buildQrPaperPdf, buildQrPaperPreview } from '@/services/qrPaper'
+import { formatProductionDate, buildQrPaperPdf } from '@/services/qrPaper'
 import { bostaFilename, buildBostaWorkbook } from '@/services/bosta'
 import { fetchOperations, updateOperationContact, updateOperationDesigner } from '@/services/operations'
 import { reviewBatch } from '@/services/operationsReview'
@@ -368,8 +368,8 @@ export default function OperationsPrint() {
               <CardHeader>
                 <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-medium">
                   <span className="font-mono">{activeItem.operation.reference}</span>
-                  <span className="text-muted-foreground">Sold as</span>
-                  <span className="font-mono">{activeItem.operation.soldAs}</span>
+                  <span className="text-muted-foreground">Sold ID</span>
+                  <span className="font-mono">{activeItem.operation.soldId || '—'}</span>
                   <OperationsBadge status={activeItem.operation.status} />
                 </CardTitle>
               </CardHeader>

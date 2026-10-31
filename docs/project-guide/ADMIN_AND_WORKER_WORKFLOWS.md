@@ -46,14 +46,16 @@ their own data. The routes render the same page component with a different
 
 | Section | Route | Shows |
 |---|---|---|
-| Making | `/admin/operations` | Orders being printed, assembled and QC'd |
-| Shipping | `/admin/operations/shipping` | Orders waiting for a carrier hand-off |
-| Delivery | `/admin/operations/delivery` | Parcels with a carrier, plus delivered ones |
-| After-Sale | `/admin/operations/after-sale` | Refunds, complaints, corrections |
+| Making | `/admin/operations` | `sold` (paid, not started) and `making` — printing, assembling, QC |
+| Shipping | `/admin/operations/shipping` | `shipping` — waiting for a carrier hand-off |
+| Delivery | `/admin/operations/delivery` | `delivery` and `delivered` — parcels with a carrier, plus delivered ones |
+| After-Sale | `/admin/operations/after-sale` | `after_sale` — refunds, complaints, corrections |
 
 **Features:**
 - One row per order from the `ops_orders` view; the canonical Dearune ID is
-  shown first, with the unit and Sold references beside it.
+  shown first, with the unit and Sold references beside it. Digital Dearunes
+  carry `is_digital`; they appear in the section their milestone falls in but
+  have no production action.
 - Search by canonical ID, any registered historical reference, unit ID, title,
   recipient, phone, tracking or carrier reference.
 - Server-side filters (carrier, governorate, city, designer, wrapper, refund,
@@ -63,7 +65,9 @@ their own data. The routes render the same page component with a different
 - Making keeps the print pipeline: selection hands unit IDs to
   `/admin/operations/print?ids=…`.
 - The detail sheet shows identifiers, sale, address, shipment, refund history
-  and the unified audit timeline.
+  and the unified audit timeline, and offers **Start making** on a sold order.
+- A blocked QR is shown on the row and in the sheet with its fix; printing is
+  refused until it is openable.
 
 **Key Actions:**
 | Action | Edge action | RPC |
@@ -78,7 +82,7 @@ their own data. The routes render the same page component with a different
 | Import a carrier manifest | `manifest-preview` / `manifest-commit` | `ops_create_manifest` + `ops_ship` |
 
 Every action records the operator and the time, and the database refuses a move
-that skips a stage. See [ORDER_LIFECYCLE.md](./ORDER_LIFECYCLE.md).
+that skips a stage (see [AUTHORITATIVE_ORDER_MODEL.md](./AUTHORITATIVE_ORDER_MODEL.md)).
 
 ### Operations Print (`/admin/operations/print`)
 
@@ -190,25 +194,33 @@ export function buildBostaWorkbook(operations) {
 ### Worker Operations (`/worker/operations`)
 
 **Features (mirrors admin but permission-gated):**
-- List units via `fetchWorkerOperations(true)`
-- Milestone actions: Manufactured → Shipped → Delivered
+- List units via `fetchWorkerOperations(true)`; each row shows the same
+  Dearune ID, Sold ID, `milestone` and QR answer the Admin screen shows.
+- Milestone actions derived from `MILESTONE_ORDER` + `WORKER_STEPS`
+  (`making → shipping` = Mark manufactured, `shipping → delivery` = Mark shipped,
+  `delivery → delivered` = Mark delivered).
 - Archive/Restore
-- Designer assignment
-- Print papers (with `?ids=`)
+- Print papers (with `?ids=`), refused when the QR is blocked
 - Export CSV
 
 **Milestone Actions (Permission-Gated):**
 
-| Action | Permission | RPC |
+| Action | Permission | RPC (delegates to) |
 |---|---|---|
-| Mark Manufactured | `operations.mark_manufactured` | `worker_mark_dearune_manufactured` |
-| Mark Shipped | `operations.mark_shipped` | `worker_mark_dearune_shipped` |
-| Mark Delivered | `operations.mark_delivered` | `worker_mark_dearune_delivered` |
+| Mark Manufactured (`making → shipping`) | `operations.mark_manufactured` | `worker_mark_dearune_manufactured` → `ops_making_complete` |
+| Mark Shipped (`shipping → delivery`) | `operations.mark_shipped` | `worker_mark_dearune_shipped` → `ops_ship` |
+| Mark Delivered (`delivery → delivered`) | `operations.mark_delivered` | `worker_mark_dearune_delivered` → `ops_deliver` |
+
+The worker RPCs write the **same** `projects.milestone` as the admin, with
+`actor_type='worker'` and `milestone_updated_by` left NULL. `worker_set_operation_status`
+was dropped — there is no worker-only status.
 
 **Milestone Validation (RPC):**
 ```sql
 -- worker_mark_dearune_shipped
--- Checks: maintenance_mode, paid, manufactured, shipping address complete
+-- Checks: maintenance_mode, worker permission, paid, milestone >= shipping,
+--         shipping address complete, carrier + tracking (shipping_carrier)
+-- Then delegates to ops_ship with the worker as actor.
 ```
 
 ### Worker QA (`/worker/qa`)
@@ -319,51 +331,72 @@ worker_audit_logs table
 
 ## Status Flow Diagram
 
+One order, one stage, whichever dashboard acts:
+
 ```
-DESIGNER SUBMITS
+DESIGNER SUBMITS                milestone = configured
       ↓
-ADMIN REVIEWS & RECORDS SALE
+ADMIN RECORDS SALE              configured → sold
       ↓
-UNITS ALLOCATED (ensure_physical_products)
+UNITS ALLOCATED                 (ensure_physical_products, milestone unchanged)
       ↓
-WORKER: MANUFACTURED
+ADMIN OR WORKER: START MAKING   sold → making
+ADMIN OR WORKER: MANUFACTURED   making → shipping
+ADMIN OR WORKER: SHIPPED        shipping → delivery   (+ tracking)
+ADMIN OR WORKER: DELIVERED      delivery → delivered
       ↓
-WORKER: SHIPPED (+ tracking)
+RECIPIENT SCANS QR              milestone unchanged; first_activated_at set
       ↓
-WORKER: DELIVERED
-      ↓
-RECIPIENT SCANS QR
-      ↓
-LETTER OPENED (first_activated_at set)
+LETTER OPENED
       ↓
 2-YEAR WINDOW STARTS
+      ↓
+AFTER-SALE (optional)           delivered → after_sale
 ```
+
+Digital Dearunes skip the three production stages: `sold → delivered` when the
+message is opened. `archived_at` is separate from the chain and can be set at any
+point.
 
 ## Milestone Validation Rules
 
-### Manufactured
+All of these are enforced by the transition guard plus the named RPC; no screen
+re-implements them.
+
+### Configured → Sold
+- A recorded sale (`paid_at` / `sales_log`)
+- A digital Dearune may not enter production from here
+
+### Sold → Making
+- Project paid, not archived, not digital
+- Units exist (or are created in the same transaction)
+
+### Manufactured (`making → shipping`)
 - Project paid
 - Not archived
 - Not digital wrapper
 - Units exist
 
-### Shipped
-- Project manufactured
+### Shipped (`shipping → delivery`)
+- Project manufactured (milestone `shipping`)
 - Shipping address complete (recipient_name, address_line1, city, country)
-- An explicit carrier (`bosta` or `egypt_post`)
-- A tracking number / carrier reference (required for the Operations `ops_ship`;
-  the legacy worker RPC still treats it as recommended)
+- An explicit carrier (`bosta` or `egypt_post`), normalised by `shipping_carrier`
+- A tracking number / carrier reference
 
-### Delivered
+### Delivered (`delivery → delivered`)
 - Project shipped
 - Records arrival time and operator; the order stays in Delivery
 - No archive is implied
 
-### After-Sale
+### After-Sale (`delivered → after_sale`)
 - Project delivered
 - Refunds are manual ledger entries with amount, reason, method, reference,
   operator, timestamp and an idempotency key; the total can never exceed the
   sale price
+
+### Any backwards move
+- Only `ops_revert_milestone`, maintenance-only, with a reason; it clears the
+  stamps the stage implied and refuses to un-sell a paid order
 
 ## Audit Trail
 

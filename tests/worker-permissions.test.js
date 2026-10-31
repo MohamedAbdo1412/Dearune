@@ -127,6 +127,10 @@ beforeAll(async () => {
     )
   ).id
 
+  // A unit only exists once the order has entered Making; say so explicitly
+  // rather than leaving the order at `configured` with a workshop unit.
+  await db.query('select public.ops_start_work_order($1)', [project.id])
+
   saleId = (
     await one(
       db,
@@ -372,11 +376,13 @@ describe('operations permissions', () => {
     const event = await one(
       db,
       `select actor_type, actor_id from public.physical_product_events
-       where physical_product_id = $1 order by created_at desc limit 1`,
+       where physical_product_id = $1 and action = 'operations.making_completed'
+       order by created_at desc limit 1`,
       [productId],
     )
-    expect(event.actor_type).toBe('system')
-    expect(event.actor_id).toBeNull()
+    // The worker is the actor: the same transition function records them.
+    expect(event.actor_type).toBe('worker')
+    expect(event.actor_id).toBe(OPERATIONS_WORKER)
   })
 
   it('takes effect immediately when a permission is revoked', async () => {

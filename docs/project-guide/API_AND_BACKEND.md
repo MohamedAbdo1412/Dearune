@@ -48,13 +48,12 @@ All 17 Edge Functions are written in Deno + TypeScript and deployed via Supabase
 | Action | Method | Body | Description |
 |---|---|---|---|
 | `list` | GET | Query: `includeArchived` | List operations |
-| `ensure` | POST | `{ projectId, units }` | Open units via `ensure_physical_products` |
-| `update` | PATCH | `{ productId, notes }` | Update notes |
-| `archive` | PATCH | `{ productIds, archive }` | Archive/restore |
-| `bulk-status` | PATCH | `{ productIds, status }` | Legacy (deprecated) |
-| `update-contact` | PATCH | `{ projectId, phone }` | Update contact |
-| `update-designer` | PATCH | `{ projectId, designerId }` | Reassign designer |
-| `making-start` | POST | `{ projectId }` | Place a paid physical order in Making (`ops_start_work_order`) |
+| `ensure` | POST | `{ projectId, units }` | Open units (and walk `configured → sold → making`) via `ensure_physical_products` |
+| `update` | PATCH | `{ productId, notes }` | Update unit notes |
+| `archive` / `restore` | PATCH | `{ productIds }` | Archive/restore units |
+| `update-contact` | PATCH | `{ projectId, phone }` | Update recipient contact |
+| `update-designer` | PATCH | `{ projectId, designerName, designerCode }` | Correct the designer's own fields |
+| `making-start` | POST | `{ projectId }` | Walk `configured → sold → making` for a paid physical order (`ops_start_work_order`) |
 | `making-complete` | POST | `{ projectId, reason? }` | Finish Making and move to Shipping (`ops_making_complete`) |
 | `shipment-save` | POST | `{ projectId, carrier, tracking?, manifestId? }` | Persist the carrier before hand-off (`ops_save_shipment`) |
 | `ship` | POST | `{ projectId, carrier, tracking, manifestId? }` | Mark shipped; moves to Delivery (`ops_ship`) |
@@ -63,6 +62,11 @@ All 17 Edge Functions are written in Deno + TypeScript and deployed via Supabase
 | `record-refund` | POST | `{ projectId, amount, reason, method, reference?, status?, idempotencyKey? }` | Append a manual refund ledger entry (`ops_record_refund`) |
 | `manifest-preview` | POST | `{ carrier, filename, sheet, rows }` | Match a manifest without writing anything |
 | `manifest-commit` | POST | `{ carrier, filename, sheet, rows, decisions? }` | Snapshot + ship matched rows (`ops_create_manifest` + `ops_ship`) |
+
+`bulk-status` is **gone**: it was the old path that wrote a parallel status
+column. Every stage change now goes through `ops_*`, and the manifest gate
+refuses orders at `configured` / `sold` / `making` with a distinct message for
+each.
 
 **Ensure Action:**
 ```typescript
@@ -339,35 +343,52 @@ selection of `not_available` rows client-side (`getCatalogItemState`).
 | `admin_workers_*` | Worker CRUD |
 | `admin_operations_*` | Operations CRUD |
 
-### Order lifecycle RPCs (`20261103000001_order_lifecycle.sql`)
+### Order lifecycle RPCs (`20261103000001_order_lifecycle.sql`, extended by `20261104000003_unified_order_model.sql`)
 
-All are `security definer`, with execute revoked from `public`, `anon` and
-`authenticated`; only the `admin-operations` edge function (service role) calls
-them. See `ORDER_LIFECYCLE.md`.
+All `ops_*` functions are `security definer`, with execute revoked from `public`,
+`anon` and `authenticated` and granted **explicitly to `service_role`**; only the
+`admin-operations` / `admin-dearunes` edge functions (service role) call them.
+Worker RPCs are granted to `authenticated` and check `worker_has_permission`
+per call. See `ORDER_LIFECYCLE.md` and `AUTHORITATIVE_ORDER_MODEL.md`.
 
 | Function | Purpose |
 |---|---|
-| `ops_move_milestone(p_project_id, p_to, p_actor, p_reason?, p_at?)` | The only writer of `projects.milestone`; refuses backwards/skipping moves |
-| `ops_advance_to(p_project_id, p_to, p_actor, p_reason?)` | Forward-only walker used to carry legacy Designer stamps forward |
-| `ops_start_work_order(p_project_id, p_actor?)` | Put a paid physical Dearune into Making |
-| `ops_making_complete(p_project_id, p_actor, p_reason?)` | Stamp production and move Making → Shipping |
+| `ops_move_milestone(p_project_id, p_to, p_actor, p_reason?, p_at?, p_actor_type?)` | The only writer of `projects.milestone`; one forward step, mirrors unit/project stamps, audits |
+| `ops_advance_to(p_project_id, p_to, p_actor, p_reason?, p_actor_type?)` | Forward-only walker, one event per hop (legacy Designer stamps, worker paths) |
+| `ops_revert_milestone(p_project_id, p_to, p_actor, p_reason, p_actor_type?)` | Maintenance-only backwards correction (uses `dearune.milestone_override`); clears stamps below the target; refuses to un-sell a paid order |
+| `ops_start_work_order(p_project_id, p_actor?, p_actor_type?)` | Walk `configured → sold → making` for a paid physical Dearune |
+| `ops_making_complete(p_project_id, p_actor, p_reason?, p_actor_type?)` | Stamp production and move Making → Shipping |
 | `ops_save_shipment(p_project_id, p_carrier, p_tracking?, p_manifest_id?, p_actor?)` | Save carrier/tracking without moving the milestone |
-| `ops_ship(p_project_id, p_carrier, p_tracking, p_manifest_id?, p_actor?, p_at?)` | Ship and move Shipping → Delivery (idempotent) |
-| `ops_deliver(p_project_id, p_actor, p_at?, p_reason?)` | Record arrival and move Delivery → Delivered (stays in Delivery) |
-| `ops_after_sale(p_project_id, p_actor, p_reason?)` | Move Delivered → After-Sale |
+| `ops_ship(p_project_id, p_carrier, p_tracking, p_manifest_id?, p_actor?, p_at?, p_actor_type?)` | Ship and move Shipping → Delivery (idempotent; requires carrier + tracking) |
+| `ops_deliver(p_project_id, p_actor, p_at?, p_reason?, p_actor_type?)` | Record arrival and move Delivery → Delivered (stays in Delivery) |
+| `ops_after_sale(p_project_id, p_actor, p_reason?, p_actor_type?)` | Move Delivered → After-Sale |
 | `ops_record_refund(p_project_id, p_amount, p_reason, p_status?, p_method?, p_reference?, p_actor?, p_idempotency_key?, p_product_id?)` | Manual refund ledger with amount/reason/idempotency checks |
 | `ops_create_manifest(p_carrier, p_filename, p_sheet, p_rows, p_actor?)` | Write the manifest snapshot before associations |
+
+Archiving is **not** a milestone: `admin-dearunes` writes `archived_at` directly,
+and because archive is orthogonal the milestone guard is not involved.
+
+One pure function owns the QR answer:
+
+| Function | Returns |
+|---|---|
+| `order_qr_state(p_public_id, p_public_token, p_message_active, p_password_set)` | `order_qr_status(destination, activated, openable, blocked_reason)` — the ONE QR calculation |
+| `shipping_carrier(p_value)` | Normalised carrier key, or `NULL` — the one carrier vocabulary |
 
 Read-only views for the Operations screens:
 
 | View | Purpose |
 |---|---|
-| `ops_orders` | One row per order: canonical/sold/unit references, milestone, shipment, refund totals, QR readiness |
+| `ops_orders` | One row per order: canonical id, sold id, `is_digital`, milestone, shipment, refund totals, the four `qr_*` fields |
 | `ops_milestone_counts` | Counts for the four subsection badges (delivery includes delivered) |
-| `ops_identity_report` | Orders whose identifiers disagree, have no unit, or have no canonical ID |
+| `ops_identity_report` | Reconciliation: missing canonical/Sold ID, missing units, extra shipping rows, stored-vs-derived milestone mismatch |
+| `operations_units` | Per-unit print shape with `milestone`, `sold_id` and the same `qr_*` answer |
 
-`operations_units` is recreated with `milestone` appended so the print/worker
-pipeline keeps its unit shape.
+Worker read/action RPCs (recreated in `20261104000003`): `worker_operations_units`,
+`worker_dearune_detail`, `worker_mark_dearune_manufactured`,
+`worker_mark_dearune_shipped`, `worker_mark_dearune_delivered`,
+`worker_qa_lookup`. `worker_set_operation_status` was **dropped** — worker
+actions move the shared milestone instead of writing a second status.
 
 ### Public RPCs
 

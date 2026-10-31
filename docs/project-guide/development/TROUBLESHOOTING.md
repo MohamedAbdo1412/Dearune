@@ -409,6 +409,98 @@ for that order.
 
 ---
 
+### 20. A Milestone Move Is Refused (`milestone.transition_denied`)
+
+**Symptom:** an admin action or a direct
+`update projects set milestone = …` fails with
+`milestone.transition_denied` or `milestone.digital_production`.
+
+**Cause:** `projects_milestone_guard` is the single judge of a stage change. It
+allows only the next stage forward for a physical order, allows `NULL → value`
+once, treats an identical value as a no-op, and forbids a digital order entering
+`making` / `shipping` / `delivery`.
+
+**Fix:** call the named action instead of writing the column —
+`ops_making_complete`, `ops_ship`, `ops_deliver`, `ops_after_sale`, or
+`ops_start_work_order` for `configured → sold → making`. To correct a stage that
+was recorded wrongly, use `ops_revert_milestone` (maintenance, service role) —
+never `update projects`. See `AUTHORITATIVE_ORDER_MODEL.md`.
+
+**Check:**
+- [ ] `select milestone from projects where id = '…';` — compare with where you
+      are trying to go
+- [ ] `select action, actor_type, detail from project_events where project_id = '…' order by created_at desc limit 10;`
+- [ ] A digital order: confirm `wrapper_type` resolves to kind `digital`; it can
+      only go `sold → delivered`
+
+---
+
+### 21. `ops_revert_milestone` Refuses ("reverse the sale first")
+
+**Symptom:** a backwards correction to `configured` / `sold` fails with
+`order.revert_denied: reverse the sale before returning this Dearune to …`.
+
+**Cause:** the order still has `paid_at` (and therefore a sale). Un-selling is a
+financial action, not a stage correction, so the revert path refuses to do it
+silently.
+
+**Fix:** reverse the sale explicitly first (the Designer/Admin sale action), then
+revert the milestone. The revert also clears the stamps (`manufactured_at`,
+`shipped_at`, `arrived_at`, unit stamps) that the old stage implied, so a
+reverted order does not keep a phantom production history.
+
+**Check:**
+- [ ] `select paid_at, manufactured_at, shipped_at, arrived_at from projects where id = '…';`
+- [ ] `select action, detail from project_events where project_id = '…' and action = 'order.milestone.reverted';`
+
+---
+
+### 22. Printing Refuses a Unit Because "the QR will not open"
+
+**Symptom:** the print screen blocks a unit with one of:
+
+| Message | Cause | Fix |
+|---|---|---|
+| No public link yet | `public_id` or `public_token` is missing | activate/generate the message link |
+| The letter is switched off | `message_active = false` | switch the letter on |
+| The letter is password-protected | `payload.passwordSet = true` | a scan cannot pass the password — turn it off before printing |
+
+**Cause:** QR readiness is one calculation (`order_qr_state`) and the print gate
+(`validateOperationForPaper`) refuses any blocked QR — a sheet whose QR cannot
+open is wasted paper. A missing customer phone is only a warning.
+
+**Check:**
+- [ ] `select * from order_qr_state(public_id, public_token, message_active, coalesce((payload->>'passwordSet')::boolean,false)) from projects where id = '…';`
+- [ ] `select qr_openable, qr_blocked_reason from ops_orders where project_id = '…';`
+
+---
+
+### 23. Two Dashboards Show a Different ID / Sold ID / Stage
+
+**Symptom:** the Designer receipt, the Operations row and the Worker row disagree
+about an order's identifier or stage.
+
+**Cause:** this is exactly what the unified order model removed. All surfaces
+read `projects.reference`, `order_references` (`kind='sold'`), and
+`projects.milestone`. A disagreement means a surface is reading something else —
+or the record predates the migration.
+
+**Fix:** run the reconciliation view; it names every order whose identifiers or
+stored stage disagree:
+
+```sql
+select project_id, canonical_id, sold_id, stored_milestone, derived_milestone,
+       milestone_mismatch, missing_units, missing_canonical_id, missing_sold_id
+from public.ops_identity_report
+where milestone_mismatch or missing_canonical_id or missing_sold_id or missing_units;
+```
+
+`derived_milestone` exists **only** to spot these disagreements; no screen may
+read it as a stage. Resolve each row with `ops_revert_milestone` / the forward
+action, never by editing identifiers.
+
+---
+
 ## Debugging Tools
 
 ### Browser Console

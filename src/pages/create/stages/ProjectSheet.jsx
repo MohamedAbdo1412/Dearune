@@ -116,7 +116,7 @@ export default function ProjectSheet({ project, token, templates, onBack }) {
       <div className="review-meta">
         <span className="draft-note">{paper || t('chosen paper', 'الورق المختار')}{paperVersion ? ` · ${paperVersion}` : ''}</span>
         {closedAt ? <span className="draft-note">{t('closed', 'أُغلق')} · {closedAt}</span> : null}
-        <span className="draft-note">receipt · {project?.public_id ?? ''}</span>
+        <span className="draft-note">receipt · {project?.reference ?? ''}</span>
       </div>
       <div className="review-meta" style={{ marginTop: 2 }}>
         {active ? (

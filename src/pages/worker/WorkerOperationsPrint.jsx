@@ -308,8 +308,8 @@ export function WorkerOperationsPrint() {
               <CardHeader>
                 <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-medium">
                   <span className="font-mono">{activeItem.operation.reference}</span>
-                  <span className="text-muted-foreground">Sold as</span>
-                  <span className="font-mono">{activeItem.operation.soldAs}</span>
+                  <span className="text-muted-foreground">Sold ID</span>
+                  <span className="font-mono">{activeItem.operation.soldId || '—'}</span>
                   <OperationsBadge status={activeItem.operation.status} />
                 </CardTitle>
               </CardHeader>

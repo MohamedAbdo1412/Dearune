@@ -17,14 +17,15 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { QrScanner, decodeImageFile } from '@/components/admin/QrScanner'
-import { OperationsBadge } from '@/components/admin/operations-status'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { MILESTONE_LABELS } from '@/services/constants'
 import { formatDateTime } from '@/services/format'
 import { parseQrValue } from '@/services/qa'
+import { QR_BLOCKED_LABELS } from '@/services/qrState'
 import { fetchWorkerQaRecord } from '@/services/workerQa'
 
 const ERROR_COPY = {
@@ -43,14 +44,6 @@ function messageOf(error) {
   }
   if (!navigator.onLine) return 'The device is offline. Reconnect and try the scan again.'
   return text || 'The lookup failed. Please try again.'
-}
-
-function milestoneOf(row) {
-  if (row.delivered_at) return 'delivered'
-  if (row.shipped_at) return 'shipped'
-  if (row.manufacturing_completed_at || row.manufactured_at) return 'manufactured'
-  if (row.sold_at || row.paid_at) return 'sold'
-  return 'pending'
 }
 
 function Field({ label, value, mono = false, empty = 'Not available' }) {
@@ -86,16 +79,22 @@ function Section({ icon: Icon, title, description, children }) {
 }
 
 function UnitCard({ unit }) {
-  const status = milestoneOf(unit)
   return (
     <li className="rounded-xl border border-border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-mono text-xs font-semibold">{unit.reference}</span>
-        <OperationsBadge status={status} />
+        <Badge variant="outline">{MILESTONE_LABELS[unit.milestone] ?? unit.milestone ?? '—'}</Badge>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
         Unit {unit.unit_index} · created {formatDateTime(unit.created_at)}
         {unit.archived_at ? ' · archived' : ''}
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Sold ID <span className="font-mono">{unit.sold_id || '—'}</span>
+        {' · '}
+        {unit.qr_openable
+          ? 'QR will open the letter'
+          : QR_BLOCKED_LABELS[unit.qr_blocked_reason] ?? 'QR will not open the letter'}
       </p>
       {unit.notes ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{unit.notes}</p> : null}
     </li>
@@ -149,7 +148,8 @@ function RecordView({ record }) {
       <Section icon={Package} title="The Dearune" description="Identity and production state. Prices and the private letter are not part of this record.">
         <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Reference" value={project.reference} mono />
-          <Field label="Status" value={project.status} />
+          <Field label="Sold ID" value={project.sold_id} mono />
+          <Field label="Milestone" value={MILESTONE_LABELS[project.milestone] ?? project.milestone} />
           <Field label="Wrapper" value={project.wrapper_name || project.wrapper_type || '—'} />
           <Field label="Paper" value={record.template?.name || project.template_slug} />
           <Field label="Paper version" value={project.template_version} />

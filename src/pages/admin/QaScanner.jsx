@@ -16,7 +16,8 @@ import { toast } from 'sonner'
 import { QrScanner, decodeImageFile } from '@/components/admin/QrScanner'
 import { QA_ERROR_KINDS, fetchQaRecord, qaIdentifiers } from '@/services/qa'
 import { formatDate, formatDateTime, formatMoney } from '@/services/format'
-import { WRAPPER_LABELS } from '@/services/constants'
+import { MILESTONE_LABELS } from '@/services/constants'
+import { QR_BLOCKED_LABELS } from '@/services/qrState'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -292,7 +293,7 @@ function RecordSections({ record }) {
         <FieldGrid>
           <Field label="Dearune reference" value={record.project.reference} mono />
           <Field label="Title" value={record.project.title} empty="No title" />
-          <Field label="Status" value={record.project.status} />
+          <Field label="Milestone" value={MILESTONE_LABELS[record.project.milestone] ?? record.project.milestone} />
           <Field label="Paper" value={record.template?.name || record.project.templateSlug} empty="No paper chosen" />
           <Field label="Paper version" value={record.project.templateVersion} />
           <Field label="Wrapper" value={record.project.wrapperName ?? record.project.wrapperType ?? 'No wrapper'} empty="No wrapper" />
@@ -360,19 +361,22 @@ function RecordSections({ record }) {
                   <p className="font-mono text-sm font-semibold break-all">
                     {unit.reference || NOT_AVAILABLE}
                   </p>
-                  <Badge variant="outline">{unit.statusLabel}</Badge>
+                  <Badge variant="outline">{MILESTONE_LABELS[unit.milestone] ?? unit.milestone ?? '—'}</Badge>
                 </div>
                 <FieldGrid className="mt-3">
                   <Field label="Unit" value={unit.unitIndex} />
-                  <Field label="Sold as" value={unit.soldAs} empty="Not a valid production reference" />
+                  <Field label="Sold ID" value={unit.soldId} empty="No Sold ID recorded" />
                   <Field label="Archived" value={unit.archived ? `Yes — ${formatDate(unit.archivedAt)}` : 'No'} />
                   <Field label="Notes" value={unit.notes} empty="No notes" />
                   <Field label="On hold reason" value={unit.onHoldReason} empty="Not on hold" />
                   <Field label="Cancellation reason" value={unit.cancelledReason} empty="Not cancelled" />
                   <Field label="Letter switched on" value={unit.messageActive ? 'Yes' : 'No'} />
                   <Field label="Letter password-protected" value={unit.messageProtected ? 'Yes' : 'No'} />
-                  <Field label="QR has a target" value={unit.qrTarget ? 'Yes' : 'No'} />
-                  <Field label="QR will open the letter" value={unit.qrReady ? 'Yes' : 'No'} />
+                  <Field label="QR has a destination" value={unit.qr?.destination ? 'Yes' : 'No'} />
+                  <Field
+                    label="QR will open the letter"
+                    value={unit.qr?.openable ? 'Yes' : `No — ${QR_BLOCKED_LABELS[unit.qr?.blockedReason] ?? 'blocked'}`}
+                  />
                   <Field label="Paid" value={formatDateTime(unit.paidAt)} />
                   <Field label="Created" value={formatDateTime(unit.createdAt)} />
                   <Field label="Updated" value={formatDateTime(unit.updatedAt)} />

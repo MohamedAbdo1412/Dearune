@@ -49,7 +49,7 @@ type ForwardField = (typeof FORWARD_FIELDS)[number]
 
 const AVAILABILITY_YEARS = 2
 const METADATA_COLUMNS =
-  'id, reference, designer_id, template_slug, template_version, title, status, public_id, submitted_at, created_at, updated_at, configured_at, wrapper_type, sale_price, estimated_cost, currency, paid_at, manufactured_at, shipped_at, arrived_at, archived_at, first_activated_at, message_active, policy_version, policies_accepted_at'
+  'id, reference, designer_id, template_slug, template_version, title, milestone, milestone_updated_at, public_id, submitted_at, created_at, updated_at, configured_at, wrapper_type, sale_price, estimated_cost, currency, paid_at, manufactured_at, shipped_at, arrived_at, archived_at, first_activated_at, message_active, policy_version, policies_accepted_at'
 
 type Row = Record<string, unknown>
 
@@ -170,6 +170,43 @@ async function loadShipping(sb: ReturnType<typeof adminClient>, projectId: strin
   return (data ?? null) as Row | null
 }
 
+// The ONE transition machine lives in the database. This function never writes
+// `projects.milestone` itself: it asks the same `ops_*` routine the Operations
+// dashboard calls, so a sale recorded here and a sale recorded there can never
+// land on different stages. `ops_advance_to` is forward-only and idempotent.
+async function advanceMilestone(
+  sb: ReturnType<typeof adminClient>,
+  projectId: string,
+  to: string,
+  actorId: string,
+  reason: string,
+) {
+  return sb.rpc('ops_advance_to', {
+    p_project_id: projectId,
+    p_to: to,
+    p_actor: actorId,
+    p_reason: reason,
+    p_actor_type: 'admin',
+  })
+}
+
+// The maintenance-only backwards correction, same contract.
+async function revertMilestone(
+  sb: ReturnType<typeof adminClient>,
+  projectId: string,
+  to: string,
+  actorId: string,
+  reason: string,
+) {
+  return sb.rpc('ops_revert_milestone', {
+    p_project_id: projectId,
+    p_to: to,
+    p_actor: actorId,
+    p_reason: reason,
+    p_actor_type: 'admin',
+  })
+}
+
 // The price a Dearune should sell for. Resolved in the same order the
 // whole app uses (see `resolveWrapperPrice` in `src/services/wrappers.js`):
 //
@@ -253,6 +290,7 @@ Deno.serve(async (req) => {
     if (project.paid_at) {
       // Already sold — but a physical unit may never have been opened (an
       // older sale, or a call that failed part-way). Retrying is the heal.
+      await advanceMilestone(sb, projectId, 'sold', admin.id, 'Sale already recorded')
       const { units, error: unitError } = await openPhysicalUnits(sb, project, admin.id)
       return jsonResponse({
         ok: true,
@@ -305,6 +343,7 @@ Deno.serve(async (req) => {
     if (!claimed) {
       const fresh = await loadProject(sb, projectId)
       if (fresh?.paid_at) {
+        await advanceMilestone(sb, projectId, 'sold', admin.id, 'Sale already recorded')
         const { units, error: unitError } = await openPhysicalUnits(sb, fresh, admin.id)
         return jsonResponse({
           ok: true,
@@ -365,7 +404,15 @@ Deno.serve(async (req) => {
       wrapper_type: chosenWrapper,
     })
 
-    // 3. A physical Dearune now needs a physical unit — the Operations record
+    // 3. Move the order to Sold, then open its physical unit. Both steps are
+    //    idempotent and recorded in `project_events`; the stage change is the
+    //    same `ops_advance_to` the Operations screen uses.
+    const { error: stageError } = await advanceMilestone(sb, projectId, 'sold', admin.id, 'Sale recorded')
+    if (stageError) {
+      return errorResponse('The sale was recorded, but the order could not be moved to Sold — try again', 500)
+    }
+
+    // 4. A physical Dearune now needs a physical unit — the Operations record
     //    that carries the canonical `DR` + 11 digits id, the manufacturing
     //    steps and the QR paper. Digital Dearunes have none. Idempotent: if
     //    the unit already exists the call changes nothing, so a retry after a
@@ -418,6 +465,11 @@ Deno.serve(async (req) => {
       .eq('id', projectId)
       .eq('paid_at', project.paid_at as string)
 
+    // Back to Configured, through the same maintenance-only revert used by the
+    // Operations screen. It clears the later stamps in one statement, so the
+    // order cannot be left in a contradictory state by a partial correction.
+    await revertMilestone(sb, projectId, 'configured', admin.id, reason)
+
     await logEvent(sb, projectId, admin.id, 'project.sale.voided', {
       sale_reference: voided.sale_reference,
       reason,
@@ -427,11 +479,27 @@ Deno.serve(async (req) => {
   }
 
   // -- Making / shipping (physical Dearunes only) ---------------------------
+  // These actions are a VIEW of the one milestone machine: `ops_advance_to`
+  // moves the order forward and `ops_revert_milestone` corrects it. The
+  // `*_at` stamps are still checked here because they are what the admin
+  // screen shows, but the database owns the transition.
   if (action === 'stamp' || action === 'unstamp') {
     const field = asText(body.field, 30) as ForwardField
     if (!FORWARD_FIELDS.includes(field)) return errorResponse('Unknown production step', 400)
     const reversing = action === 'unstamp'
     const label = field.replace('_at', '').replace(/^./, (c) => c.toUpperCase())
+
+    // Which milestone this stamp represents, and what reversing it restores.
+    const forwardTo: Record<ForwardField, string> = {
+      manufactured_at: 'shipping',
+      shipped_at: 'delivery',
+      arrived_at: 'delivered',
+    }
+    const reverseTo: Record<ForwardField, string> = {
+      manufactured_at: 'making',
+      shipped_at: 'shipping',
+      arrived_at: 'delivery',
+    }
 
     if (reversing) {
       if (!settings.maintenance) return errorResponse('Maintenance mode must be on to correct a step', 409)
@@ -445,10 +513,15 @@ Deno.serve(async (req) => {
         return errorResponse(`Unset ${stillSet.replace('_at', '').replace(/^./, (c) => c.toUpperCase())} first`, 400)
       }
 
-      const { error } = await sb.from('projects').update({ [field]: null }).eq('id', projectId).not(field, 'is', null)
+      const { error } = await sb.rpc('ops_revert_milestone', {
+        p_project_id: projectId,
+        p_to: reverseTo[field],
+        p_actor: admin.id,
+        p_reason: reason,
+        p_actor_type: 'admin',
+      })
       if (error) return errorResponse(`Could not correct ${label.toLowerCase()}`, 500)
 
-      await logEvent(sb, projectId, admin.id, `project.${field.replace('_at', '')}.reversed`, { reason })
       return jsonResponse({ ok: true })
     }
 
@@ -471,18 +544,18 @@ Deno.serve(async (req) => {
       return errorResponse('Mark this Dearune shipped before marking it arrived', 400)
     }
 
-    const now = new Date().toISOString()
-    const { data: updated, error } = await sb
-      .from('projects')
-      .update({ [field]: now })
-      .eq('id', projectId)
-      .is(field, null)
-      .select('id')
-      .maybeSingle()
-
+    const { error } = await sb.rpc('ops_advance_to', {
+      p_project_id: projectId,
+      p_to: forwardTo[field],
+      p_actor: admin.id,
+      p_reason: `${label} recorded`,
+      p_actor_type: 'admin',
+    })
     if (error) return errorResponse(`Could not mark ${label.toLowerCase()}`, 500)
-    if (!updated) return jsonResponse({ ok: true, already: true })
 
+    // The stage change is recorded once, by the transition function, as
+    // `order.milestone`. A second audit line with the legacy name keeps older
+    // exports readable without becoming a second source of state.
     await logEvent(sb, projectId, admin.id, `project.${field.replace('_at', '')}`, {})
     return jsonResponse({ ok: true })
   }
@@ -522,6 +595,12 @@ Deno.serve(async (req) => {
         .eq('id', projectId)
         .eq('message_active', false)
       if (error) return errorResponse('Could not open this message', 500)
+      // A digital Dearune has no parcel: opening it IS delivery. Same
+      // transition function the Operations screen would use, so the Designer,
+      // Admin and Worker dashboards all see one stage.
+      if (await isDigitalWrapper(sb, asText(project.wrapper_type, 30))) {
+        await advanceMilestone(sb, projectId, 'delivered', admin.id, 'Digital message opened')
+      }
       const expiresAt = plusYears(first)
       await logEvent(sb, projectId, admin.id, 'project.activated', {
         first_activated_at: first,
@@ -578,13 +657,13 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: true, unchanged: true })
     }
 
+    // Archiving hides a Dearune from the working lists. It is NOT a stage:
+    // `projects.milestone` stays exactly where it is, so restoring never
+    // rewinds the order. `projects.status` is deprecated and deliberately not
+    // written any more — nothing reads it.
     const { error } = await sb
       .from('projects')
-      .update(
-        wantArchive
-          ? { archived_at: new Date().toISOString(), status: 'archived' }
-          : { archived_at: null, status: 'submitted' },
-      )
+      .update(wantArchive ? { archived_at: new Date().toISOString() } : { archived_at: null })
       .eq('id', projectId)
     if (error) return errorResponse(wantArchive ? 'Could not archive this Dearune' : 'Could not restore this Dearune', 500)
 

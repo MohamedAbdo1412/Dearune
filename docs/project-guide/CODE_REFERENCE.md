@@ -103,28 +103,36 @@ submit path and the migration's contract.
 
 | Export | Type | Description |
 |---|---|---|
-| `PHYSICAL_ID_PATTERN` | `RegExp` | `/^DR\d{11}$/` |
-| `OPERATIONS_STATUS_ORDER` | `string[]` | `['pending', 'sold', 'manufactured', 'shipped', 'delivered']` |
-| `OPERATIONS_STATUS_LABELS` | `Record<string, string>` | Labels for milestones |
+| `DEARUNE_ID_PATTERN` | `RegExp` | `/^DR-\d{6}$/` — the canonical Dearune ID |
+| `soldIdFor(canonicalReference)` | `string` | `DR-000021 → SOL-000021`; `''` when the value is not canonical |
+| `MILESTONE_ORDER` | `string[]` | The ONE lifecycle: `['configured','sold','making','shipping','delivery','delivered','after_sale']` |
+| `MILESTONE_LABELS` | `Record<string, string>` | Label per milestone |
+| `MILESTONE_SHORT` | `Record<string, string>` | Short label per milestone |
+| `milestoneRank(milestone)` | `number` | Position in `MILESTONE_ORDER` |
+| `isMilestone(value)` | `boolean` | Is the value a member of the enum |
+| `PHYSICAL_ID_PATTERN` | `RegExp` | `/^DR\d{11}$/` — the physical unit ID |
+| `OPERATIONS_STATUS_ORDER` | `string[]` | Print vocabulary, a projection of milestone: `['pending', 'sold', 'manufactured', 'shipped', 'delivered']` |
+| `OPERATIONS_STATUS_LABELS` | `Record<string, string>` | Labels for the print vocabulary |
 | `OPERATIONS_STATUS_SHORT` | `Record<string, string>` | Short labels |
-| `STAGE_LABELS` | `Record<string, string>` | Project stage labels |
-| `PROJECT_STAGE_ORDER` | `string[]` | `['configured', 'sold', 'made', 'shipped', 'delivered', 'archived']` |
+| `unitStageFromMilestone(milestone)` | `string` | Milestone → print vocabulary (`sold`/`making → sold`, …) |
+| `PROJECT_STAGE_ORDER` | `string[]` | `MILESTONE_ORDER` + `'archived'` |
+| `PROJECT_STAGE_LABELS` | `Record<string, string>` | `MILESTONE_LABELS` + `archived` |
 | `PUBLIC_SITE_URL` | `string` | From `VITE_PUBLIC_SITE_URL` |
 | `publicMessageUrl(payload)` | `string` | `https://site/message/${publicId}?token=${token}` |
-| `soldAsId(reference)` | `string` | `SOL-${reference}` if valid |
 
 **Stage/Order Helpers:**
 
 ```javascript
-// Returns project stage from timestamps
-orderStage(order, publishedAt) → 'pending' | 'in-production' | 'manufactured' | 'shipped' | 'delivered' | 'cancelled' | 'deleted'
-
-projectStage(project) → 'configured' | 'sold' | 'made' | 'shipped' | 'delivered' | 'archived'
+// The stored milestone is the ONLY stage source; unit timestamps are never read.
+projectStage(project) → 'configured' | 'sold' | 'making' | 'shipping' | 'delivery' | 'delivered' | 'after_sale' | 'archived'
 
 nextDearuneAction(project) → 'sale' | 'made' | 'shipped' | 'arrived' | 'open' | 'restore' | null
 
 isDigital(project) → boolean
 ```
+
+`orderStage(order, publishedAt)` is retained **only** for legacy `orders` rows
+(the pre-project sales table) and is never used for a Dearune.
 
 **Wrapper Helpers:**
 
@@ -135,14 +143,36 @@ WRAPPER_TYPES: ['digital', 'open_letter', 'sealed_letter', 'open_card']
 
 ---
 
+### `src/services/qrState.js`
+
+The browser mirror of SQL `public.order_qr_state(...)`. One answer to the four
+workshop questions; it is **not** a second source of truth — when a row exists,
+the row already carries the database's answer as `qr.blockedReason` and
+`qrStateOf()` reads it.
+
+| Export | Type | Description |
+|---|---|---|
+| `qrState({ publicId, publicToken, messageActive, passwordSet })` | `{ destination, activated, openable, blockedReason }` | The calculation, identical to the SQL function |
+| `qrStateOf(row)` | `{ destination, activated, openable, blockedReason }` | Uses the database's `qr_*` columns verbatim when present, else derives them from the raw fields |
+| `qrBlockedMessage(state)` | `string \| null` | Human sentence for a state's blocked reason |
+| `QR_BLOCKED_LABELS` | `Record<string, string>` | `missing_destination` / `not_activated` / `password_protected` |
+| `QR_BLOCKED_FIXES` | `Record<string, string>` | What the operator must do to unblock it |
+
+There is deliberately no `printed` flag: printing is client-side and a stored
+flag cannot know that paper came out of a printer.
+
+---
+
 ### `src/services/operations.js`
 
 | Export | Type | Description |
 |---|---|---|
 | `OPERATION_COLUMNS` | `string` | CSV of columns for `operations_units` view |
+| `OPERATIONS_STATUS_ORDER` | `string[]` | Re-exported from `constants.js` (one definition) |
 | `fetchOperations({ includeArchived })` | `Promise<Operation[]>` | Fetch all operations |
 | `fetchOperationEvents(operationId)` | `Promise<Event[]>` | Fetch unit timeline |
 | `toOperation(row)` | `Operation` | Map DB row → UI shape |
+| `validateOperationForPaper(operation)` | `{ ok, errors, warnings }` | Print gate; hard-fails on `qr.blockedReason` |
 | `OPERATIONS_SORTS` | `SortOption[]` | Sort options |
 | `sortOperations(operations, sortKey)` | `Operation[]` | Deterministic sort |
 | `operationSearchText(operation)` | `string` | Searchable text blob |
@@ -152,19 +182,28 @@ WRAPPER_TYPES: ['digital', 'open_letter', 'sealed_letter', 'open_card']
 
 ```javascript
 {
-  id, reference, soldAs, hasValidId, unitIndex,
+  id, reference, soldId, hasValidId, unitIndex,
   soldAt, manufacturingCompletedAt, shippedAt, deliveredAt,
   notes, archivedAt, archived, createdAt, updatedAt,
-  status: 'pending' | 'sold' | 'manufactured' | 'shipped' | 'delivered',
+  milestone,                       // authoritative: configured…after_sale
+  status,                          // derived via unitStageFromMilestone(milestone)
   projectId, projectReference, projectTitle,
   publicId, publicToken, wrapperType, templateSlug,
-  paidAt, messageActive, messageProtected, qrTarget, qrReady,
+  paidAt, messageActive, messageProtected,
+  qr: { destination, activated, openable, blockedReason },
   designerId, designerName, designerCode,
   recipientName, customerPhone, trackingCode, provider,
   addressLine1, addressLine2, city, stateProvince, postalCode, country,
-  specialInstructions, qrTarget, qrReady
+  specialInstructions
 }
 ```
+
+`status` is the **print vocabulary** (`pending | sold | manufactured | shipped |
+delivered`) derived from `milestone`; it is never stored and never a stage
+machine of its own. `soldId` belongs to the ORDER and derives from the canonical
+id, so every unit of one Dearune shows the same Sold ID. `qrTarget` / `qrReady`
+no longer exist — the four `qr` fields are the one answer from
+`order_qr_state()`.
 
 ---
 
@@ -868,16 +907,29 @@ PHASE_OF = {
 
 | Constant | Value | Description |
 |---|---|---|
-| `PHYSICAL_ID_PATTERN` | `/^DR\d{11}$/` | Canonical ID regex |
-| `OPERATIONS_STATUS_ORDER` | `['pending', 'sold', 'manufactured', 'shipped', 'delivered']` | Milestone order |
+| `DEARUNE_ID_PATTERN` | `/^DR-\d{6}$/` | Canonical Dearune ID regex |
+| `PHYSICAL_ID_PATTERN` | `/^DR\d{11}$/` | Physical unit ID regex (different identifier type) |
+| `MILESTONE_ORDER` | `['configured', 'sold', 'making', 'shipping', 'delivery', 'delivered', 'after_sale']` | The ONE lifecycle order |
+| `MILESTONE_LABELS` | `{ configured: 'Configured', sold: 'Sold', making: 'Making', shipping: 'Shipping', delivery: 'Delivery', delivered: 'Delivered', after_sale: 'After-Sale' }` | Milestone labels |
+| `PROJECT_STAGE_ORDER` | `[...MILESTONE_ORDER, 'archived']` | Derived stage order |
+| `PROJECT_STAGE_LABELS` | `{ ...MILESTONE_LABELS, archived: 'Archived' }` | Derived stage labels |
+| `OPERATIONS_STATUS_ORDER` | `['pending', 'sold', 'manufactured', 'shipped', 'delivered']` | Print vocabulary (a projection of milestone, not a stage machine) |
 | `OPERATIONS_STATUS_LABELS` | `{ pending: 'Pending', sold: 'Sold', manufactured: 'Manufactured', shipped: 'Shipped', delivered: 'Delivered' }` | Labels |
 | `OPERATIONS_STATUS_SHORT` | `{ pending: 'Pend.', sold: 'Sold', manufactured: 'Mfg.', shipped: 'Shipped', delivered: 'Del.' }` | Short labels |
-| `STAGE_LABELS` | `{ configured: 'Configured', sold: 'Sold', made: 'Made', shipped: 'Shipped', delivered: 'Delivered', archived: 'Archived' }` | Project stages |
-| `PROJECT_STAGE_ORDER` | `['configured', 'sold', 'made', 'shipped', 'delivered', 'archived']` | Stage order |
 | `DEARUNE_ACTION_LABELS` | `{ sale: 'Record sale', made: 'Mark made', shipped: 'Mark shipped', arrived: 'Mark arrived', open: 'Open message', restore: 'Restore' }` | Action labels |
 | `WRAPPER_LABELS` | `{ digital: 'Digital only', open_letter: 'Open letter', sealed_letter: 'Sealed letter', open_card: 'Open card' }` | Wrapper labels |
 | `WRAPPER_TYPES` | `['digital', 'open_letter', 'sealed_letter', 'open_card']` | Wrapper types |
-| `STAGE_LABELS` | `{ configured: 'Configured', sold: 'Sold', made: 'Made', shipped: 'Shipped', delivered: 'Delivered', archived: 'Archived' }` | Stage labels |
+
+Removed: `soldAsId()`, `isOperationsStatus()`, `nextOperationsStatus()`,
+`operationsRank()`, `isOperationsTerminal()`, `operationsProjectStage()`,
+`OPERATIONS_STEP_ORDER`, `OPERATIONS_EXIT_STATUSES`. `soldAsId` built the Sold ID
+from a unit id — `soldIdFor()` derives it from the canonical id; the rest were
+no-op stubs left over from the removed status machine.
+
+`STAGE_LABELS` and `orderStage()` are **kept for legacy `orders` rows only**
+(the pre-project sales table rendered by `stage-badge.jsx`). They must never be
+used for a Dearune: `PROJECT_STAGE_LABELS` / `projectStage()` are the Dearune
+vocabulary.
 
 ---
 
@@ -1038,8 +1090,8 @@ PHASE_OF = {
 ```typescript
 interface Operation {
   id: string;
-  reference: string;
-  soldAs: string;
+  reference: string;               // physical unit ID: DR + 11 digits
+  soldId: string;                  // SOL-######, derived from the ORDER's canonical id
   hasValidId: boolean;
   unitIndex: number;
   soldAt: string | null;
@@ -1051,7 +1103,8 @@ interface Operation {
   archived: boolean;
   createdAt: string;
   updatedAt: string;
-  status: 'pending' | 'sold' | 'manufactured' | 'shipped' | 'delivered';
+  milestone: 'configured' | 'sold' | 'making' | 'shipping' | 'delivery' | 'delivered' | 'after_sale';
+  status: 'pending' | 'sold' | 'manufactured' | 'shipped' | 'delivered'; // = unitStageFromMilestone(milestone)
   projectId: string;
   projectReference: string;
   projectTitle: string;
@@ -1062,8 +1115,12 @@ interface Operation {
   paidAt: string | null;
   messageActive: boolean;
   messageProtected: boolean;
-  qrTarget: boolean;
-  qrReady: boolean;
+  qr: {
+    destination: boolean;
+    activated: boolean;
+    openable: boolean;
+    blockedReason: 'missing_destination' | 'not_activated' | 'password_protected' | null;
+  };
   designerId: string | null;
   designerName: string;
   designerCode: string;
@@ -1078,8 +1135,6 @@ interface Operation {
   postalCode: string;
   country: string;
   specialInstructions: string;
-  qrTarget: boolean;
-  qrReady: boolean;
 }
 ```
 

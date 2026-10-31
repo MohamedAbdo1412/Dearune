@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
-import { PHYSICAL_ID_PATTERN, soldAsId } from './constants'
+import { PHYSICAL_ID_PATTERN, unitStageFromMilestone } from './constants'
+import { qrState, qrStateOf } from './qrState'
 import { parseProjectPayload } from './projectPayload'
 import { fetchWrapperTypes } from './wrappers'
 
@@ -123,7 +124,7 @@ const PROJECT_COLUMNS = [
   'template_slug',
   'template_version',
   'title',
-  'status',
+  'milestone',
   'public_id',
   'public_token',
   'wrapper_type',
@@ -159,6 +160,9 @@ const UNIT_COLUMNS = [
   'created_at',
   'updated_at',
   'project_id',
+  'project_reference',
+  'sold_id',
+  'milestone',
   'public_id',
   'wrapper_type',
   'template_slug',
@@ -179,8 +183,10 @@ const UNIT_COLUMNS = [
   'postal_code',
   'country',
   'special_instructions',
-  'qr_target',
-  'qr_ready',
+  'qr_destination',
+  'qr_activated',
+  'qr_openable',
+  'qr_blocked_reason',
 ].join(', ')
 
 const DESIGNER_COLUMNS = 'id, name, code, revoked_at, last_login_at, created_at, updated_at'
@@ -334,26 +340,27 @@ const text = (value) => (value === null || value === undefined ? '' : String(val
 
 function toUnit(row, unitEvents = []) {
   const reference = text(row.reference)
+  const milestone = text(row.milestone)
+  const qr = qrStateOf(row)
   return {
     id: row.id,
     reference,
-    soldAs: soldAsId(reference),
+    soldId: text(row.sold_id),
     hasValidId: PHYSICAL_ID_PATTERN.test(reference),
     unitIndex: Number(row.unit_index ?? 1),
-    status: (() => {
-      if (row.delivered_at) return 'delivered'
-      if (row.shipped_at) return 'shipped'
-      if (row.manufacturing_completed_at) return 'manufactured'
-      if (row.sold_at || row.paid_at) return 'sold'
-      return 'pending'
-    })(),
+    // The unit's stage is the ORDER's stage — one milestone, read from the row.
+    milestone,
+    status: unitStageFromMilestone(milestone),
     notes: text(row.notes),
     archived: Boolean(row.archived_at),
     archivedAt: row.archived_at ?? null,
     createdAt: row.created_at ?? null,
     updatedAt: row.updated_at ?? null,
-    qrTarget: Boolean(row.qr_target),
-    qrReady: Boolean(row.qr_ready),
+    qr,
+    qrDestination: qr.destination,
+    qrActivated: qr.activated,
+    qrOpenable: qr.openable,
+    qrBlockedReason: qr.blockedReason,
     messageActive: Boolean(row.message_active),
     messageProtected: Boolean(row.message_protected),
     paidAt: row.paid_at ?? null,
@@ -444,6 +451,14 @@ export function buildQaRecord({
   if (letter?.passwordSet) warnings.push('The letter is password-protected — the public reader will not open it.')
   if (!sale) warnings.push('This Dearune has no sale recorded.')
 
+  // The ONE QR answer, exactly as the database gives it to the other screens.
+  const qr = qrState({
+    publicId: project.public_id,
+    publicToken: project.public_token,
+    messageActive: project.message_active,
+    passwordSet: letter?.passwordSet,
+  })
+
   return {
     scanned: parsed.publicId,
     publicId: text(project.public_id),
@@ -452,11 +467,12 @@ export function buildQaRecord({
       verified: parsed.token ? parsed.token === text(project.public_token) : null,
       source: parsed.source,
     },
+    qr,
     project: {
       id: project.id,
       reference: text(project.reference),
       title: text(project.title),
-      status: text(project.status),
+      milestone: text(project.milestone) || 'configured',
       templateSlug: text(project.template_slug),
       templateVersion: project.template_version ?? null,
       wrapperType: text(project.wrapper_type),
@@ -562,17 +578,27 @@ export function buildQaRecord({
   }
 }
 
-// The three identifiers a workshop actually reads out loud, in one place.
+// The identifiers a workshop actually reads out loud, in one place. There is
+// ONE Dearune id; the production references are the physical units behind it.
 export function qaIdentifiers(record) {
   if (!record) return []
   const identifiers = []
+  if (record.project?.reference) {
+    identifiers.push({
+      key: 'dearune',
+      label: 'Dearune ID',
+      value: record.project.reference,
+      hint: record.project.title || 'the id the studio quotes',
+      tone: 'primary',
+    })
+  }
   for (const unit of record.units ?? []) {
     identifiers.push({
       key: `unit-${unit.id}`,
       label: unit.unitIndex > 1 ? `Production reference · unit ${unit.unitIndex}` : 'Production reference',
       value: unit.reference,
-      hint: unit.hasValidId ? unit.soldAs : 'not a valid production reference',
-      tone: 'primary',
+      hint: unit.hasValidId ? `unit ${unit.unitIndex} of the Dearune` : 'not a valid production reference',
+      tone: 'secondary',
     })
   }
   identifiers.push({

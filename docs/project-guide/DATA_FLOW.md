@@ -266,8 +266,8 @@ interface PublicMessageResponse {
 // operations_units view → UI Operation
 interface Operation {
   id: string;
-  reference: string;           // DR + 11 digits
-  soldAs: string;              // SOL-DR###########
+  reference: string;           // DR + 11 digits (physical unit)
+  soldId: string;              // SOL-###### (derived from the ORDER's canonical id)
   hasValidId: boolean;
   unitIndex: number;
   soldAt: string | null;
@@ -279,7 +279,8 @@ interface Operation {
   archived: boolean;
   createdAt: string;
   updatedAt: string;
-  status: 'pending' | 'sold' | 'manufactured' | 'shipped' | 'delivered';
+  milestone: 'configured' | 'sold' | 'making' | 'shipping' | 'delivery' | 'delivered' | 'after_sale';
+  status: 'pending' | 'sold' | 'manufactured' | 'shipped' | 'delivered'; // derived from milestone
   projectId: string;
   projectReference: string;
   projectTitle: string;
@@ -290,8 +291,7 @@ interface Operation {
   paidAt: string | null;
   messageActive: boolean;
   messageProtected: boolean;
-  qrTarget: boolean;
-  qrReady: boolean;
+  qr: { destination: boolean; activated: boolean; openable: boolean; blockedReason: string | null };
   designerId: string | null;
   designerName: string;
   designerCode: string;

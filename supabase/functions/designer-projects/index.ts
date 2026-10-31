@@ -53,7 +53,7 @@ const MAX_PHOTOS = 3
 const MAX_MEDIA_BYTES = 64 * 1024 * 1024
 const PROJECT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-const METADATA_COLUMNS = 'id, template_slug, template_version, title, status, public_id, submitted_at, created_at, updated_at, first_activated_at, message_active, policy_version, policies_accepted_at'
+const METADATA_COLUMNS = 'id, reference, milestone, template_slug, template_version, title, status, public_id, submitted_at, created_at, updated_at, first_activated_at, message_active, policy_version, policies_accepted_at'
 
 // Two years measured from first activation, derived here so it can never be
 // drifted by re-activation. A stored `first_activated_at` is returned verbatim

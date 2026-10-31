@@ -8,8 +8,10 @@ import { supabase, currentAccessToken, invokeFunction } from '@/lib/supabase'
 // activation. That way there is one owner of the state machine, not a copy
 // per screen.
 
+// `status` is deliberately absent: it is a deprecated duplicate of `milestone`
+// and `archived_at`. Every stage question is answered by `milestone`.
 export const DEARUNE_COLUMNS =
-  'id, reference, designer_id, template_slug, template_version, title, status, public_id, submitted_at, created_at, updated_at, configured_at, wrapper_type, sale_price, estimated_cost, currency, paid_at, manufactured_at, shipped_at, arrived_at, archived_at, first_activated_at, message_active, policy_version, policies_accepted_at'
+  'id, reference, designer_id, template_slug, template_version, title, milestone, milestone_updated_at, public_id, submitted_at, created_at, updated_at, configured_at, wrapper_type, sale_price, estimated_cost, currency, paid_at, manufactured_at, shipped_at, arrived_at, archived_at, first_activated_at, message_active, policy_version, policies_accepted_at'
 
 export const PRODUCTION_FIELDS = ['manufactured_at', 'shipped_at', 'arrived_at']
 

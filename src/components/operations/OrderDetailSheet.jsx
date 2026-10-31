@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { ArrowRight, CheckCircle2, Loader2Icon, Printer, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { carrierLabel } from '@/services/carriers'
+import { QR_BLOCKED_LABELS } from '@/services/qrState'
 import { formatDateTime, formatMoney } from '@/services/format'
 import {
   MILESTONE_LABELS,
@@ -16,6 +17,7 @@ import {
   moveToAfterSale,
   refundState,
   shipmentStateLabel,
+  startMaking,
 } from '@/services/ops-orders'
 import {
   AlertDialog,
@@ -211,11 +213,34 @@ export function OrderDetailSheet({
               <p className="mt-1.5 text-xs text-muted-foreground">
                 Every identifier above resolves to this one order. None of them is ever rewritten.
               </p>
+              {!order.qr_openable ? (
+                <p className="mt-2 rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+                  {QR_BLOCKED_LABELS[order.qr_blocked_reason] ?? 'The printed QR will not open this letter.'}
+                </p>
+              ) : null}
             </div>
 
             <Separator />
 
             {/* ---- stage actions ------------------------------------------- */}
+            {order.milestone === 'sold' && !order.is_digital && (
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Making</p>
+                <p className="text-xs text-muted-foreground">
+                  The order is sold but no workshop unit is being made yet. Starting Making opens production for this one
+                  order — same Dearune ID, same QR.
+                </p>
+                <Button
+                  size="sm"
+                  disabled={busy === 'start' || maintenance}
+                  onClick={() => void run('start', () => startMaking(order.project_id), 'Moved to Making')}
+                >
+                  {busy === 'start' ? <Loader2Icon className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
+                  Start making
+                </Button>
+              </div>
+            )}
+
             {order.milestone === 'making' && (
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Making</p>

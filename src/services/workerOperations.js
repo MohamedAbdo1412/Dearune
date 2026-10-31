@@ -14,10 +14,6 @@ export async function fetchWorkerOperations(includeArchived = false) {
   return Array.isArray(data) ? data : []
 }
 
-export async function setWorkerOperationStatus(productId, status, reason = null) {
-  throw new Error('Operations status has been replaced by milestones')
-}
-
 export async function fetchWorkerDearuneDetail(projectId) {
   return workerRpc('worker_dearune_detail', { p_project_id: projectId })
 }
@@ -97,8 +93,9 @@ export function downloadWorkerOperationsCsv(rows) {
   const columns = [
     ['Unit ID', 'reference'],
     ['Unit', 'unit_index'],
-    ['Status', 'status'],
-    ['Dearune', 'project_reference'],
+    ['Dearune ID', 'project_reference'],
+    ['Sold ID', 'sold_id'],
+    ['Milestone', 'milestone'],
     ['Title', 'project_title'],
     ['Designer', 'designer_name'],
     ['Designer ID', 'designer_code'],

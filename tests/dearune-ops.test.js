@@ -10,6 +10,7 @@ import { SALES_CSV_HEADERS, saleDearuneLabel, salesCsv, salesCsvBlob, sumSales }
 const base = {
   wrapper_type: 'open_letter',
   configured_at: '2026-01-01T00:00:00Z',
+  milestone: 'configured',
   paid_at: null,
   manufactured_at: null,
   shipped_at: null,
@@ -17,30 +18,46 @@ const base = {
   archived_at: null,
   message_active: false,
   first_activated_at: null,
-  status: 'submitted',
 }
 
 describe('projectStage', () => {
-  it('is configured until the sale is recorded', () => {
+  it('is configured until the order is sold', () => {
     expect(projectStage(base)).toBe('configured')
+    // An unknown or missing milestone is Configured, never a crash.
+    expect(projectStage({ ...base, milestone: null })).toBe('configured')
+    expect(projectStage({ ...base, milestone: 'nonsense' })).toBe('configured')
   })
 
-  it('walks the physical pipeline once sold', () => {
-    expect(projectStage({ ...base, paid_at: 'now' })).toBe('sold')
-    expect(projectStage({ ...base, paid_at: 'now', manufactured_at: 'now' })).toBe('made')
-    expect(projectStage({ ...base, paid_at: 'now', manufactured_at: 'now', shipped_at: 'now' })).toBe('shipped')
-    expect(projectStage({ ...base, paid_at: 'now', manufactured_at: 'now', shipped_at: 'now', arrived_at: 'now' })).toBe('delivered')
+  it('reads the one stored milestone, in lifecycle order', () => {
+    expect(projectStage({ ...base, milestone: 'sold' })).toBe('sold')
+    expect(projectStage({ ...base, milestone: 'making' })).toBe('making')
+    expect(projectStage({ ...base, milestone: 'shipping' })).toBe('shipping')
+    expect(projectStage({ ...base, milestone: 'delivery' })).toBe('delivery')
+    expect(projectStage({ ...base, milestone: 'delivered' })).toBe('delivered')
+    expect(projectStage({ ...base, milestone: 'after_sale' })).toBe('after_sale')
+    expect(PROJECT_STAGE_ORDER).toEqual([
+      'configured',
+      'sold',
+      'making',
+      'shipping',
+      'delivery',
+      'delivered',
+      'after_sale',
+      'archived',
+    ])
   })
 
-  it('delivers a digital Dearune when its message is opened', () => {
-    const digital = { ...base, wrapper_type: 'digital', paid_at: 'now' }
-    expect(projectStage(digital)).toBe('sold')
-    expect(projectStage({ ...digital, message_active: true, first_activated_at: 'now' })).toBe('delivered')
+  it('ignores unit timestamps: the order stage is not rebuilt from them', () => {
+    // A stale stamp on a unit must never drag the order backwards.
+    expect(projectStage({ ...base, paid_at: 'now', manufactured_at: 'now', shipped_at: 'now', arrived_at: 'now' })).toBe(
+      'configured',
+    )
   })
 
-  it('is archived above everything else', () => {
-    expect(projectStage({ ...base, archived_at: 'now', paid_at: 'now', arrived_at: 'now' })).toBe('archived')
-    expect(projectStage({ ...base, status: 'archived' })).toBe('archived')
+  it('is archived above everything else, from archived_at alone', () => {
+    expect(projectStage({ ...base, milestone: 'delivered', archived_at: 'now' })).toBe('archived')
+    // `projects.status` is deprecated: it is not a stage and nothing reads it.
+    expect(projectStage({ ...base, status: 'archived' })).toBe('configured')
   })
 
   it('labels every stage', () => {
@@ -56,15 +73,19 @@ describe('nextDearuneAction', () => {
   })
 
   it('walks made → shipped → arrived for physical Dearunes', () => {
-    expect(nextDearuneAction({ ...base, paid_at: 'now' })).toBe('made')
-    expect(nextDearuneAction({ ...base, paid_at: 'now', manufactured_at: 'now' })).toBe('shipped')
-    expect(nextDearuneAction({ ...base, paid_at: 'now', manufactured_at: 'now', shipped_at: 'now' })).toBe('arrived')
-    expect(nextDearuneAction({ ...base, paid_at: 'now', manufactured_at: 'now', shipped_at: 'now', arrived_at: 'now' })).toBe('open')
+    expect(nextDearuneAction({ ...base, milestone: 'sold' })).toBe('made')
+    expect(nextDearuneAction({ ...base, milestone: 'making' })).toBe('made')
+    expect(nextDearuneAction({ ...base, milestone: 'shipping' })).toBe('shipped')
+    expect(nextDearuneAction({ ...base, milestone: 'delivery' })).toBe('arrived')
   })
 
-  it('opens a sold digital Dearune, and has nothing left to do once open', () => {
-    expect(nextDearuneAction({ ...base, wrapper_type: 'digital', paid_at: 'now' })).toBe('open')
-    expect(nextDearuneAction({ ...base, wrapper_type: 'digital', paid_at: 'now', message_active: true })).toBeNull()
+  it('opens a delivered digital Dearune, and has nothing left to do once open', () => {
+    expect(nextDearuneAction({ ...base, wrapper_type: 'digital', milestone: 'sold' })).toBe('open')
+    expect(nextDearuneAction({ ...base, wrapper_type: 'digital', milestone: 'sold', message_active: true })).toBeNull()
+    expect(nextDearuneAction({ ...base, wrapper_type: 'digital', milestone: 'delivered' })).toBe('open')
+    expect(
+      nextDearuneAction({ ...base, wrapper_type: 'digital', milestone: 'delivered', message_active: true }),
+    ).toBeNull()
   })
 
   it('offers restore on an archived Dearune', () => {

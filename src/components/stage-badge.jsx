@@ -27,15 +27,17 @@ export function StageBadge({ order, publishedAt = null, className }) {
   )
 }
 
-// The Dearune pipeline (Configured → Sold → Made → Shipped → Delivered) is
-// its own set of stages, so it gets its own badge rather than borrowing the
-// order one.
+// The Dearune pipeline is ONE set of stages — the same `projects.milestone`
+// values the Operations dashboard and the Worker dashboard read. There is no
+// separate "project stage" vocabulary any more.
 const PROJECT_STYLES = {
   configured: 'bg-muted text-muted-foreground ring-muted-foreground/20',
   sold: 'bg-amber-500/10 text-amber-700 ring-amber-600/20 dark:text-amber-400',
-  made: 'bg-violet-500/10 text-violet-700 ring-violet-600/20 dark:text-violet-400',
-  shipped: 'bg-sky-500/10 text-sky-700 ring-sky-600/20 dark:text-sky-400',
+  making: 'bg-violet-500/10 text-violet-700 ring-violet-600/20 dark:text-violet-400',
+  shipping: 'bg-sky-500/10 text-sky-700 ring-sky-600/20 dark:text-sky-400',
+  delivery: 'bg-indigo-500/10 text-indigo-700 ring-indigo-600/20 dark:text-indigo-400',
   delivered: 'bg-emerald-500/10 text-emerald-700 ring-emerald-600/20 dark:text-emerald-400',
+  after_sale: 'bg-teal-500/10 text-teal-700 ring-teal-600/20 dark:text-teal-400',
   archived: 'bg-muted text-muted-foreground ring-muted-foreground/40',
 }
 

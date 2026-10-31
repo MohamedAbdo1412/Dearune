@@ -1,8 +1,15 @@
 # Order Lifecycle — One Dearune, One Identity, One Milestone
 
 > **Status:** implemented in `supabase/migrations/20261103000001_order_lifecycle.sql`
-> and the `admin-operations` edge function. **Not yet applied to a live project**
+> and completed by `20261104000001_stage_configured.sql`,
+> `20261104000002_stage_sold.sql` and
+> `20261104000003_unified_order_model.sql`, plus the `admin-operations` and
+> `admin-dearunes` edge functions. **Not yet applied to a live project**
 > (no Supabase CLI / credentials in the build environment — see *Blockers*).
+>
+> The authoritative contract for the one order model — identity, milestone, QR
+> and who owns which attribute — is `AUTHORITATIVE_ORDER_MODEL.md`. This document
+> is the operational walkthrough of that model.
 
 This document is the single reference for:
 
@@ -25,7 +32,7 @@ generated and read in different places:
 |---|---|---|
 | `DR-000021` (Designer) | `projects.reference` | `project_reference_seq` + trigger (`20260925000001_designer_operations.sql:36`) |
 | `DR70700000011` (Operations) | `physical_products.reference` | `physical_product_reference_seq` |
-| `SOL-DR70700000011` (Sold As) | nowhere — built in the browser from `sold_reference`/unit reference | derived at render time |
+| `SOL-DR70700000011` (Sold As) | nowhere — built in the browser from the unit reference | derived at render time |
 
 There was no registry tying those values together. Consequences:
 
@@ -33,20 +40,30 @@ There was no registry tying those values together. Consequences:
   could not be found from the Operations screen (and vice versa);
 - the Sold form was recomputed, so two screens could format the same sale
   differently;
+- the Designer screen showed only the 24-hex `public_id` receipt, so the ID the
+  studio quotes was invisible on the surface that creates the order;
 - nothing prevented a second canonical value being minted for one Dearune,
   because nothing declared which value was canonical.
 
 **Fix (additive, non-destructive):**
 
-- `projects.reference` is the **canonical Dearune ID** (`DR-######`). It is the
-  ID the studio quotes and the ID every screen shows first.
+- `projects.reference` is the **canonical Dearune ID** (`DR-######`) and the only
+  Dearune ID. It is the ID the studio quotes and the ID every screen —
+  Designer, Operations, Admin, Worker, QA — shows first.
 - `physical_products.reference` remains the **physical unit ID** — a different
-  identifier type, never renamed.
-- `SOL-…` remains a **sold reference**, still preserved as its own value.
-- A new table, `order_references (value unique, project_id, physical_product_id, kind)`,
-  records every identifier that has ever referred to an order. Triggers on
-  `projects`, `physical_products` and `sales_log` insert the aliases. Nothing is
+  identifier type, never renamed, never promoted to an order id.
+- The **Sold ID** is now **derived from the canonical id**: `DR-000021 →
+  SOL-000021`, via `soldIdFor()` in `src/services/constants.js` and the
+  `order_reference_project` trigger in SQL. It is no longer built from the unit
+  reference, so it can never disagree with the order it describes.
+- Old `SOL-DR70700000011` values are **preserved unchanged** and reclassified as
+  `legacy` aliases; they still resolve to the same order.
+- A table, `order_references (value unique, project_id, physical_product_id, kind)`,
+  records every identifier that has ever referred to an order. `AFTER INSERT`
+  triggers on `projects` and `physical_products` register the aliases. Nothing is
   rewritten, so no historical reference is destroyed.
+- A partial unique index, `order_references_one_sold_per_project`, enforces **at
+  most one Sold ID per order**.
 - Search and manifest matching resolve through `order_references`, so any
   historical ID lands on exactly one order, and a value that belongs to no
   order resolves to nothing rather than guessing.
@@ -67,32 +84,60 @@ different timestamps:
 - Designer screens derived a stage from `projects.paid_at` / `manufactured_at` /
   `shipped_at` / `arrived_at`;
 - Operations derived another stage from `physical_products` unit stamps;
-- worker RPCs derived yet another from their own milestone checks.
+- worker RPCs derived yet another from their own milestone checks;
+- the server computed a `status` string for the same row as well.
 
 Because each screen derived its own answer, two screens could legitimately
 disagree, and no single column could be pointed at as the truth.
 
-**Fix:** one enum column owns the stage.
+**Fix:** one enum column owns the stage, and one list defines its order.
 
 ```
-public.dearune_milestone = making | shipping | delivery | delivered | after_sale
-projects.milestone              -- authoritative
-projects.milestone_updated_at   -- written only by the transition RPC
-projects.milestone_updated_by   -- admin who performed it
+public.dearune_milestone =
+  configured → sold → making → shipping → delivery → delivered → after_sale
+projects.milestone              -- authoritative, NOT NULL, default 'configured'
+projects.milestone_updated_at   -- written only by the transition RPCs
+projects.milestone_updated_by   -- admin who performed it; NULL when a worker did
+projects.archived_at            -- orthogonal to the lifecycle, not a stage
 ```
 
+- The enum order **is** the lifecycle order, so a rank is `array_position`, not a
+  second hand-maintained list. `MILESTONE_ORDER` in `src/services/constants.js`
+  is the one JavaScript copy; `PROJECT_STAGE_ORDER` and
+  `PROJECT_STAGE_LABELS` are derived from it.
 - `physical_products` keeps only its production stamps (printing /
   manufacturing detail for the Making section). It no longer owns a competing
   stage.
-- A trigger, `projects_milestone_guard`, refuses backwards or skipping moves.
-  A repeat of the current value is allowed (idempotent retries), but the order
-  `making → shipping → delivery → delivered → after_sale` cannot be jumped.
-- `ops_move_milestone` is the **only** writer of `projects.milestone`. Every
-  operation below calls it inside the same transaction.
+- A trigger, `projects_milestone_guard`, is the only place a transition is
+  judged:
+
+  | Situation | Result |
+  |---|---|
+  | `NULL → anything` | allowed (initialisation only) |
+  | the same value written twice | no-op, so a retried request is harmless |
+  | `dearune.milestone_override = 'on'` | allowed — **reconciliation RPCs only**, never a screen |
+  | physical order, exactly the next step | allowed |
+  | physical order, a skip or a backwards move | `milestone.transition_denied` |
+  | digital order entering making/shipping/delivery | `milestone.digital_production` |
+  | digital order `sold → delivered` (or any forward jump) | allowed |
+
+- `ops_move_milestone` is the **only** writer of `projects.milestone` for normal
+  operation. `ops_advance_to` walks forwards in a loop and is used for legacy
+  Designer stamps and worker RPCs, so one action that implies two hops
+  (`configured → sold → making`) produces two events, not one invented jump.
+- `ops_revert_milestone` is the **only** backwards path, and it is
+  maintenance-only: it sets the transaction-local override, clears every project
+  and unit stamp the reverted stage implied, appends `order.milestone.reverted`,
+  and refuses to un-sell an order that still has a recorded sale (`reverse the
+  sale first`).
+- `projects.status` is **deprecated**: nothing reads or writes it for stage or
+  archive. It is documented in the column comment and kept only so the existing
+  Create Dearune insert keeps its default.
 
 Existing rows are backfilled from the furthest reliable stamp (`arrived_at →
-delivered`, `shipped_at → delivery`, `manufactured_at → shipping`, else
-`making`), and digital / unsold orders stay `NULL` (not in production).
+delivered`, `shipped_at → delivery`, `manufactured_at → shipping`, `paid_at →
+sold`, else `configured`), and digital / unsold orders never enter production.
+The backfill only fills `NULL`, so re-applying it can never move an order.
 
 ---
 
@@ -100,7 +145,8 @@ delivered`, `shipped_at → delivery`, `manufactured_at → shipping`, else
 
 | UI action | Edge action | RPC | Effect |
 |---|---|---|---|
-| Open an Operations record | `ensure` / `making-start` | `ops_start_work_order` | Creates the working order if needed and places a paid physical Dearune in Making |
+| Record the sale | `mark-paid` | `ops_advance_to` | `configured → sold` |
+| Open an Operations record / Start making | `ensure` / `making-start` | `ops_start_work_order` | Creates units if needed and walks `configured → sold → making` |
 | Finish Making | `making-complete` | `ops_making_complete` | Stamps manufacturing, moves `making → shipping` in one transaction |
 | Save carrier | `shipment-save` | `ops_save_shipment` | Persists carrier + tracking without moving the milestone |
 | Mark shipped | `ship` | `ops_ship` | Requires carrier + tracking; writes the shipment, moves `shipping → delivery`; idempotent |
@@ -108,36 +154,55 @@ delivered`, `shipped_at → delivery`, `manufactured_at → shipping`, else
 | Move to After-Sale | `after-sale` | `ops_after_sale` | Moves `delivered → after_sale` |
 | Record refund | `record-refund` | `ops_record_refund` | Appends a ledger row; validates amount, reason, ceiling, idempotency key |
 | Import manifest | `manifest-preview` / `manifest-commit` | `ops_create_manifest` + `ops_ship` | Preview first; snapshot written before any association; per-row results |
+| Correct a stage by hand | (maintenance only) | `ops_revert_milestone` | Walks backwards, clears implied stamps, audits the reason |
 
-All functions are `security definer` with execute **revoked** from `public`,
-`anon` and `authenticated`. Only the edge function (service role) can call them.
-Every transition writes `milestone_updated_by`, `milestone_updated_at` and a
-`project_events` audit row.
+Admin-side functions are `security definer` with execute **revoked** from
+`public`, `anon` and `authenticated` and granted **explicitly to
+`service_role`**. Only the edge function (service role) can call them.
+Worker actions are granted to `authenticated`, check
+`worker_has_permission(...)` themselves, and pass the worker id as the actor.
+Every transition writes a `project_events` audit row whose `actor_type` is
+`admin` or `worker`.
 
+`ops_move_milestone` mirrors the unit stamps forward (coalesce only, so a real
+stamp is never overwritten): `manufactured_at` at `shipping`, `shipped_at` at
+`delivery`, `arrived_at` at `delivered`. Digital orders get no stamps.
 `projects_stage_order_check` still requires `paid_at → manufactured_at →
-shipped_at → arrived_at`, so `ops_move_milestone` fills any missing earlier
-stamp itself rather than leaving a half-stamped order.
+shipped_at → arrived_at`, so the mover fills any missing earlier stamp itself
+rather than leaving a half-stamped order — and a digital order moved straight to
+`delivered` deliberately does **not** set `arrived_at`.
 
 ---
 
 ## 4. Why four subsections are not four copies
 
 `ops_orders` is a **view over `projects`** — one row per order, carrying its
-canonical ID, sold/unit references, recipient, shipment, refund totals and QR
-readiness. The four Operations screens are four `section`s of that one view:
+canonical ID, sold ID, unit references, recipient, shipment, refund totals and
+its one QR answer. The four Operations screens are four `section`s of that one
+view, and a section is a **list of milestones**, not a separate query per screen:
 
 | Section | Route | Milestone filter |
 |---|---|---|
-| Making | `/admin/operations` | `making` |
+| Making | `/admin/operations` | `sold` **and** `making` |
 | Shipping | `/admin/operations/shipping` | `shipping` |
 | Delivery | `/admin/operations/delivery` | `delivery` **and** `delivered` |
 | After-Sale | `/admin/operations/after-sale` | `after_sale` |
 
-`delivered` is deliberately **not** its own section. Marking delivered changes
+`sold` lives in Making because a paid order that has not been started is still
+work to be done. `delivered` lives in Delivery because marking delivered changes
 the state (and the row tint, read from the database) while the order remains in
-Delivery until someone moves it to After-Sale.
+Delivery until someone moves it to After-Sale. Two milestones per section, one
+row per order, no duplication.
 
-Orders are never duplicated per subsection; moving one moves `projects.milestone`.
+Digital Dearunes never enter production: they go `sold → delivered` and the
+physical RPCs refuse them. They still appear in the section their milestone
+falls in (`sold` in Making, `delivered` in Delivery — the row exposes
+`is_digital`), but they carry no production action (`nextAction` returns null),
+never get units, and never get a carrier. `ops_identity_report` lists them too,
+so a digital order cannot hide from reconciliation.
+
+Moving an order between sections changes `projects.milestone` — it never creates
+a new row, a new ID, a new Sold ID or a new QR readiness state.
 
 ### Filtering, sorting and paging
 
@@ -219,7 +284,44 @@ Bosta parser can be added without touching the matching or commit code.
 
 ---
 
-## 6. Refunds
+## 6. One QR answer
+
+QR readiness used to be three disagreeing flags (`qr_ready`, `printed`,
+`activated`) computed in two places. It is now **one function and one state**:
+
+```sql
+create function public.order_qr_state(
+  p_public_id text, p_public_token text, p_message_active boolean, p_password_set boolean
+) returns public.order_qr_status as (
+  destination boolean,     -- is there a link to put in the QR at all?
+  activated   boolean,     -- is the letter switched on?
+  openable    boolean,     -- will scanning it open the letter right now?
+  blocked_reason text      -- missing_destination | not_activated | password_protected
+)
+```
+
+- `ops_orders`, `operations_units` and the worker read functions all expose
+  `qr_destination`, `qr_activated`, `qr_openable`, `qr_blocked_reason` from that
+  single calculation, so no two screens can disagree about one QR.
+- `src/services/qrState.js` is the JavaScript **mirror** (`qrState`,
+  `qrStateOf`, `qrBlockedMessage`, `QR_BLOCKED_LABELS` / `FIXES`) used where a
+  question is asked before a row exists (the print pre-flight, the Create
+  Dearune receipt). `tests/unified-order-model.test.js` asserts the mirror and
+  the SQL function return the same answer for every case.
+- **"Printed" is deliberately not a database state.** Printing happens in the
+  browser (`qrPaper.js`) and a stored `printed` flag is exactly how the previous
+  system lied about paper that had never been produced. `qr_openable` means the
+  QR *would work*, not that a sheet was ever run.
+- The print gate (`validateOperationForPaper`) **hard-fails** when
+  `qr.blockedReason` is set, and the Operations row shows the blocked reason
+  with its fix. A missing customer phone remains a warning, not a block.
+- One QR ↔ one order: the QR encodes the order's public message destination
+  (public id + token), so every unit of one Dearune points at the same letter,
+  and the QR never encodes a unit id.
+
+---
+
+## 7. Refunds
 
 There is **no payment-provider integration** in this codebase, so a refund is a
 manual ledger entry, and the UI says so plainly.
@@ -239,55 +341,74 @@ The dialog requires an explicit confirmation; it never claims money has moved.
 
 ---
 
-## 7. Security
+## 8. Security
 
 - Reads: `ops_orders`, `ops_milestone_counts`, `ops_identity_report`,
-  `order_references`, `refunds`, `shipment_manifests` are select-only for
-  authenticated admins under RLS; `anon` gets nothing.
+  `operations_units`, `order_references`, `refunds`, `shipment_manifests` are
+  select-only for authenticated admins under RLS; `anon` gets nothing. Worker
+  reads are `authenticated` RPCs that check `worker_has_permission` themselves
+  and return only operational fields (no price, cost or letter payload).
 - Writes: all `ops_*` functions are service-role only (execute revoked from
-  clients). The edge function verifies the admin session before calling them.
-- No frontend-only status change exists: the screens call the edge function and
-  re-read the database afterwards.
+  `public`, `anon` and `authenticated`, then granted to `service_role`). The
+  edge function verifies the admin session before calling them. Worker RPCs are
+  granted to `authenticated` and re-check permissions per call.
+- Permissions differ between Admin and Worker; the **data does not**. Both read
+  the same `projects.milestone`, the same Sold ID and the same QR answer, and
+  both write through the same transition functions. No worker RPC bypasses the
+  milestone guard, and no surface can write `projects.milestone` directly.
+- No frontend-only status change exists: the screens call the edge function or a
+  worker RPC and re-read the database afterwards.
 
 ---
 
-## 8. Tests
+## 9. Tests
 
 | File | Covers |
 |---|---|
-| `tests/order-lifecycle-db.test.js` | 41 PGlite tests: identity/alias resolution, uniqueness, transition order, skip/backwards refusal, idempotency, double-click, carrier/tracking requirements, conflict refusal, `ops_save_shipment`, delivered-not-archived, refund validation/ceiling/idempotency, manifest snapshot, view shape, reconciliation, RLS and backend-only functions |
+| `tests/unified-order-model.test.js` | 14 PGlite tests: the seven-stage guard (skip/backwards/invent rejected, same-value no-op), digital `sold → delivered` and production denied, `order_qr_state` for every state plus browser-mirror parity and view/worker parity, `ops_revert_milestone` stamp clearing + event payload + denials, admin↔worker milestone/actor parity, Sold ID parity across `ops_orders` / `operations_units` / worker RPC, and migration idempotency (re-applying changes nothing) |
+| `tests/order-lifecycle-db.test.js` | 42 PGlite tests: identity/alias resolution, uniqueness, transition order, skip/backwards refusal, idempotency, double-click, carrier/tracking requirements, conflict refusal, `ops_save_shipment`, delivered-not-archived, refund validation/ceiling/idempotency, manifest snapshot, view shape, reconciliation, RLS and backend-only functions |
+| `tests/operations-db.test.js` | 29 PGlite tests: section scoping, unit creation, digital exclusion, milestone-driven sorting and counts |
+| `tests/worker-permissions.test.js` | 47 PGlite tests: worker identity, per-RPC permission checks, suspension, RLS, and the worker transition path |
 | `tests/carriers.test.js` | real Egypt Post workbook headers/vocabulary, loose header mapping, row parsing, row issues, reference normalisation, duplicate flagging, summary counts, carrier registry |
-| `tests/ops-orders.test.js` | query grammar: section scoping, search columns, every filter, date ranges, sort allowlist plus `project_id` tie-break, sanitisation, presentation helpers |
+| `tests/ops-orders.test.js` | query grammar: section milestone lists, search columns, every filter, date ranges, sort allowlist plus `project_id` tie-break, sanitisation, presentation helpers |
+| `tests/operations-list.test.js`, `tests/batch-review.test.js`, `tests/qa-lookup.test.js`, `tests/dearune-ops.test.js` | the shaped row both dashboards read, review corrections, QA identifiers (Dearune ID first), and milestone-only stage derivation |
 
-Run `npx vitest run tests/order-lifecycle-db.test.js tests/carriers.test.js tests/ops-orders.test.js`.
+Run `npx vitest run tests/unified-order-model.test.js tests/order-lifecycle-db.test.js tests/operations-db.test.js tests/worker-permissions.test.js`.
 
 ---
 
-## 9. Blockers and unresolved short of a live database
+## 10. Blockers and unresolved short of a live database
 
-- **No `supabase` CLI and no `deno`** in this environment: the migration and
-  edge function cannot be deployed or smoke-tested against a real project.
+- **No `supabase` CLI and no `deno`** in this environment: the migrations and
+  edge functions cannot be deployed or smoke-tested against a real project.
 - **No live credentials / browser**: transitions on real rows, the manifest
-  import against production data, and the Admin UI checklist below cannot be
-  executed here. The schema and RPCs are exercised against PGlite instead.
+  import against production data, and the Admin/Worker UI checklists below
+  cannot be executed here. The schema and RPCs are exercised against PGlite
+  instead.
 - **No Bosta manifest workbook**: only the Bosta upload template exists, so its
   import parser is intentionally absent.
 - **No payment provider**: refunds are recorded manually; no money moves.
-- Existing orders whose `projects.reference` is missing or whose aliases
-  disagree are listed by `ops_identity_report` for manual resolution; the
-  migration never invents an identity.
+- Existing orders whose `projects.reference` is missing, whose aliases disagree,
+  or that cannot be reconciled to a stage are listed by `ops_identity_report`
+  and the dry-run notices for manual resolution; the migration never invents an
+  identity or a milestone.
 
 ---
 
-## 10. Manual Admin verification checklist
+## 11. Manual verification checklist
 
-1. Apply the migration and deploy `admin-operations`; open **Admin → Operations**.
+### Admin
+
+1. Apply the migrations and deploy `admin-operations` and `admin-dearunes`; open
+   **Admin → Operations**.
 2. Confirm the four subsection cards show counts and that an order appears in
-   exactly one of them.
-3. Search the same order by canonical ID, unit ID and Sold ID — all three must
-   return the same row.
-4. Finish Making on a paid physical order: it leaves Making and appears in
-   Shipping with its production history intact.
+   exactly one of them (`sold` orders in Making, `delivered` orders still in
+   Delivery).
+3. Search the same order by canonical ID, unit ID, Sold ID and an old
+   `SOL-DR…` alias — all four must return the same row.
+4. Start making on a just-sold order: it stays in Making and its stage moves
+   `sold → making`. Finish Making: it appears in Shipping with its production
+   history intact.
 5. In Shipping choose a carrier with no tracking and try **Mark shipped** —
    it must refuse. Add tracking and ship once; click again — no second
    shipment or event appears.
@@ -296,9 +417,40 @@ Run `npx vitest run tests/order-lifecycle-db.test.js tests/carriers.test.js test
 7. Move it to After-Sale and record a refund: zero/negative amounts, an empty
    reason and an over-refund must be refused; a valid refund shows amount,
    reason, method, operator and time in the timeline.
-8. Import an Egypt Post manifest: confirm the preview separates matched,
+8. Try to skip a stage with a direct `update public.projects set milestone` —
+   the guard must reject it.
+9. Import an Egypt Post manifest: confirm the preview separates matched,
    already-shipped, not found, ambiguous, duplicate and conflict rows, that an
    unmatched row can be resolved by identifier, and that committing reports one
    result per row.
-9. Sign in as a non-admin / call an `ops_*` RPC with an anon key: both must be
-   denied.
+10. Sign in as a non-admin / call an `ops_*` RPC with an anon key: both must be
+    denied.
+
+### Worker
+
+1. Sign in as a worker with `operations.view` and open **Worker → Operations**.
+2. Confirm the row shows the same Dearune ID, Sold ID and stage badge the Admin
+   screen shows for that order.
+3. **Mark manufactured**: the order moves to Shipping for both dashboards, and
+   the audit event records `actor_type = worker` with the worker's id.
+4. **Mark shipped** without a carrier or tracking — it must refuse. With both,
+   it moves to Delivery.
+5. Open **Worker → QA** and scan the printed link: the identifiers list shows
+   the Dearune ID first, then the production reference, then the designer.
+6. Try an operation the worker lacks permission for — it must be denied, not
+   hidden behind a UI check.
+7. A QR whose letter is switched off or password-protected must block printing
+   and show the blocked reason, on both dashboards.
+
+---
+
+## 12. Manual cross-dashboard checklist
+
+1. Create a Dearune in Designer; note its `DR-######` ID.
+2. Confirm the receipt line shows that same canonical ID (not a 24-hex id).
+3. Sell it (mark paid) and open Operations: the same order is in Making with
+   the **same** ID and a Sold ID of `SOL-` + the same digits.
+4. Advance it to Delivered from the Worker dashboard; refresh Admin — the stage
+   and row tint match without any manual sync.
+5. Run `select * from public.ops_identity_report where project_id = '<id>'`:
+   every identifier for the order must resolve to that one row and no other.

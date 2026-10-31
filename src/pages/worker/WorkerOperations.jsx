@@ -32,6 +32,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { hasPermission } from '@/lib/permissions'
+import { MILESTONE_LABELS, MILESTONE_ORDER, milestoneRank } from '@/services/constants'
 import { formatDateTime } from '@/services/format'
 import { OPERATIONS_SORTS } from '@/services/operations'
 import {
@@ -64,22 +65,19 @@ const timeOf = (value) => {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-const MILESTONE_ORDER = ['pending', 'sold', 'manufactured', 'shipped', 'delivered']
+// The ONE milestone, read from the row. The worker screen used to rebuild a
+// stage from unit timestamps, which disagreed with the admin's stage whenever a
+// unit was re-stamped or a shipment was recorded out of order. `projects
+// .milestone` is the only stored stage; the unit stamps are production detail.
+const milestoneOf = (row) => String(row?.milestone ?? '') || 'configured'
 
-const milestoneOf = (row) => {
-  if (row.delivered_at) return 'delivered'
-  if (row.shipped_at) return 'shipped'
-  if (row.manufacturing_completed_at || row.manufactured_at) return 'manufactured'
-  if (row.paid_at) return 'sold'
-  return 'pending'
-}
-
-const MILESTONE_LABELS = {
-  pending: 'Pending',
-  sold: 'Sold',
-  manufactured: 'Manufactured',
-  shipped: 'Shipped',
-  delivered: 'Delivered',
+// Which milestone step a worker is allowed to perform. The permission is the
+// worker's; the transition itself is the same `ops_*` function the admin calls,
+// so both dashboards cannot drift apart.
+const WORKER_STEPS = {
+  making: { next: 'shipping', action: 'manufactured', permission: 'operations.mark_manufactured' },
+  shipping: { next: 'delivery', action: 'shipped', permission: 'operations.mark_shipped' },
+  delivery: { next: 'delivered', action: 'delivered', permission: 'operations.mark_delivered' },
 }
 
 // The same sort choices the admin screen offers, applied to the worker's safe
@@ -95,7 +93,7 @@ function sortWorkerRows(rows, sortKey) {
     case 'status':
       return sorted.sort(
         (a, b) =>
-          MILESTONE_ORDER.indexOf(milestoneOf(a)) - MILESTONE_ORDER.indexOf(milestoneOf(b)) ||
+          milestoneRank(milestoneOf(a)) - milestoneRank(milestoneOf(b)) ||
           timeOf(b.created_at) - timeOf(a.created_at) ||
           byId(a, b),
       )
@@ -133,27 +131,18 @@ function EmptyState({ title, message, onRetry }) {
 }
 
 function MilestoneActions({ row, permissions, busy, onAdvance }) {
-  const canManufacture = hasPermission(permissions, 'operations.mark_manufactured')
-  const canShip = hasPermission(permissions, 'operations.mark_shipped')
-  const canDeliver = hasPermission(permissions, 'operations.mark_delivered')
   const milestone = milestoneOf(row)
+  const step = WORKER_STEPS[milestone]
   if (row.archived_at) return <p className="text-xs text-muted-foreground">Restore this unit before changing its milestone.</p>
-  if (milestone === 'delivered') return null
-
-  const next = MILESTONE_ORDER[MILESTONE_ORDER.indexOf(milestone) + 1]
-  // Workers advance through manufacturing milestones only; 'sold' is set by
-  // the studio admin. Skip it in the worker progression.
-  const workerNext = next === 'sold' ? 'manufactured' : next
-  if (!workerNext) return null
+  if (!step) return null
+  if (!hasPermission(permissions, step.permission)) return null
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {(workerNext === 'manufactured' && canManufacture) || (workerNext === 'shipped' && canShip) || (workerNext === 'delivered' && canDeliver) ? (
-        <Button size="sm" disabled={busy} onClick={() => onAdvance(row, workerNext)}>
-          <ArrowRight className="size-4" aria-hidden />
-          Advance to {MILESTONE_LABELS[workerNext]}
-        </Button>
-      ) : null}
+      <Button size="sm" disabled={busy} onClick={() => onAdvance(row, step.action)}>
+        <ArrowRight className="size-4" aria-hidden />
+        Advance to {MILESTONE_LABELS[step.next] ?? step.next}
+      </Button>
     </div>
   )
 }
@@ -673,7 +662,7 @@ export function WorkerOperations() {
                     </td>
                     <td className="px-4 py-3 align-top">
                       <div className="flex flex-wrap gap-1">
-                        {row.delivered_at ? <Badge variant="outline">Delivered</Badge> : row.shipped_at ? <Badge variant="outline">Shipped</Badge> : row.manufacturing_completed_at ? <Badge variant="outline">Manufactured</Badge> : row.paid_at ? <Badge variant="outline">Sold</Badge> : <Badge variant="outline">Pending</Badge>}
+                        <Badge variant="outline">{MILESTONE_LABELS[milestoneOf(row)] ?? milestoneOf(row)}</Badge>
                       </div>
                     </td>
                     <td className="px-4 py-3 align-top text-xs text-muted-foreground">
@@ -765,9 +754,9 @@ export function WorkerOperations() {
 
               <div className="mt-5 space-y-5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">{MILESTONE_LABELS[milestoneOf(detail)]}</Badge>
+                  <Badge variant="outline">{MILESTONE_LABELS[milestoneOf(detail)] ?? milestoneOf(detail)}</Badge>
                   {detail.archived_at ? <Badge variant="outline">Archived</Badge> : null}
-                  {detail.qr_ready ? <Badge className="bg-primary/10 text-primary">QR ready</Badge> : null}
+                  {detail.qr_openable ? <Badge className="bg-primary/10 text-primary">QR ready</Badge> : null}
                 </div>
 
                 {canEdit || canManage || canCreate ? (

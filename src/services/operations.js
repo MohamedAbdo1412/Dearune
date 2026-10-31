@@ -1,10 +1,10 @@
 import { supabase, currentAccessToken, invokeFunction } from '@/lib/supabase'
-import { PHYSICAL_ID_PATTERN, soldAsId } from './constants'
+import { OPERATIONS_STATUS_ORDER, PHYSICAL_ID_PATTERN, unitStageFromMilestone } from './constants'
+import { QR_BLOCKED_LABELS, qrStateOf } from './qrState'
 
-// Milestone order used for sorting and counting operation units. Mirrors the
-// PROJECT_STAGE_ORDER milestone progression but starts at 'pending' for units
-// that have not been sold yet.
-export const OPERATIONS_STATUS_ORDER = ['pending', 'sold', 'manufactured', 'shipped', 'delivered']
+// The unit vocabulary lives once, in `constants.js`; re-exported here because
+// this module's callers have always imported it from the Operations service.
+export { OPERATIONS_STATUS_ORDER }
 
 // The admin's view of the production line.
 //
@@ -28,6 +28,8 @@ export const OPERATION_COLUMNS = [
   'updated_at',
   'project_id',
   'project_reference',
+  'sold_id',
+  'milestone',
   'project_title',
   'public_id',
   'public_token',
@@ -50,8 +52,10 @@ export const OPERATION_COLUMNS = [
   'postal_code',
   'country',
   'special_instructions',
-  'qr_target',
-  'qr_ready',
+  'qr_destination',
+  'qr_activated',
+  'qr_openable',
+  'qr_blocked_reason',
 ].join(', ')
 
 // ---- reading ---------------------------------------------------------------
@@ -84,10 +88,11 @@ export function toOperation(row) {
   const reference = String(row?.reference ?? '')
   const unitIndex = Number(row?.unit_index ?? 1)
   const designerName = row?.designer_name ?? ''
+  const milestone = String(row?.milestone ?? '')
+  const qr = qrStateOf(row)
   return {
     id: row.id,
     reference,
-    soldAs: soldAsId(reference),
     hasValidId: PHYSICAL_ID_PATTERN.test(reference),
     unitIndex: Number.isFinite(unitIndex) ? unitIndex : 1,
     soldAt: row.sold_at ?? row.paid_at ?? null,
@@ -99,16 +104,14 @@ export function toOperation(row) {
     archived: Boolean(row.archived_at),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    status: (() => {
-      if (row.delivered_at) return 'delivered'
-      if (row.shipped_at) return 'shipped'
-      if (row.manufacturing_completed_at) return 'manufactured'
-      if (row.sold_at || row.paid_at) return 'sold'
-      return 'pending'
-    })(),
+    // The stage is the ORDER's stage, read from the one milestone column. The
+    // unit timestamps remain the production detail behind that stage.
+    milestone,
+    status: unitStageFromMilestone(milestone),
 
     projectId: row.project_id,
     projectReference: row.project_reference ?? '',
+    soldId: row.sold_id ?? '',
     projectTitle: row.project_title ?? '',
     publicId: row.public_id ?? '',
     publicToken: row.public_token ?? '',
@@ -117,8 +120,11 @@ export function toOperation(row) {
     paidAt: row.paid_at ?? null,
     messageActive: Boolean(row.message_active),
     messageProtected: Boolean(row.message_protected),
-    qrTarget: Boolean(row.qr_target),
-    qrReady: Boolean(row.qr_ready),
+    qr,
+    qrDestination: qr.destination,
+    qrActivated: qr.activated,
+    qrOpenable: qr.openable,
+    qrBlockedReason: qr.blockedReason,
 
     designerId: row.designer_id ?? null,
     designerName,
@@ -157,11 +163,11 @@ const time = (value) => {
 const text = (value) => String(value ?? '').toLowerCase()
 
 // Every field the studio might type into the search box. Search matches the
-// canonical id and its Sold As form, so pasting either finds the unit.
+// canonical id, the Sold ID and the unit id, so pasting any of them finds it.
 export function operationSearchText(operation) {
   return [
     operation.reference,
-    operation.soldAs,
+    operation.soldId,
     operation.projectReference,
     operation.projectTitle,
     operation.designerName,
@@ -233,6 +239,10 @@ export function statusCounts(operations) {
 
 // Everything a paper needs before it can be printed. Reported per item so the
 // review step can show exactly what is missing instead of silently skipping.
+//
+// The QR gate is the ONE QR answer (`order_qr_state`): paper is never printed
+// for a QR that would not open the letter, because the sheet is physical and
+// cannot be fixed afterwards.
 export function validateOperationForPaper(operation) {
   const errors = []
   const warnings = []
@@ -244,16 +254,12 @@ export function validateOperationForPaper(operation) {
   }
   if (!operation.designerName) errors.push('No designer name on file')
   if (!operation.designerCode) errors.push('No designer ID on file')
-  if (!operation.publicId) errors.push('The Dearune has no public id, so its QR has no destination')
-  if (!operation.publicToken) {
-    errors.push('The Dearune has no public token, so its QR could not be verified')
+
+  const qr = operation.qr ?? qrStateOf(operation)
+  if (qr.blockedReason) {
+    errors.push(QR_BLOCKED_LABELS[qr.blockedReason] ?? 'The QR for this Dearune will not open.')
   }
-  if (!operation.messageActive && !errors.length) {
-    warnings.push('The letter is not switched on yet — the printed QR will not open it')
-  }
-  if (operation.messageProtected) {
-    warnings.push('The letter is password-protected, so the public reader will not open it')
-  }
+
   if (!operation.customerPhone) {
     warnings.push('No customer number on file — the paper will print an empty field')
   }
@@ -271,10 +277,6 @@ async function act(action, body) {
 
 export function ensureOperations(projectId, units = 1) {
   return act('ensure', { projectId, units })
-}
-
-export function setOperationStatus(productId, status, reason = '') {
-  throw new Error('Operations status has been replaced by milestones')
 }
 
 export function updateOperation(productId, fields = {}) {

@@ -52,9 +52,31 @@ describe('identity', () => {
     expect(unit).toMatch(/^DR\d{11}$/)
     expect(refs).toEqual([
       { kind: 'canonical', value: canonical },
-      { kind: 'sold', value: `SOL-${unit}` },
+      { kind: 'sold', value: `SOL-${canonical.slice(3)}` },
       { kind: 'unit', value: unit },
     ])
+  })
+
+  it('derives the Sold ID from the canonical id, never from a physical unit', async () => {
+    const projectId = await orderInMaking()
+    const canonical = await value(db, 'select reference from public.projects where id = $1', [projectId])
+    const sold = await value(
+      db,
+      `select value from public.order_references where project_id = $1 and kind = 'sold'`,
+      [projectId],
+    )
+
+    expect(canonical).toMatch(/^DR-(\d{6})$/)
+    expect(sold).toBe(`SOL-${canonical.slice(3)}`)
+
+    // A second unit must not create a second Sold ID or a Sold ID of its own.
+    await db.query('select * from public.ensure_physical_products($1, 2, null)', [projectId])
+    const soldRows = await many(
+      db,
+      `select value from public.order_references where project_id = $1 and kind = 'sold'`,
+      [projectId],
+    )
+    expect(soldRows).toEqual([{ value: sold }])
   })
 
   it('resolves the order from ANY of its identifiers', async () => {
@@ -62,7 +84,7 @@ describe('identity', () => {
     const canonical = await value(db, 'select reference from public.projects where id = $1', [projectId])
     const unit = await value(db, 'select reference from public.physical_products where project_id = $1', [projectId])
 
-    for (const id of [canonical, unit, `SOL-${unit}`]) {
+    for (const id of [canonical, unit, `SOL-${canonical.slice(3)}`]) {
       const found = await value(db, 'select project_id from public.order_references where value = $1', [id])
       expect(found, id).toBe(projectId)
     }
@@ -101,7 +123,9 @@ describe('milestone transitions', () => {
 
     const digital = await seedProject(db, { designerId, wrapperType: 'digital' })
     await db.query('select public.ops_start_work_order($1, $2)', [digital.id, ADMIN_ID])
-    expect(await milestoneOf(digital.id)).toBeNull()
+    // Digital has no Making: it settles at `sold` and only becomes `delivered`
+    // when the recipient opens the letter.
+    expect(await milestoneOf(digital.id)).toBe('sold')
   })
 
   it('starts Making once, no matter how many times it is asked', async () => {
@@ -113,7 +137,9 @@ describe('milestone transitions', () => {
       `select count(*)::int from public.project_events where project_id = $1 and action = 'order.milestone'`,
       [projectId],
     )
-    expect(events).toBe(1)
+    // configured → sold → making is two real hops, recorded once each. Asking
+    // again records nothing.
+    expect(events).toBe(2)
   })
 
   it('walks Making → Shipping → Delivery → Delivered → After-Sale, one step at a time', async () => {
@@ -550,7 +576,7 @@ describe('the one-row order view', () => {
     ])
     expect(row.canonical_id).toBe(canonical)
     expect(row.unit_reference).toBe(unit)
-    for (const id of [canonical, unit, `SOL-${unit}`]) expect(row.search_references).toContain(id)
+    for (const id of [canonical, unit, `SOL-${canonical.slice(3)}`]) expect(row.search_references).toContain(id)
   })
 
   it('exposes exactly one milestone per order, and excludes orders not in the workshop', async () => {

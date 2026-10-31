@@ -11,6 +11,7 @@
 | [DIRECTORY_STRUCTURE.md](./DIRECTORY_STRUCTURE.md) | Repository layout with purpose of each directory |
 | [FILE_CATALOG.md](./FILE_CATALOG.md) | Comprehensive catalog of every source file |
 | [ORDER_LIFECYCLE.md](./ORDER_LIFECYCLE.md) | Canonical Dearune ID, authoritative milestone, Making → Shipping → Delivery → After-Sale, carriers and refunds |
+| [AUTHORITATIVE_ORDER_MODEL.md](./AUTHORITATIVE_ORDER_MODEL.md) | The contract: attribute ownership, identity model, milestone guard, one QR answer, layering and migration guarantees |
 | [CODE_REFERENCE.md](./CODE_REFERENCE.md) | Code-level reference for functions, components, hooks |
 | [ROUTES_AND_PAGES.md](./ROUTES_AND_PAGES.md) | Complete route inventory with authentication requirements |
 | [COMPONENTS.md](./COMPONENTS.md) | React component inventory with props and usage |
@@ -110,6 +111,15 @@ npm run build
    order; Operations is four views of one record; Egypt Post manifests and
    manual refunds are audited (`20261103000001_order_lifecycle.sql`,
    see [ORDER_LIFECYCLE.md](./ORDER_LIFECYCLE.md))
+7. **The unified order model** — the lifecycle gained `configured` and `sold`;
+   the Sold ID is derived from the canonical id (`SOL-000021`) and the old
+   `SOL-DR…` values are kept as aliases; one `order_qr_state()` function is the
+   only QR answer; `ops_revert_milestone` is the only backwards path; Admin and
+   Worker now read and write the same milestone, Sold ID and QR state
+   (`20261104000001_stage_configured.sql`,
+   `20261104000002_stage_sold.sql`,
+   `20261104000003_unified_order_model.sql`, see
+   [AUTHORITATIVE_ORDER_MODEL.md](./AUTHORITATIVE_ORDER_MODEL.md))
 
 ---
 

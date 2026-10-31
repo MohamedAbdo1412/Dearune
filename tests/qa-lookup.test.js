@@ -206,7 +206,12 @@ describe('fetchQaRecord', () => {
     expect(record.sale.status).toBe('completed')
     expect(record.units).toHaveLength(1)
     expect(record.units[0].reference).toMatch(/^DR\d{11}$/)
-    expect(record.units[0].soldAs).toBe(`SOL-${record.units[0].reference}`)
+    // The Sold ID belongs to the ORDER and derives from the canonical id, never
+    // from the physical unit id.
+    expect(record.project.reference).toMatch(/^DR-\d{6}$/)
+    expect(record.units[0].soldId).toBe(record.project.reference.replace('DR-', 'SOL-'))
+    expect(record.units[0].milestone).toBe(record.project.milestone)
+    expect(record.units[0].qr).toMatchObject({ destination: true, activated: true, openable: true })
     expect(record.units[0].events[0].action).toBe('unit.opened')
     expect(record.projectEvents.map((event) => event.action)).toContain('project.created')
     expect(record.media.photos).toHaveLength(1)
@@ -222,13 +227,19 @@ describe('fetchQaRecord', () => {
   it('lists the identifiers the workshop reads out loud', async () => {
     const record = await fetchQaRecord(`https://dearune.ink/message/${PUBLIC_ID}?token=${PUBLIC_TOKEN}`)
     const identifiers = qaIdentifiers(record)
-    const production = identifiers.find((item) => item.tone === 'primary')
-    expect(production.value).toMatch(/^DR\d{11}$/)
+    // The primary identifier is the ORDER's canonical id, which is what every
+    // dashboard now shows and what the studio quotes over the phone.
+    const primary = identifiers.find((item) => item.tone === 'primary')
+    expect(primary.label).toBe('Dearune ID')
+    expect(primary.value).toMatch(/^DR-\d{6}$/)
     expect(identifiers.map((item) => item.label)).toEqual([
+      'Dearune ID',
       'Production reference',
       'Designer ID',
       'Public ID',
     ])
+    // Every unit reference points back at the same one order.
+    expect(new Set(identifiers.map((item) => item.value)).size).toBe(identifiers.length)
   })
 
   it('rejects a paper whose token belongs to another letter', async () => {

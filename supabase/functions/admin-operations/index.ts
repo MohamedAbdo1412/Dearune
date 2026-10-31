@@ -430,7 +430,7 @@ async function resolveManifest(sb: ReturnType<typeof adminClient>, rows: Manifes
       continue
     }
 
-    if (milestone === 'making') {
+    if (milestone === 'sold' || milestone === 'making' || milestone === 'configured') {
       resolved.push({
         ...base,
         projectId,
@@ -438,7 +438,10 @@ async function resolveManifest(sb: ReturnType<typeof adminClient>, rows: Manifes
         milestone,
         matchedBy: referenceId ? 'reference' : 'tracking',
         status: 'blocked',
-        message: 'Still in Making — finish Making before shipping',
+        message:
+          milestone === 'making'
+            ? 'Still in Making — finish Making before shipping'
+            : 'Not in Making yet — start production before shipping',
       })
       continue
     }

@@ -79,6 +79,7 @@ tests/
 ├── qr-paper.test.js          # QR paper PDF generation
 ├── shipping-csv.test.js      # Shipping CSV export
 ├── template-contract.test.js # Template contract
+├── unified-order-model.test.js # One order model: guard, digital path, QR parity, revert, cross-dashboard, migration idempotency (PGlite)
 ├── validation.test.js        # Validation schemas
 ├── worker-permissions.test.js # Worker permissions
 └── wrappers.test.js          # Wrapper catalog
@@ -146,12 +147,22 @@ vi.mock('@/lib/supabase', () => ({
 
 ### Database tests (PGlite)
 
-`tests/order-lifecycle-db.test.js` runs the real migration against PGlite (WASM
-Postgres) via `tests/helpers/database.js`. It is the only way to exercise
-`order_references`, the milestone guard and the `ops_*` RPCs without a Supabase
-project, and it asserts transaction behaviour (idempotency, double-click,
-refused moves) as well as RLS grants. When changing the order-lifecycle
-migration, extend that file rather than mocking the database.
+`tests/order-lifecycle-db.test.js`, `tests/operations-db.test.js`,
+`tests/worker-permissions.test.js` and `tests/unified-order-model.test.js` run
+the real migrations against PGlite (WASM Postgres) via
+`tests/helpers/database.js`. This is the only way to exercise
+`order_references`, the milestone guard, `order_qr_state` and the `ops_*` /
+worker RPCs without a Supabase project, and it asserts transaction behaviour
+(idempotency, double-click, refused moves), cross-view parity and RLS grants.
+`unified-order-model.test.js` is the regression suite for the one order model —
+when changing the guard, the identity triggers or the QR function, extend it
+rather than mocking the database.
+
+**Known baseline:** 14 failures pre-date the unified order model and are
+unrelated to it — `tests/qr-paper.test.js` (9, PDF/artwork geometry),
+`tests/app-pwa.test.js` (4, app manifests) and `tests/order-stage.test.js` (1,
+legacy `orders` identifier hygiene). A change to the order model must not alter
+that baseline.
 
 ## E2E Tests (Playwright)
 

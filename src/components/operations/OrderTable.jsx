@@ -1,6 +1,7 @@
 import { ChevronRight, Loader2Icon, Printer } from 'lucide-react'
 import { formatDateTime, formatMoney } from '@/services/format'
 import { carrierLabel } from '@/services/carriers'
+import { QR_BLOCKED_LABELS } from '@/services/qrState'
 import {
   MILESTONE_LABELS,
   isDelivered,
@@ -247,8 +248,12 @@ export function OrderTable({
                   {showMaking ? (
                     <TableCell className="hidden xl:table-cell">
                       <span className="text-sm tabular-nums">{Number(order.unit_count) || 0}</span>
-                      <Badge variant={order.qr_ready ? 'outline' : 'destructive'} className="ml-2">
-                        {order.qr_ready ? 'QR ready' : 'QR blocked'}
+                      <Badge
+                        variant={order.qr_openable ? 'outline' : 'destructive'}
+                        className="ml-2"
+                        title={order.qr_blocked_reason ? QR_BLOCKED_LABELS[order.qr_blocked_reason] : 'Scanning the printed QR opens the letter'}
+                      >
+                        {order.qr_openable ? 'QR ready' : 'QR blocked'}
                       </Badge>
                     </TableCell>
                   ) : null}
