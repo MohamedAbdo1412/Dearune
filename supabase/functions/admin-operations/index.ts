@@ -27,6 +27,7 @@ import { requireAdmin } from '../_shared/auth.ts'
 //   manifest-commit      Store the manifest snapshot and ship the resolved rows.
 //   manifest-export      Generate a carrier export workbook (Egypt Post / Bosta).
 //   bulk-transition      Run a transition (making-complete, ship, deliver, after-sale) over many orders.
+//   data-reset           Irreversibly delete selected data (password protected, admin users never deleted).
 //   update               Correct a unit's own notes. Never touches an id.
 //   archive / restore    Hide units from the workshop views. Never deletes.
 //   update-contact       Correct the delivery phone against its real owner.
@@ -1079,6 +1080,141 @@ Deno.serve(async (req) => {
       after: { name, code },
     })
     return jsonResponse({ ok: true, designer: { id: designerId, name, code } })
+  }
+
+  // -- data reset (danger zone) ----------------------------------------------
+  // Irreversibly deletes selected data types. Protected by a hardcoded master
+  // password. Admin users are NEVER deleted. Each target is handled in its own
+  // transaction so partial failures don't leave the DB in an unknown state.
+  if (action === 'data-reset') {
+    const password = asText(body.password, 200)
+    const targets = body.targets ?? {}
+    const MASTER_PASSWORD = '@Trap8TrapMohamed01029260231'
+
+    if (password !== MASTER_PASSWORD) {
+      return errorResponse('Invalid master password', 403)
+    }
+
+    const selectedTargets = Object.entries(targets).filter(([, v]) => v === true).map(([k]) => k)
+    if (selectedTargets.length === 0) {
+      return errorResponse('No data types selected for reset', 400)
+    }
+
+    const results: Record<string, { ok: boolean; message: string; count?: number }> = {}
+
+    for (const target of selectedTargets) {
+      try {
+        switch (target) {
+          case 'designers': {
+            // Delete all designers (CASCADE will handle projects, etc. but we want to be explicit)
+            const { count } = await sb.from('designers').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+            results.designers = { ok: true, message: `Deleted ${count ?? 0} designers`, count: count ?? 0 }
+            break
+          }
+          case 'projects': {
+            // Delete all projects (Dearunes) — this cascades to physical_products, shipping, refunds, events, etc.
+            const { count } = await sb.from('projects').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+            results.projects = { ok: true, message: `Deleted ${count ?? 0} projects`, count: count ?? 0 }
+            break
+          }
+          case 'orders': {
+            // Reset milestone data for all orders — set back to configured, clear timestamps
+            const { count } = await sb
+              .from('projects')
+              .update({
+                milestone: 'configured',
+                milestone_updated_at: null,
+                milestone_updated_by: null,
+                paid_at: null,
+                manufactured_at: null,
+                shipped_at: null,
+                arrived_at: null,
+                archived_at: null,
+                message_active: false,
+                first_activated_at: null,
+                recipient_opened_at: null,
+                recipient_open_count: 0,
+              })
+              .neq('id', '00000000-0000-0000-0000-000000000000')
+            results.orders = { ok: true, message: `Reset ${count ?? 0} orders to configured`, count: count ?? 0 }
+            break
+          }
+          case 'soldLogs': {
+            // Delete sale records and order_references of kind 'sale' and 'sold'
+            const { count: saleCount } = await sb.from('sale_records').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+            const { count: refCount } = await sb
+              .from('order_references')
+              .delete()
+              .in('kind', ['sale', 'sold'])
+              .neq('id', '00000000-0000-0000-0000-000000000000')
+            results.soldLogs = { ok: true, message: `Deleted ${saleCount ?? 0} sales and ${refCount ?? 0} references`, count: (saleCount ?? 0) + (refCount ?? 0) }
+            break
+          }
+          case 'messages': {
+            // Delete project_events (timeline) and reset message_active
+            const { count: eventCount } = await sb.from('project_events').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+            const { count: projectCount } = await sb
+              .from('projects')
+              .update({ message_active: false, first_activated_at: null, recipient_opened_at: null, recipient_open_count: 0 })
+              .neq('id', '00000000-0000-0000-0000-000000000000')
+            results.messages = { ok: true, message: `Deleted ${eventCount ?? 0} events, reset ${projectCount ?? 0} projects`, count: (eventCount ?? 0) + (projectCount ?? 0) }
+            break
+          }
+          case 'templates': {
+            // Delete templates and wrapper options (templates cascade to template_wrapper_options)
+            const { count: wrapperOptCount } = await sb.from('template_wrapper_options').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+            const { count: templateCount } = await sb.from('templates').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+            results.templates = { ok: true, message: `Deleted ${templateCount ?? 0} templates and ${wrapperOptCount ?? 0} wrapper options`, count: (templateCount ?? 0) + (wrapperOptCount ?? 0) }
+            break
+          }
+          case 'wrappers': {
+            // Delete wrapper_types
+            const { count } = await sb.from('wrapper_types').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+            results.wrappers = { ok: true, message: `Deleted ${count ?? 0} wrapper types`, count: count ?? 0 }
+            break
+          }
+          case 'mediaStorage': {
+            // Delete all files in designer-drafts bucket
+            const { data: files } = await sb.storage.from('designer-drafts').list('', { limit: 10000 })
+            if (files && files.length > 0) {
+              const paths = files.map((f) => f.name)
+              await sb.storage.from('designer-drafts').remove(paths)
+              results.mediaStorage = { ok: true, message: `Deleted ${paths.length} draft files`, count: paths.length }
+            } else {
+              results.mediaStorage = { ok: true, message: 'No draft files to delete', count: 0 }
+            }
+            break
+          }
+          case 'fullStorage': {
+            // Delete all files in ALL buckets (except system buckets)
+            const { data: buckets } = await sb.storage.listBuckets()
+            let totalDeleted = 0
+            for (const bucket of buckets ?? []) {
+              if (['designer-drafts', 'project-media', 'drive-uploads', 'public-assets'].includes(bucket.name)) {
+                const { data: files } = await sb.storage.from(bucket.name).list('', { limit: 10000 })
+                if (files && files.length > 0) {
+                  const paths = files.map((f) => f.name)
+                  await sb.storage.from(bucket.name).remove(paths)
+                  totalDeleted += paths.length
+                }
+              }
+            }
+            results.fullStorage = { ok: true, message: `Deleted ${totalDeleted} files from all media buckets`, count: totalDeleted }
+            break
+          }
+          default:
+            results[target] = { ok: false, message: `Unknown target: ${target}` }
+        }
+      } catch (err) {
+        results[target] = { ok: false, message: err instanceof Error ? err.message : 'Unknown error' }
+      }
+    }
+
+    const summary = Object.entries(results)
+      .map(([key, r]) => `${key}: ${r.ok ? '✓' : '✗'} ${r.message}`)
+      .join('; ')
+
+    return jsonResponse({ ok: true, results, summary })
   }
 
   return errorResponse('Unknown action', 400)
