@@ -697,7 +697,7 @@ Deno.serve(async (req) => {
     if (error) return errorResponse('Could not fetch orders', 500)
 
     // Build the workbook using the carrier adapters
-    const ExcelJS = (await import('exceljs')).default
+    const ExcelJS = (await import('npm:exceljs')).default
     let workbook
     let filename
 
