@@ -282,7 +282,7 @@ export function Settings() {
               <label key={key} className="flex items-center gap-3 rounded-lg border bg-background p-3 hover:bg-muted/50 transition-colors">
                 <Checkbox
                   checked={resetTargets[key]}
-                  onCheckedChange={(e) => handleResetTargetChange(key, e.target.checked)}
+                  onCheckedChange={(checked) => handleResetTargetChange(key, checked)}
                   className="size-4"
                 />
                 <span className="text-sm font-medium">{label}</span>
