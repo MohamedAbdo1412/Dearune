@@ -174,6 +174,61 @@ export function buildBostaWorkbook(operations) {
 
 **Read-only guarantee:** Uses `worker_qa_lookup` RPC with `qa.view` permission.
 
+## Templates & Wrappers (Admin)
+
+### Templates Page (`/admin/templates`)
+
+**Features:**
+- List all templates with preview images, display names, slugs, public paths, and status badges
+- Create new templates with name, slug, display name, public path, description, and preview image upload
+- Edit template general information (name, display name, public path, description, enabled state, display state)
+- Upload and manage template preview images with automatic WebP compression and thumbnail generation
+- **Tabbed configuration interface:**
+  - **General**: Basic template metadata and display state (Normal / New / Not Available)
+  - **Wrappers & Pricing**: Configure wrapper availability and per-template pricing for each template
+  - **Preview Image**: Upload and manage template artwork
+
+**Wrapper Configuration (Wrappers & Pricing tab):**
+- Shows all available wrappers from the global `wrapper_types` catalog
+- For each wrapper, displays whether it's currently associated with the template
+- Add a wrapper to the template (creates `template_wrapper_options` row with `enabled=true`)
+- Enable/disable wrapper for this specific template (does not affect other templates)
+- Set per-template price override (EGP) — leaves empty to use wrapper's base price
+- Set per-template cost override (EGP) — leaves empty to use wrapper's base cost
+- Set display order for wrapper selection in CreateBook
+- Changes persist immediately and are reflected in the customer-facing workflow
+- Removing a wrapper disables it (preserves historical pricing for existing Dearunes)
+
+**Display State (Badge/Status):**
+- **Normal**: Template is normally available, no special badge
+- **New**: Template shows "New" vintage badge in CreateBook selection
+- **Not Available**: Template visible in admin but not selectable by customers in CreateBook
+
+**Data Flow:**
+- Template data stored in `templates` table
+- Wrapper associations stored in `template_wrapper_options` (junction table)
+- Wrapper catalog in `wrapper_types` (global definitions)
+- Pricing resolution: template option override → wrapper base price → legacy `template_pricing` fallback
+- `designer-templates` edge function returns templates with their enabled wrappers and pricing
+- CreateBook uses `resolveWrapperPrice()` from `src/services/wrappers.js` for price display
+
+**Permissions:** Admin only (RLS: `is_dearune_admin()`)
+
+### Wrappers Page (`/admin/wrappers`)
+
+**Features:**
+- Manage global wrapper catalog (`wrapper_types` table)
+- Create new wrapper types with key, name (EN/AR), description (EN/AR), kind (digital/physical)
+- Edit wrapper copy, base price, base cost, display order, production days, active state, display state
+- Upload wrapper photos with automatic optimization and thumbnail generation
+- Display state controls (Normal / New / Not Available) affect CreateBook visibility
+
+**Relationship to Templates:**
+- Wrappers page manages global wrapper definitions
+- Templates page manages which wrappers each template offers and at what price
+- A wrapper being enabled globally does not automatically enable it for templates
+- Per-template pricing is independent across templates
+
 ## Worker Dashboard Workflows
 
 ### Worker Login

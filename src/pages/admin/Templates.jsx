@@ -1,15 +1,46 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { Loader2Icon, Plus, Save, Edit2 } from 'lucide-react'
+import { Loader2Icon, Plus, Save, Edit2, GripVertical } from 'lucide-react'
 import { toast } from 'sonner'
-import { fetchTemplates, updateTemplate, createTemplate, updateTemplateIdentity, updateTemplatePreview, isTemplateStoragePath, resolveTemplateImageUrl, templatePreviewSource, uploadTemplateAsset, TEMPLATE_SLUG_RE } from '@/services/templates'
-import { getCatalogItemState } from '@/services/catalog'
+import {
+  fetchTemplates,
+  updateTemplate,
+  createTemplate,
+  updateTemplateIdentity,
+  updateTemplatePreview,
+  isTemplateStoragePath,
+  resolveTemplateImageUrl,
+  templatePreviewSource,
+  uploadTemplateAsset,
+  TEMPLATE_SLUG_RE,
+} from '@/services/templates'
+import {
+  fetchWrapperTypes,
+  fetchTemplateWrapperOptions,
+  saveTemplateWrapperOption,
+} from '@/services/wrappers'
+import { getCatalogItemState, DISPLAY_STATES, DISPLAY_STATE_META } from '@/services/catalog'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
 import { optimizeAndThumbnail } from '@/lib/image-optimizer'
 import { currentAccessToken } from '@/lib/supabase'
 
@@ -32,7 +63,14 @@ export function Templates() {
   const [editForm, setEditForm] = useState({})
   const [savingNew, setSavingNew] = useState(false)
   const [savingEdit, setSavingEdit] = useState(false)
-  
+
+  // Wrapper configuration state
+  const [wrapperTypes, setWrapperTypes] = useState([])
+  const [templateWrapperOptions, setTemplateWrapperOptions] = useState([])
+  const [wrapperDrafts, setWrapperDrafts] = useState({})
+  const [savingWrapperId, setSavingWrapperId] = useState(null)
+  const [loadingWrappers, setLoadingWrappers] = useState(false)
+
   // Image upload state
   const [uploadingImage, setUploadingImage] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -66,6 +104,46 @@ export function Templates() {
   useEffect(() => {
     void reload()
   }, [reload])
+
+  // Load wrapper types for the wrapper configuration section
+  const loadWrapperTypes = useCallback(async () => {
+    try {
+      const types = await fetchWrapperTypes({ activeOnly: false })
+      setWrapperTypes(types)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not load wrapper types')
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadWrapperTypes()
+  }, [loadWrapperTypes])
+
+  // Load template wrapper options when opening edit dialog
+  const loadTemplateWrapperOptions = useCallback(async (templateId) => {
+    setLoadingWrappers(true)
+    try {
+      const options = await fetchTemplateWrapperOptions()
+      const templateOptions = options.filter((opt) => opt.template_id === templateId)
+      setTemplateWrapperOptions(templateOptions)
+
+      // Initialize drafts with current values
+      const drafts = {}
+      for (const opt of templateOptions) {
+        drafts[opt.wrapper_id] = {
+          enabled: opt.enabled,
+          price_override: opt.price_override ?? '',
+          cost_override: opt.cost_override ?? '',
+          display_order: opt.display_order ?? 0,
+        }
+      }
+      setWrapperDrafts(drafts)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not load wrapper options')
+    } finally {
+      setLoadingWrappers(false)
+    }
+  }, [])
 
   const handleImageUpload = async (file, templateSlug) => {
     if (!file) return
@@ -193,6 +271,8 @@ export function Templates() {
     setThumbnailPreview(template.thumbnail_url || null)
     setUploadError('')
     setUploadProgress(0)
+    // Load wrapper options for this template
+    void loadTemplateWrapperOptions(template.id)
     setEditDialogOpen(true)
   }
 
@@ -250,6 +330,58 @@ export function Templates() {
     }
   }
 
+  // Wrapper configuration handlers
+  const setWrapperField = (wrapperId, patch) => {
+    setWrapperDrafts((current) => ({
+      ...current,
+      [wrapperId]: { ...current[wrapperId], ...patch },
+    }))
+  }
+
+  const saveWrapperOption = async (wrapperId) => {
+    if (!editingTemplate) return
+    const draft = wrapperDrafts[wrapperId]
+    if (!draft) return
+
+    setSavingWrapperId(wrapperId)
+    try {
+      await saveTemplateWrapperOption({
+        templateId: editingTemplate.id,
+        wrapperId,
+        enabled: draft.enabled,
+        priceOverride: draft.price_override === '' ? null : Number(draft.price_override),
+        costOverride: draft.cost_override === '' ? null : Number(draft.cost_override),
+      })
+      toast.success('Wrapper option saved')
+      // Refresh the template wrapper options
+      await loadTemplateWrapperOptions(editingTemplate.id)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save wrapper option')
+    } finally {
+      setSavingWrapperId(null)
+    }
+  }
+
+  const addWrapperOption = async (wrapperId) => {
+    if (!editingTemplate) return
+    setSavingWrapperId(wrapperId)
+    try {
+      await saveTemplateWrapperOption({
+        templateId: editingTemplate.id,
+        wrapperId,
+        enabled: true,
+        priceOverride: null,
+        costOverride: null,
+      })
+      toast.success('Wrapper added to template')
+      await loadTemplateWrapperOptions(editingTemplate.id)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not add wrapper')
+    } finally {
+      setSavingWrapperId(null)
+    }
+  }
+
   const rowsFor = useMemo(() => {
     const list = templates ?? []
     return list.map((template) => {
@@ -269,7 +401,7 @@ export function Templates() {
         <div>
           <h1 className="font-heading text-2xl">Templates</h1>
           <p className="text-sm text-muted-foreground">
-            Manage templates - create, edit names/paths, upload previews. No deletion.
+            Manage templates - create, edit names/paths, upload previews, configure wrappers & pricing. No deletion.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -339,6 +471,14 @@ export function Templates() {
                     <Label className="text-xs text-muted-foreground">Enabled</Label>
                     <p className="text-sm">{t.enabled !== false ? 'Yes' : 'No'}</p>
                   </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Status</Label>
+                    <p className="text-sm">
+                      <Badge variant={t.display_state === 'new' ? 'default' : t.display_state === 'not_available' ? 'destructive' : 'secondary'}>
+                        {DISPLAY_STATE_META[t.display_state]?.label || 'Normal'}
+                      </Badge>
+                    </p>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -375,6 +515,21 @@ export function Templates() {
               <Label htmlFor="create-description">Description</Label>
               <Input id="create-description" value={newTemplate.description} onChange={(e) => setNewTemplate((c) => ({ ...c, description: e.target.value }))} placeholder="Description" />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-display-state">Display State</Label>
+              <Select value={newTemplate.display_state} onValueChange={(value) => setNewTemplate((c) => ({ ...c, display_state: value }))}>
+                <SelectTrigger id="create-display-state" className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DISPLAY_STATES.map((state) => (
+                    <SelectItem key={state} value={state}>
+                      {DISPLAY_STATE_META[state].label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex items-center justify-between">
               <Label htmlFor="create-enabled">Enabled</Label>
               <Switch id="create-enabled" checked={newTemplate.enabled} onCheckedChange={(checked) => setNewTemplate((c) => ({ ...c, enabled: checked }))} />
@@ -400,42 +555,207 @@ export function Templates() {
 
       {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Template</DialogTitle>
-            <DialogDescription>Update template information.</DialogDescription>
+            <DialogDescription>Update template information, wrapper availability, and per-template pricing.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-name">Template Name *</Label>
-              <Input id="edit-name" value={editForm.name || ''} onChange={(e) => setEditForm((c) => ({ ...c, name: e.target.value }))} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-display-name">Display Name *</Label>
-              <Input id="edit-display-name" value={editForm.display_name || ''} onChange={(e) => setEditForm((c) => ({ ...c, display_name: e.target.value }))} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-public-path">Public Path *</Label>
-              <Input id="edit-public-path" value={editForm.public_path || ''} onChange={(e) => setEditForm((c) => ({ ...c, public_path: e.target.value }))} />
-              <p className="text-xs text-muted-foreground">Lowercase, starts with letter, letters/numbers/hyphens/underscores</p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-description">Description</Label>
-              <Input id="edit-description" value={editForm.description || ''} onChange={(e) => setEditForm((c) => ({ ...c, description: e.target.value }))} />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="edit-enabled">Enabled</Label>
-              <Switch id="edit-enabled" checked={editForm.enabled !== false} onCheckedChange={(checked) => setEditForm((c) => ({ ...c, enabled: checked }))} />
-            </div>
-            <div className="space-y-2">
-              <Label>Preview Image</Label>
-              <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e.target.files?.[0], editingTemplate?.slug)} disabled={uploadingImage} />
-              <p className="text-xs text-muted-foreground">Stored under templates/{editingTemplate?.slug || '<slug>'}/</p>
-              {uploadingImage && <p className="text-xs text-muted-foreground">{uploadProgress}%</p>}
-              {previewImage && <p className="text-xs text-muted-foreground">Uploaded</p>}
-              {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
-            </div>
-          </div>
+          <Tabs defaultValue="general" className="w-full">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="general">General</TabsTrigger>
+              <TabsTrigger value="wrappers">Wrappers & Pricing</TabsTrigger>
+              <TabsTrigger value="preview">Preview Image</TabsTrigger>
+            </TabsList>
+
+            {/* General Tab */}
+            <TabsContent value="general" className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Template Name *</Label>
+                <Input id="edit-name" value={editForm.name || ''} onChange={(e) => setEditForm((c) => ({ ...c, name: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-display-name">Display Name *</Label>
+                <Input id="edit-display-name" value={editForm.display_name || ''} onChange={(e) => setEditForm((c) => ({ ...c, display_name: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-public-path">Public Path *</Label>
+                <Input id="edit-public-path" value={editForm.public_path || ''} onChange={(e) => setEditForm((c) => ({ ...c, public_path: e.target.value }))} />
+                <p className="text-xs text-muted-foreground">Lowercase, starts with letter, letters/numbers/hyphens/underscores</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-description">Description</Label>
+                <Input id="edit-description" value={editForm.description || ''} onChange={(e) => setEditForm((c) => ({ ...c, description: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-display-state">Display State</Label>
+                <Select value={editForm.display_state || 'normal'} onValueChange={(value) => setEditForm((c) => ({ ...c, display_state: value }))}>
+                  <SelectTrigger id="edit-display-state" className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DISPLAY_STATES.map((state) => (
+                      <SelectItem key={state} value={state}>
+                        {DISPLAY_STATE_META[state].label}
+                        {state === 'new' && <span className="ml-2 text-xs text-emerald-600">(Shows NEW badge)</span>}
+                        {state === 'not_available' && <span className="ml-2 text-xs text-red-600">(Not selectable by customers)</span>}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="edit-enabled">Enabled</Label>
+                <Switch id="edit-enabled" checked={editForm.enabled !== false} onCheckedChange={(checked) => setEditForm((c) => ({ ...c, enabled: checked }))} />
+              </div>
+            </TabsContent>
+
+            {/* Wrappers & Pricing Tab */}
+            <TabsContent value="wrappers" className="space-y-4 pt-4">
+              {loadingWrappers ? (
+                <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}</div>
+              ) : (
+                <>
+                  <div className="text-sm text-muted-foreground">
+                    Configure which wrappers are available for this template and their per-template prices.
+                    Price overrides apply only to this template; leave empty to use the wrapper's base price.
+                  </div>
+                  <div className="space-y-3">
+                    {wrapperTypes.map((wrapper) => {
+                      const existingOption = templateWrapperOptions.find((opt) => opt.wrapper_id === wrapper.id)
+                      const draft = wrapperDrafts[wrapper.id] ?? {
+                        enabled: false,
+                        price_override: '',
+                        cost_override: '',
+                        display_order: 0,
+                      }
+                      const isEnabled = existingOption?.enabled ?? false
+                      const busy = savingWrapperId === wrapper.id
+
+                      return (
+                        <Card key={wrapper.id} className={isEnabled ? '' : 'opacity-60'}>
+                          <CardContent className="pt-4 pb-4">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="flex items-center gap-3">
+                                <GripVertical className="text-muted-foreground size-4" />
+                                <div>
+                                  <p className="font-medium">{wrapper.name}</p>
+                                  <p className="text-xs text-muted-foreground font-mono">{wrapper.key} • {wrapper.kind === 'digital' ? 'Digital' : 'Physical'}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {!existingOption ? (
+                                  <Button size="sm" variant="outline" onClick={() => void addWrapperOption(wrapper.id)} disabled={busy}>
+                                    {busy ? <Loader2Icon className="size-4 animate-spin" /> : <Plus className="size-4" />} Add
+                                  </Button>
+                                ) : (
+                                  <>
+                                    <Switch
+                                      checked={draft.enabled}
+                                      onCheckedChange={(checked) => setWrapperField(wrapper.id, { enabled: checked })}
+                                      disabled={busy}
+                                      aria-label={`Enable ${wrapper.name} for this template`}
+                                    />
+                                    <span className="text-xs text-muted-foreground">{draft.enabled ? 'Enabled' : 'Disabled'}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            {existingOption && (
+                              <div className="mt-3 grid gap-3 sm:grid-cols-4">
+                                <div className="space-y-1 sm:col-span-2">
+                                  <Label htmlFor={`price-${wrapper.id}`} className="text-xs">Price Override (EGP)</Label>
+                                  <Input
+                                    id={`price-${wrapper.id}`}
+                                    type="number"
+                                    min={0}
+                                    step="0.01"
+                                    placeholder="Use wrapper base price"
+                                    value={draft.price_override}
+                                    onChange={(e) => setWrapperField(wrapper.id, { price_override: e.target.value })}
+                                    disabled={busy || !draft.enabled}
+                                  />
+                                  <p className="text-[10px] text-muted-foreground">Wrapper base price: {wrapper.base_price.toFixed(2)} EGP</p>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label htmlFor={`cost-${wrapper.id}`} className="text-xs">Cost Override (EGP)</Label>
+                                  <Input
+                                    id={`cost-${wrapper.id}`}
+                                    type="number"
+                                    min={0}
+                                    step="0.01"
+                                    placeholder="Use wrapper base cost"
+                                    value={draft.cost_override}
+                                    onChange={(e) => setWrapperField(wrapper.id, { cost_override: e.target.value })}
+                                    disabled={busy || !draft.enabled}
+                                  />
+                                  <p className="text-[10px] text-muted-foreground">Wrapper base cost: {wrapper.production_cost.toFixed(2)} EGP</p>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label htmlFor={`order-${wrapper.id}`} className="text-xs">Display Order</Label>
+                                  <Input
+                                    id={`order-${wrapper.id}`}
+                                    type="number"
+                                    min={0}
+                                    value={draft.display_order}
+                                    onChange={(e) => setWrapperField(wrapper.id, { display_order: e.target.value })}
+                                    disabled={busy || !draft.enabled}
+                                  />
+                                </div>
+                                <div className="flex items-end">
+                                  <Button
+                                    size="sm"
+                                    variant={draft.enabled ? 'default' : 'outline'}
+                                    onClick={() => void saveWrapperOption(wrapper.id)}
+                                    disabled={busy}
+                                  >
+                                    {busy ? <Loader2Icon className="size-4 animate-spin" /> : <Save className="size-4" />}
+                                    Save
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+
+                            {!existingOption && (
+                              <p className="mt-2 text-xs text-muted-foreground">
+                                This wrapper is not yet associated with this template. Click "Add" to make it available.
+                              </p>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            {/* Preview Image Tab */}
+            <TabsContent value="preview" className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <Label>Preview Image</Label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleImageUpload(e.target.files?.[0], editingTemplate?.slug)}
+                  disabled={uploadingImage}
+                />
+                <p className="text-xs text-muted-foreground">Stored under templates/{editingTemplate?.slug || '<slug>'}/</p>
+                {uploadingImage && <p className="text-xs text-muted-foreground">{uploadProgress}%</p>}
+                {previewImage && <p className="text-xs text-muted-foreground">Uploaded</p>}
+                {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
+              </div>
+              <div className="relative w-64 aspect-[210/297] bg-muted rounded-lg overflow-hidden border border-border">
+                {previewImage ? (
+                  <img src={previewImage} alt={`${editingTemplate?.name} preview`} className="w-full h-full object-contain" />
+                ) : editingTemplate?.preview_image_url ? (
+                  <img src={previewUrls[editingTemplate.id] || ''} alt={`${editingTemplate.name} preview`} className="w-full h-full object-contain" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">No preview</div>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSaveEdit} disabled={savingEdit}>

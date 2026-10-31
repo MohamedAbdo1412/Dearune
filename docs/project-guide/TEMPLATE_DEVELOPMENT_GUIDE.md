@@ -337,6 +337,31 @@ const { templates } = await fetchTemplates();
 // templates[i].versions from registry
 ```
 
+The Templates page (`/admin/templates`) now provides a complete configuration center for each template with three tabs:
+
+#### General Tab
+- Template name, display name, public path (slug override), description
+- Enabled toggle
+- Display State selector: **Normal** / **New** / **Not Available**
+  - **Normal**: Standard availability, no badge
+  - **New**: Shows vintage "New" badge in CreateBook selection
+  - **Not Available**: Visible in admin, but not selectable by customers in CreateBook
+
+#### Wrappers & Pricing Tab
+- Lists all wrappers from the global `wrapper_types` catalog
+- For each wrapper, shows current association status with this template
+- **Add wrapper**: Creates a `template_wrapper_options` row with `enabled=true`
+- **Enable/Disable**: Toggle wrapper availability for this specific template only
+- **Price Override (EGP)**: Per-template price; leave empty to use wrapper's base price
+- **Cost Override (EGP)**: Per-template cost; leave empty to use wrapper's base cost
+- **Display Order**: Order in which wrapper appears in CreateBook selection
+- Changes persist via `saveTemplateWrapperOption()` and immediately affect customer-facing workflow
+- **Removing a wrapper** disables it (preserves historical pricing for existing Dearunes)
+
+#### Preview Image Tab
+- Upload template artwork with automatic WebP compression (≤1600px) and thumbnail (≤400px)
+- Images stored in private `designer-drafts` bucket under `templates/<slug>/`
+
 ### The Preview Image (what the chooser card paints)
 
 A template's card on `/create` is the image the admin uploaded — not a CSS
@@ -363,13 +388,14 @@ component is optional decoration and is no longer used for the selection card.
 - [ ] Create letter renderer (`NewTemplateLetter.jsx`)
 - [ ] Create editor stage (`NewTemplateEditorStage.jsx`)
 - [ ] Upload the paper's preview image on **Templates** (the chooser card paints the upload; a `CardMini` is optional)
+- [ ] Configure wrapper availability and pricing on **Templates → Wrappers & Pricing tab** (or add migration for `template_wrapper_options`)
 - [ ] Add to `TEMPLATE_DEFINITIONS` in `registry/index.js`
 - [ ] Add to `TEMPLATE_SEQUENCES` in `stages.js`
 - [ ] Add migration for `templates` table insert
-- [ ] Add wrapper options in `template_wrapper_options`
 - [ ] Test in CreateBook flow
 - [ ] Test in PublicMessage rendering
 - [ ] Test version switching
+- [ ] Test display state behavior (Normal / New / Not Available)
 - [ ] Update `TEMPLATE_DEVELOPMENT_GUIDE.md`
 
 ## Template Data Contract

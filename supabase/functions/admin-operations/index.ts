@@ -1106,20 +1106,22 @@ Deno.serve(async (req) => {
       try {
         switch (target) {
           case 'designers': {
-            // Delete all designers (CASCADE will handle projects, etc. but we want to be explicit)
-            const { count } = await sb.from('designers').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+            // Delete all designers (CASCADE will handle projects, etc.)
+            const { count, error } = await sb.from('designers').delete()
+            if (error) throw error
             results.designers = { ok: true, message: `Deleted ${count ?? 0} designers`, count: count ?? 0 }
             break
           }
           case 'projects': {
             // Delete all projects (Dearunes) — this cascades to physical_products, shipping, refunds, events, etc.
-            const { count } = await sb.from('projects').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+            const { count, error } = await sb.from('projects').delete()
+            if (error) throw error
             results.projects = { ok: true, message: `Deleted ${count ?? 0} projects`, count: count ?? 0 }
             break
           }
           case 'orders': {
             // Reset milestone data for all orders — set back to configured, clear timestamps
-            const { count } = await sb
+            const { count, error } = await sb
               .from('projects')
               .update({
                 milestone: 'configured',
@@ -1135,50 +1137,57 @@ Deno.serve(async (req) => {
                 recipient_opened_at: null,
                 recipient_open_count: 0,
               })
-              .neq('id', '00000000-0000-0000-0000-000000000000')
+            if (error) throw error
             results.orders = { ok: true, message: `Reset ${count ?? 0} orders to configured`, count: count ?? 0 }
             break
           }
           case 'soldLogs': {
             // Delete sale records and order_references of kind 'sale' and 'sold'
-            const { count: saleCount } = await sb.from('sale_records').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-            const { count: refCount } = await sb
+            const { count: saleCount, error: saleError } = await sb.from('sale_records').delete()
+            if (saleError) throw saleError
+            const { count: refCount, error: refError } = await sb
               .from('order_references')
               .delete()
               .in('kind', ['sale', 'sold'])
-              .neq('id', '00000000-0000-0000-0000-000000000000')
+            if (refError) throw refError
             results.soldLogs = { ok: true, message: `Deleted ${saleCount ?? 0} sales and ${refCount ?? 0} references`, count: (saleCount ?? 0) + (refCount ?? 0) }
             break
           }
           case 'messages': {
             // Delete project_events (timeline) and reset message_active
-            const { count: eventCount } = await sb.from('project_events').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-            const { count: projectCount } = await sb
+            const { count: eventCount, error: eventError } = await sb.from('project_events').delete()
+            if (eventError) throw eventError
+            const { count: projectCount, error: projectError } = await sb
               .from('projects')
               .update({ message_active: false, first_activated_at: null, recipient_opened_at: null, recipient_open_count: 0 })
-              .neq('id', '00000000-0000-0000-0000-000000000000')
+            if (projectError) throw projectError
             results.messages = { ok: true, message: `Deleted ${eventCount ?? 0} events, reset ${projectCount ?? 0} projects`, count: (eventCount ?? 0) + (projectCount ?? 0) }
             break
           }
           case 'templates': {
             // Delete templates and wrapper options (templates cascade to template_wrapper_options)
-            const { count: wrapperOptCount } = await sb.from('template_wrapper_options').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-            const { count: templateCount } = await sb.from('templates').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+            const { count: wrapperOptCount, error: wrapperError } = await sb.from('template_wrapper_options').delete()
+            if (wrapperError) throw wrapperError
+            const { count: templateCount, error: templateError } = await sb.from('templates').delete()
+            if (templateError) throw templateError
             results.templates = { ok: true, message: `Deleted ${templateCount ?? 0} templates and ${wrapperOptCount ?? 0} wrapper options`, count: (templateCount ?? 0) + (wrapperOptCount ?? 0) }
             break
           }
           case 'wrappers': {
             // Delete wrapper_types
-            const { count } = await sb.from('wrapper_types').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+            const { count, error } = await sb.from('wrapper_types').delete()
+            if (error) throw error
             results.wrappers = { ok: true, message: `Deleted ${count ?? 0} wrapper types`, count: count ?? 0 }
             break
           }
           case 'mediaStorage': {
-            // Delete all files in designer-drafts bucket
-            const { data: files } = await sb.storage.from('designer-drafts').list('', { limit: 10000 })
+            // Delete all files in designer-drafts bucket using service role
+            const { data: files, error: listError } = await sb.storage.from('designer-drafts').list('', { limit: 10000 })
+            if (listError) throw listError
             if (files && files.length > 0) {
               const paths = files.map((f) => f.name)
-              await sb.storage.from('designer-drafts').remove(paths)
+              const { error: removeError } = await sb.storage.from('designer-drafts').remove(paths)
+              if (removeError) throw removeError
               results.mediaStorage = { ok: true, message: `Deleted ${paths.length} draft files`, count: paths.length }
             } else {
               results.mediaStorage = { ok: true, message: 'No draft files to delete', count: 0 }
@@ -1186,15 +1195,18 @@ Deno.serve(async (req) => {
             break
           }
           case 'fullStorage': {
-            // Delete all files in ALL buckets (except system buckets)
-            const { data: buckets } = await sb.storage.listBuckets()
+            // Delete all files in ALL media buckets using service role
+            const { data: buckets, error: bucketsError } = await sb.storage.listBuckets()
+            if (bucketsError) throw bucketsError
             let totalDeleted = 0
             for (const bucket of buckets ?? []) {
               if (['designer-drafts', 'project-media', 'drive-uploads', 'public-assets'].includes(bucket.name)) {
-                const { data: files } = await sb.storage.from(bucket.name).list('', { limit: 10000 })
+                const { data: files, error: listError } = await sb.storage.from(bucket.name).list('', { limit: 10000 })
+                if (listError) throw listError
                 if (files && files.length > 0) {
                   const paths = files.map((f) => f.name)
-                  await sb.storage.from(bucket.name).remove(paths)
+                  const { error: removeError } = await sb.storage.from(bucket.name).remove(paths)
+                  if (removeError) throw removeError
                   totalDeleted += paths.length
                 }
               }
