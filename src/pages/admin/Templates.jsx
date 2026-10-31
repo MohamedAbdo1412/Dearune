@@ -488,7 +488,7 @@ export function Templates() {
 
       {/* Create Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Create Template</DialogTitle>
             <DialogDescription>Add a new template to the catalog.</DialogDescription>
@@ -555,7 +555,7 @@ export function Templates() {
 
       {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto sm:max-w-5xl lg:max-w-6xl">
           <DialogHeader>
             <DialogTitle>Edit Template</DialogTitle>
             <DialogDescription>Update template information, wrapper availability, and per-template pricing.</DialogDescription>
