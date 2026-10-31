@@ -57,16 +57,21 @@ npm run test -- --coverage
 ```
 tests/
 ├── helpers/
-│   └── setup.js              # Test utilities, mocks
+│   ├── setup.js              # Test utilities, mocks
+│   └── database.js           # PGlite bootstrap + seeding for migration/RPC tests
 ├── app-pwa.test.js           # PWA manifest/app registration
 ├── batch-review.test.js      # Batch review logic
 ├── book-machine.test.js      # BookMachine state machine
 ├── bosta-export.test.js      # Bosta Excel export
 ├── catalog-state.test.js     # Catalog state management
+├── carriers.test.js          # Egypt Post manifest adapter + carrier registry
 ├── dearune-ops.test.js       # Dearune operations
+├── external-link.test.js     # External-link URL/framing rules + draft contract
 ├── invoke-sdk.test.js        # SDK invocation
 ├── operations-db.test.js     # Operations DB queries
 ├── operations-list.test.js   # Operations list shaping
+├── ops-orders.test.js        # Operations query grammar + presentation helpers
+├── order-lifecycle-db.test.js # Identity, milestone, shipping, refunds, manifests (PGlite)
 ├── order-stage.test.js       # Order stage logic
 ├── pdf.test.js               # PDF generation
 ├── pipeline.test.js          # Full pipeline
@@ -138,6 +143,15 @@ vi.mock('@/lib/supabase', () => ({
   invokeFunction: vi.fn().mockResolvedValue({ data: null, error: null }),
 }))
 ```
+
+### Database tests (PGlite)
+
+`tests/order-lifecycle-db.test.js` runs the real migration against PGlite (WASM
+Postgres) via `tests/helpers/database.js`. It is the only way to exercise
+`order_references`, the milestone guard and the `ops_*` RPCs without a Supabase
+project, and it asserts transaction behaviour (idempotency, double-click,
+refused moves) as well as RLS grants. When changing the order-lifecycle
+migration, extend that file rather than mocking the database.
 
 ## E2E Tests (Playwright)
 

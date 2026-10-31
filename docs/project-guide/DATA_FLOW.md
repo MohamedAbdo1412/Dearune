@@ -326,20 +326,27 @@ submitted → (Admin creates sale) → paid → manufactured → shipped → del
 
 ### Physical Product Milestones
 
+> Updated by `20261103000001_order_lifecycle.sql`: the **order's stage** now
+> lives in `projects.milestone` (`making → shipping → delivery → delivered →
+> after_sale`) and is moved only by the `ops_*` RPCs. `physical_products` keeps
+> its production stamps as Making detail and no longer owns a competing stage.
+> See [ORDER_LIFECYCLE.md](./ORDER_LIFECYCLE.md).
+
 ```
-pending → sold → manufactured → shipped → delivered → archived
-   │        │          │            │           │          │
-   ▼        ▼          ▼            ▼           ▼          ▼
-Created  Admin     Worker RPC:   Worker RPC:  Worker RPC:  Auto/Manual
-         records   mark_          mark_        mark_        after 2yrs
-         sale      manufactured  shipped      delivered    or manual
+paid → making → shipping → delivery → delivered → after_sale
+       printing   carrier     on the     recipient   refund /
+       QR, QC     chosen      way        has it      complaint
 ```
+
+Each transition is one transactional RPC that writes the milestone, the
+matching timestamp and an audit event together; the `projects_milestone_guard`
+trigger refuses backwards or skipping moves.
 
 **Validation Rules:**
 - `manufactured_at` requires `paid_at`
 - `shipped_at` requires `manufactured_at` + complete shipping address
-- `delivered_at` requires `shipped_at`
-- Digital wrappers skip physical milestones
+- `arrived_at` requires `shipped_at`
+- Digital wrappers skip physical milestones (`projects.milestone` stays `NULL`)
 
 ---
 
@@ -387,7 +394,12 @@ Admin/Worker Login → Supabase Auth (email/password) → Session Cookie (HttpOn
 
 | Constraint | Purpose |
 |---|---|
-| `physical_products.reference` CHECK `^DR\d{11}$` | Canonical ID format |
+| `physical_products.reference` CHECK `^DR\d{11}$` | Physical unit ID format (not the canonical order ID) |
+| `projects.reference` UNIQUE | Canonical Dearune ID (`DR-######`) |
+| `order_references.value` UNIQUE | Every historical identifier resolves to exactly one order |
+| `projects_milestone_guard` | Milestone may only move forward one step |
+| `projects (milestone)` INDEX | Section queries stay fast |
+| `refunds (project_id, idempotency_key)` UNIQUE | A refund request cannot be recorded twice |
 | `physical_products (project_id, unit_index)` UNIQUE | One unit per index per project |
 | `sales_log (project_id) WHERE status='completed'` UNIQUE | One active sale per project |
 | `projects` CHECK `(manufactured_at IS NULL OR paid_at IS NOT NULL)` | Milestone order |
@@ -408,6 +420,9 @@ Admin/Worker Login → Supabase Auth (email/password) → Session Cookie (HttpOn
 | Operation | Mechanism |
 |---|---|
 | `ensure_physical_products` | Unique `(project_id, unit_index)` index |
+| `ops_ship` / `ops_deliver` | A repeat of the current milestone is a no-op; no second shipment/event |
+| `ops_record_refund` | Unique `(project_id, idempotency_key)`; amount ceiling re-checked in the transaction |
+| `ops_create_manifest` | Manifest snapshot is written once per commit and linked to every shipped row |
 | `allocate_message_public_id` | `public_id` UNIQUE, retry on collision |
 | Media upload (fixed name) | Supabase Storage upsert |
 | Draft save | localStorage/IndexedDB overwrite |

@@ -1,145 +1,177 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import {
-  Archive,
-  ArchiveRestore,
+  AlertTriangle,
+  ChevronLeft,
   ChevronRight,
+  FileSpreadsheet,
   Loader2Icon,
   PackageSearch,
-  PlayCircle,
   Printer,
   RefreshCw,
-  RotateCcw,
-  Search,
-  Undo2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import {
-  OPERATIONS_SORTS,
-  archiveOperations,
-  fetchOperationEvents,
-  fetchOperations,
-  restoreOperations,
-  statusCounts,
-  updateOperation,
-  updateOperationContact,
-  viewOperations,
-} from '@/services/operations'
-import { formatDateTime } from '@/services/format'
+  EMPTY_FILTERS,
+  completeMaking,
+  deliverOrder,
+  fetchDesignerOptions,
+  fetchMilestoneCounts,
+  fetchOrders,
+  fetchUnitIdsForProjects,
+  moveToAfterSale,
+  sectionByKey,
+} from '@/services/ops-orders'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
-
-// Operations — the production line for the physical units themselves.
-//
-// One Dearune that was sold as three bottles is THREE records here, each with
-// its own canonical id, its own place on the line and its own paper. Nothing
-// on this screen can create an id, change one, or delete a unit: archiving is
-// a visibility flag, and the database refuses any status move that is not on
-// the workshop's own schedule.
-//
-// Generic Operations status has been replaced by explicit milestones
-// (sold / manufactured / shipped / delivered). This screen reads milestone
-// timestamps from the unit row and displays them; advancing a milestone is
-// done through the Dearune record (admin-dearunes) or the worker milestone
-// RPCs, not from this screen.
-const ALL = 'all'
+import { Card, CardContent } from '@/components/ui/card'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { OperationsSectionNav } from '@/components/operations/OperationsSectionNav'
+import { OperationsFilterBar } from '@/components/operations/OperationsFilterBar'
+import { OrderTable } from '@/components/operations/OrderTable'
+import { OrderDetailSheet } from '@/components/operations/OrderDetailSheet'
+import { RefundDialog } from '@/components/operations/RefundDialog'
+import { ManifestImportDialog } from '@/components/operations/ManifestImportDialog'
 
 const messageOf = (err) => (err instanceof Error ? err.message : 'Something went wrong')
 
-const isConflict = (err) => err?.status === 409 && Boolean(err?.payload?.conflict)
+const PAGE_SIZE = 25
 
-const MILESTONE_ORDER = ['pending', 'sold', 'manufactured', 'shipped', 'delivered']
+// Operations — ONE Dearune, ONE milestone, four subsections.
+//
+// Every row is the same `projects` record. Making, Shipping, Delivery and
+// After-Sale are four questions asked of it, not four copies of it, so an order
+// can never be in two places and moving it moves one column instead of
+// duplicating a row. The database is the authority on every transition; this
+// screen only asks for the next legal step and shows what came back.
 
-const MILESTONE_LABELS = {
-  pending: 'Pending',
-  sold: 'Sold',
-  manufactured: 'Manufactured',
-  shipped: 'Shipped',
-  delivered: 'Delivered',
-}
-
-const MILESTONE_VARIANT = {
-  pending: 'outline',
-  sold: 'outline',
-  manufactured: 'outline',
-  shipped: 'outline',
-  delivered: 'default',
-}
-
-export function Operations() {
+export function Operations({ section = 'making' }) {
+  const definition = sectionByKey(section)
+  const navigate = useNavigate()
   const { settings } = useAppSettings()
   const maintenance = Boolean(settings?.maintenance_mode)
-  const navigate = useNavigate()
+
+  const [filters, setFilters] = useState(EMPTY_FILTERS)
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [sortKey, setSortKey] = useState('newest')
+  const [page, setPage] = useState(0)
 
   const [rows, setRows] = useState(null)
-  const [query, setQuery] = useState('')
-  const [sortKey, setSortKey] = useState('newest')
-  const [milestoneFilter, setMilestoneFilter] = useState(ALL)
-  const [showArchived, setShowArchived] = useState(false)
-  const [selected, setSelected] = useState(() => new Set())
-  const [bulkBusy, setBulkBusy] = useState(false)
-  const [detail, setDetail] = useState(null)
-  const [timeline, setTimeline] = useState(null)
-  const [notesDraft, setNotesDraft] = useState('')
-  const [phoneDraft, setPhoneDraft] = useState('')
-  const [saving, setSaving] = useState(false)
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [refreshToken, setRefreshToken] = useState(0)
 
-  const reload = useCallback(async () => {
-    try {
-      setRows(await fetchOperations({ includeArchived: true }))
-    } catch (err) {
-      toast.error(messageOf(err))
-      setRows((prev) => prev ?? [])
+  const [counts, setCounts] = useState(null)
+  const [designers, setDesigners] = useState([])
+  const [selected, setSelected] = useState(() => new Set())
+  const [busyId, setBusyId] = useState(null)
+
+  const [detail, setDetail] = useState(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [refundFor, setRefundFor] = useState(null)
+  const [deliverTarget, setDeliverTarget] = useState(null)
+  const [manifestOpen, setManifestOpen] = useState(false)
+
+  const refresh = useCallback(() => setRefreshToken((value) => value + 1), [])
+
+  // Typing is instant; the query it becomes is debounced, so a section with
+  // thousands of orders is not queried once per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(filters.query), 300)
+    return () => clearTimeout(timer)
+  }, [filters.query])
+
+  const effectiveFilters = useMemo(
+    () => ({ ...filters, query: debouncedQuery }),
+    [filters, debouncedQuery],
+  )
+
+  useEffect(() => {
+    setPage(0)
+    setSelected(new Set())
+    setDetail(null)
+    setDetailOpen(false)
+  }, [section])
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setError('')
+    fetchOrders({ section, filters: effectiveFilters, sortKey, page, pageSize: PAGE_SIZE })
+      .then((result) => {
+        if (!active) return
+        setRows(result.rows)
+        setTotal(result.total)
+        setLoading(false)
+      })
+      .catch((err) => {
+        if (!active) return
+        setError(messageOf(err))
+        setRows([])
+        setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [section, effectiveFilters, sortKey, page, refreshToken])
+
+  useEffect(() => {
+    let active = true
+    fetchMilestoneCounts()
+      .then((next) => active && setCounts(next))
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [refreshToken])
+
+  useEffect(() => {
+    let active = true
+    fetchDesignerOptions()
+      .then((next) => active && setDesigners(next))
+      .catch(() => {})
+    return () => {
+      active = false
     }
   }, [])
 
-  useEffect(() => {
-    void reload()
-  }, [reload])
+  const onFilterChange = (key, value) => {
+    setFilters((prev) => ({ ...prev, [key]: value }))
+    setPage(0)
+  }
 
-  // The default screen is the work in front of you: active units, newest
-  // first. The archive is one switch away and is never mixed in by accident.
-  const visible = useMemo(
-    () =>
-      viewOperations(rows ?? [], {
-        sortKey,
-        query,
-        status: milestoneFilter === ALL ? '' : milestoneFilter,
-        includeArchived: showArchived,
-      }),
-    [rows, sortKey, query, milestoneFilter, showArchived],
-  )
+  const clearFilters = () => {
+    setFilters(EMPTY_FILTERS)
+    setPage(0)
+  }
 
-  // Counts follow the same scope as the list: the archive is only counted when
-  // it is on screen, so a figure never refers to rows the studio cannot see.
-  const activeRows = useMemo(() => (rows ?? []).filter((row) => !row.archived), [rows])
-  const scoped = useMemo(() => (showArchived ? rows ?? [] : activeRows), [rows, activeRows, showArchived])
-  const activeCounts = useMemo(() => statusCounts(activeRows), [activeRows])
-  const activeCount = activeRows.length
-  const readyToPrint = (activeCounts.sold ?? 0) + (activeCounts.pending ?? 0)
+  const onSortChange = (next) => {
+    setSortKey(next)
+    setPage(0)
+  }
 
-  const visibleIds = visible.map((row) => row.id)
-  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
-  const selectedRows = useMemo(() => (rows ?? []).filter((row) => selected.has(row.id)), [rows, selected])
-
-  const toggle = (id) => {
+  const toggle = (projectId) => {
     setSelected((prev) => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+      if (next.has(projectId)) next.delete(projectId)
+      else next.add(projectId)
       return next
     })
   }
+
+  const visibleIds = (rows ?? []).map((row) => row.project_id)
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
+  const selectedRows = (rows ?? []).filter((row) => selected.has(row.project_id))
 
   const toggleAll = () => {
     setSelected((prev) => {
@@ -150,483 +182,268 @@ export function Operations() {
     })
   }
 
-  const afterWrite = async (fn, successMessage) => {
+  const openOrder = (order) => {
+    setDetail(order)
+    setDetailOpen(true)
+  }
+
+  const runOn = async (order, fn, message) => {
+    setBusyId(order.project_id)
     try {
       await fn()
-      if (successMessage) toast.success(successMessage)
-      await reload()
-      return true
+      toast.success(message)
+      refresh()
     } catch (err) {
-      toast.error(isConflict(err) ? 'Someone else moved that unit first — the list has been refreshed' : messageOf(err))
-      await reload()
-      return false
+      toast.error(messageOf(err))
+      refresh()
+    } finally {
+      setBusyId(null)
     }
   }
 
-  const bulk = async (fn, successMessage) => {
-    if (selectedRows.length === 0 || bulkBusy) return
-    setBulkBusy(true)
-    await afterWrite(fn, successMessage)
-    setBulkBusy(false)
-  }
-
-  const archiveSelected = () =>
-    bulk(
-      () => archiveOperations([...selected]),
-      `Archived ${selectedRows.length} ${selectedRows.length === 1 ? 'unit' : 'units'}`,
-    )
-
-  const restoreSelected = () =>
-    bulk(
-      () => restoreOperations([...selected]),
-      `Restored ${selectedRows.length} ${selectedRows.length === 1 ? 'unit' : 'units'}`,
-    )
-
-  const printable = selectedRows.filter((row) => !row.archived)
-
-  const printSelection = () => {
-    if (printable.length === 0) {
-      toast.error('Select at least one active unit to print')
+  const onAction = (key, order) => {
+    if (key === 'deliver') {
+      setDeliverTarget(order)
       return
     }
-    navigate(`/admin/operations/print?ids=${printable.map((row) => row.id).join(',')}`)
+    if (key === 'making-complete') {
+      void runOn(order, () => completeMaking(order.project_id, 'Making complete'), 'Moved to Shipping')
+      return
+    }
+    if (key === 'after-sale') {
+      void runOn(order, () => moveToAfterSale(order.project_id, 'Delivered order moved to After-Sale'), 'Moved to After-Sale')
+    }
   }
 
-  const openDetail = async (row) => {
-    setDetail(row)
-    setNotesDraft(row.notes ?? '')
-    setPhoneDraft(row.customerPhone ?? '')
-    setTimeline(null)
+  const printOrders = async (orders) => {
+    const active = (orders ?? []).filter((order) => !order.archived_at)
+    if (active.length === 0) {
+      toast.error('Select at least one active order to print')
+      return
+    }
     try {
-      setTimeline(await fetchOperationEvents(row.id))
-    } catch {
-      setTimeline([])
+      const units = await fetchUnitIdsForProjects(active.map((order) => order.project_id))
+      if (units.length === 0) {
+        toast.error('Those orders have no printable unit yet')
+        return
+      }
+      navigate(`/admin/operations/print?ids=${units.map((unit) => unit.id).join(',')}`)
+    } catch (err) {
+      toast.error(messageOf(err))
     }
   }
 
-  const saveDetail = async () => {
-    if (!detail) return
-    setSaving(true)
-    const saved = await afterWrite(async () => {
-      await updateOperation(detail.id, { notes: notesDraft })
-      // The phone belongs to the Dearune's own delivery row, so it is saved
-      // against its real owner rather than copied onto the unit.
-      if ((phoneDraft ?? '') !== (detail.customerPhone ?? '')) {
-        await updateOperationContact(detail.projectId, phoneDraft)
-      }
-      return null
-    }, 'Saved')
-    setSaving(false)
-    if (saved) {
-      setDetail((prev) => (prev ? { ...prev, notes: notesDraft, customerPhone: phoneDraft } : prev))
-    }
-  }
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const from = total === 0 ? 0 : page * PAGE_SIZE + 1
+  const to = Math.min(total, page * PAGE_SIZE + (rows?.length ?? 0))
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl">Operations</h1>
-          <p className="text-sm text-muted-foreground">
-            One record per physical unit — its canonical id, its place on the workshop line, its paper and its QR.
-          </p>
+          <p className="max-w-2xl text-sm text-muted-foreground">{definition.description}</p>
         </div>
-        <Button size="sm" onClick={printSelection} disabled={printable.length === 0 || bulkBusy}>
-          <Printer className="size-4" />
-          Print papers ({printable.length})
-        </Button>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Card>
-          <CardContent className="py-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Active units</p>
-            <p className="text-xl font-semibold tabular-nums">{rows === null ? '—' : activeCount}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Waiting to print</p>
-            <p className="text-xl font-semibold tabular-nums">{rows === null ? '—' : readyToPrint}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Archived</p>
-            <p className="text-xl font-semibold tabular-nums">
-              {rows === null ? '—' : rows.length - activeCount}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-1 flex-wrap items-center gap-2">
-          <div className="relative w-full sm:min-w-56 sm:flex-1 lg:max-w-72">
-            <Search className=" pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search id, Sold As, customer, designer…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-
-          <Select value={sortKey} onValueChange={setSortKey}>
-            <SelectTrigger className="w-full sm:w-44">
-              <SelectValue placeholder="Sort" />
-            </SelectTrigger>
-            <SelectContent>
-              {OPERATIONS_SORTS.map((sort) => (
-                <SelectItem key={sort.key} value={sort.key}>
-                  {sort.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={milestoneFilter} onValueChange={setMilestoneFilter}>
-            <SelectTrigger className="w-full sm:w-52">
-              <SelectValue placeholder="Milestone" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All milestones</SelectItem>
-              {MILESTONE_ORDER.map((milestone) => (
-                <SelectItem key={milestone} value={milestone}>
-                  {MILESTONE_LABELS[milestone]}
-                  {rows !== null ? ` (${scoped.filter((row) => row.status === milestone).length})` : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Switch checked={showArchived} onCheckedChange={setShowArchived} />
-            Show archived
-          </label>
-          <Button variant="ghost" size="icon" onClick={() => void reload()} title="Refresh">
+        <div className="flex flex-wrap items-center gap-2">
+          {section === 'shipping' ? (
+            <Button size="sm" variant="outline" onClick={() => setManifestOpen(true)} disabled={maintenance}>
+              <FileSpreadsheet className="size-4" />
+              Import manifest
+            </Button>
+          ) : null}
+          {section === 'making' ? (
+            <Button size="sm" onClick={() => void printOrders(selectedRows)} disabled={selectedRows.length === 0}>
+              <Printer className="size-4" />
+              Print papers ({selectedRows.length})
+            </Button>
+          ) : null}
+          <Button size="sm" variant="ghost" onClick={refresh} title="Refresh">
             <RefreshCw className="size-4" />
+            <span className="sr-only">Refresh</span>
           </Button>
         </div>
       </div>
 
-      {selectedRows.length > 0 && (
+      <OperationsSectionNav activeKey={section} counts={counts} />
+
+      <OperationsFilterBar
+        section={section}
+        filters={filters}
+        onFilterChange={onFilterChange}
+        onClear={clearFilters}
+        sortKey={sortKey}
+        onSortChange={onSortChange}
+        designers={designers}
+        total={rows === null ? undefined : total}
+      />
+
+      {selectedRows.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2.5">
           <span className="text-sm text-muted-foreground">{selectedRows.length} selected</span>
           <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
-            {showArchived && selectedRows.some((row) => row.archived) && (
-              <Button size="sm" variant="outline" disabled={bulkBusy || maintenance} onClick={() => void restoreSelected()}>
-                {bulkBusy ? <Loader2Icon className="size-4 animate-spin" /> : <Undo2 className="size-4" />}
-                Unarchive
+            {section === 'making' ? (
+              <Button size="sm" onClick={() => void printOrders(selectedRows)}>
+                <Printer className="size-4" />
+                Print papers
               </Button>
-            )}
-            <Button size="sm" variant="outline" disabled={bulkBusy || maintenance} onClick={() => void archiveSelected()}>
-              {bulkBusy ? <Loader2Icon className="size-4 animate-spin" /> : <Archive className="size-4" />}
-              Archive selected
-            </Button>
-            <Button size="sm" onClick={printSelection}>
-              <Printer className="size-4" />
-              Print papers
+            ) : null}
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+              Clear selection
             </Button>
           </div>
         </div>
-      )}
+      ) : null}
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            {rows === null
-              ? 'Loading…'
-              : `${visible.length} ${visible.length === 1 ? 'unit' : 'units'}${
-                  showArchived ? ' (archive shown)' : ' on the line'
-                }`}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {rows === null ? (
-            <div className="space-y-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="h-12 w-full rounded-lg border bg-muted/40" />
+        <CardContent className="py-4">
+          {error ? (
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
+              <AlertTriangle className="size-6 text-destructive" />
+              <p className="text-sm text-destructive">{error}</p>
+              <Button size="sm" variant="outline" onClick={refresh}>
+                Try again
+              </Button>
+            </div>
+          ) : rows === null ? (
+            <div className="space-y-2" aria-busy="true" aria-live="polite">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <div key={index} className="h-12 w-full rounded-lg border bg-muted/40" />
               ))}
             </div>
-          ) : visible.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-10 text-center">
+          ) : rows.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-12 text-center">
               <PackageSearch className="size-6 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
-                {query || milestoneFilter !== ALL || showArchived
+                {Object.values(filters).some((value) => String(value ?? '').trim() !== '')
                   ? 'Nothing matches the current filters.'
-                  : 'No units on the line yet. Units are created the moment a physical Dearune is paid for.'}
+                  : section === 'making'
+                    ? 'No orders are in Making. A paid physical Dearune enters the workshop when its Operations record is opened.'
+                    : section === 'shipping'
+                      ? 'Nothing is waiting for a carrier. Finishing Making moves an order here.'
+                      : section === 'delivery'
+                        ? 'No parcels are with a carrier right now.'
+                        : 'No orders have been moved to After-Sale yet.'}
               </p>
+              {Object.values(filters).some((value) => String(value ?? '').trim() !== '') ? (
+                <Button size="sm" variant="outline" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              ) : null}
             </div>
           ) : (
-            <>
-              {/* On a phone the table would need a sideways scroll to be read,
-                  so the same rows are laid out as cards instead. */}
-              <div className="space-y-2 md:hidden">
-                <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/40 px-3 py-2">
-                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Checkbox
-                      checked={allSelected}
-                      onCheckedChange={toggleAll}
-                      aria-label="Select every visible unit"
-                    />
-                    Select all
-                  </label>
-                  <span className="text-xs text-muted-foreground">{selectedRows.length} selected</span>
-                </div>
-                {visible.map((row) => {
-                  return (
-                    <div key={row.id} className="rounded-lg border bg-background p-3">
-                      <div className="flex items-start gap-3">
-                        <Checkbox
-                          checked={selected.has(row.id)}
-                          onCheckedChange={() => toggle(row.id)}
-                          aria-label={`Select ${row.reference}`}
-                          className="mt-1"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <button
-                            type="button"
-                            onClick={() => void openDetail(row)}
-                            className="block w-full text-left"
-                            aria-label={`Open ${row.reference}`}
-                          >
-                            <span className="block break-all font-mono text-sm">{row.reference}</span>
-                            <span className="mt-0.5 block text-xs text-muted-foreground">
-                              {row.soldAs}
-                              {' · '}unit {row.unitIndex}
-                              {row.archived ? ' · archived' : ''}
-                            </span>
-                          </button>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            title="Open unit"
-                            onClick={() => void openDetail(row)}
-                          >
-                            <ChevronRight className="size-4" />
-                            <span className="sr-only">Open unit</span>
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="mt-2 space-y-1.5 border-t pt-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={MILESTONE_VARIANT[row.status]}>{MILESTONE_LABELS[row.status]}</Badge>
-                          <span className="text-xs text-muted-foreground">updated {formatDateTime(row.updatedAt)}</span>
-                        </div>
-                        <p className="min-w-0 break-words text-sm">
-                          <span className="text-muted-foreground">Customer · </span>
-                          {row.recipientName || '—'}
-                          <span className="block text-xs text-muted-foreground">
-                            {row.customerPhone || 'no number on file'}
-                          </span>
-                        </p>
-                        <p className="min-w-0 break-words text-sm">
-                          <span className="text-muted-foreground">Designer · </span>
-                          {row.designerName || '—'}
-                          <span className="block text-xs text-muted-foreground">{row.designerCode}</span>
-                        </p>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-
-              <div className="hidden md:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10">
-                        <Checkbox
-                          checked={allSelected}
-                          onCheckedChange={toggleAll}
-                          aria-label="Select every visible unit"
-                        />
-                      </TableHead>
-                      <TableHead>Unit</TableHead>
-                      <TableHead className="hidden md:table-cell">Customer</TableHead>
-                      <TableHead className="hidden lg:table-cell">Designer</TableHead>
-                      <TableHead>Milestone</TableHead>
-                      <TableHead className="hidden sm:table-cell">Updated</TableHead>
-                      <TableHead className="w-12" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {visible.map((row) => {
-                      return (
-                        <TableRow key={row.id} data-state={selected.has(row.id) ? 'selected' : undefined}>
-                          <TableCell>
-                            <Checkbox
-                              checked={selected.has(row.id)}
-                              onCheckedChange={() => toggle(row.id)}
-                              aria-label={`Select ${row.reference}`}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <button
-                              type="button"
-                              onClick={() => void openDetail(row)}
-                              className="text-left"
-                              aria-label={`Open ${row.reference}`}
-                            >
-                              <span className="block font-mono text-sm">{row.reference}</span>
-                              <span className="block text-xs text-muted-foreground">
-                                {row.soldAs}
-                                {' · '}unit {row.unitIndex}
-                                {row.archived ? ' · archived' : ''}
-                              </span>
-                            </button>
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell">
-                            <span className="block truncate text-sm">{row.recipientName || '—'}</span>
-                            <span className="block truncate text-xs text-muted-foreground">
-                              {row.customerPhone || 'no number on file'}
-                            </span>
-                          </TableCell>
-                          <TableCell className="hidden lg:table-cell">
-                            <span className="block truncate text-sm">{row.designerName || '—'}</span>
-                            <span className="block truncate text-xs text-muted-foreground">{row.designerCode}</span>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={MILESTONE_VARIANT[row.status]}>{MILESTONE_LABELS[row.status]}</Badge>
-                          </TableCell>
-                          <TableCell className="hidden text-xs tabular-nums text-muted-foreground sm:table-cell">
-                            {formatDateTime(row.updatedAt)}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                title="Open unit"
-                                onClick={() => void openDetail(row)}
-                              >
-                                <ChevronRight className="size-4" />
-                                <span className="sr-only">Open unit</span>
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </>
+            <OrderTable
+              section={section}
+              rows={rows}
+              selected={selected}
+              allSelected={allSelected}
+              onSelectAll={toggleAll}
+              onToggle={toggle}
+              onOpen={openOrder}
+              onAction={onAction}
+              busyId={busyId}
+              onPrint={(order) => void printOrders([order])}
+            />
           )}
         </CardContent>
       </Card>
 
-      <p className="text-xs text-muted-foreground">
-        Archiving only hides a unit from this list — it never deletes it, never mints a new id, and never happens
-        on its own when you export. {activeCount > 0 ? `${activeCount} units on the line.` : ''}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          {rows === null || rows.length === 0
+            ? total > 0
+              ? `${total} orders match`
+              : 'No orders'
+            : `Showing ${from}–${to} of ${total}`}
+          {' · '}Every transition records the operator and the time; the database refuses any move that skips a stage.
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setPage((value) => Math.max(0, value - 1))}
+            disabled={page === 0 || loading}
+          >
+            <ChevronLeft className="size-4" />
+            Previous
+          </Button>
+          <span className="text-xs tabular-nums text-muted-foreground">
+            Page {page + 1} of {pageCount}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setPage((value) => value + 1)}
+            disabled={page + 1 >= pageCount || loading}
+          >
+            Next
+            <ChevronRight className="size-4" />
+          </Button>
+        </div>
+      </div>
 
-      {/* ---- one unit, up close ------------------------------------------- */}
-      <Sheet open={detail !== null} onOpenChange={(open) => { if (!open) setDetail(null) }}>
-        <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto sm:max-w-lg">
-          <SheetHeader>
-            <SheetTitle className="font-mono">{detail?.reference}</SheetTitle>
-            <SheetDescription>
-              Sold as <span className="font-mono">{detail?.soldAs}</span>
-              {' · '}unit {detail?.unitIndex}
-              {' · '}Dearune{' '}
-              <Link className="underline" to={`/admin/designers/${detail?.designerId}/messages/${detail?.projectId}`}>
-                {detail?.projectTitle || 'open'}
-              </Link>
-            </SheetDescription>
-          </SheetHeader>
+      <OrderDetailSheet
+        order={detail}
+        open={detailOpen}
+        onOpenChange={(open) => {
+          setDetailOpen(open)
+          if (!open) setDetail(null)
+        }}
+        onChanged={refresh}
+        onRefund={(order) => setRefundFor(order)}
+        onPrint={(order) => void printOrders([order])}
+        maintenance={maintenance}
+      />
 
-          {detail && (
-            <div className="mt-4 space-y-5 px-4 pb-6">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={MILESTONE_VARIANT[detail.status]}>{MILESTONE_LABELS[detail.status]}</Badge>
-                {detail.archived && <span className="text-xs text-muted-foreground">Archived</span>}
-              </div>
+      <RefundDialog
+        order={refundFor}
+        open={refundFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setRefundFor(null)
+        }}
+        onRecorded={refresh}
+      />
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <Label htmlFor="unit-notes">Notes</Label>
-                  <Textarea
-                    id="unit-notes"
-                    value={notesDraft}
-                    onChange={(e) => setNotesDraft(e.target.value)}
-                    placeholder="Anything the workshop should know"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="unit-phone">Customer number</Label>
-                  <Input
-                    id="unit-phone"
-                    value={phoneDraft}
-                    onChange={(e) => setPhoneDraft(e.target.value)}
-                    placeholder="01xxxxxxxxx"
-                    className="mt-1"
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Saved on the Dearune's own delivery row, so the paper and the manifest always agree.
-                  </p>
-                </div>
-              </div>
+      <ManifestImportDialog
+        open={manifestOpen}
+        onOpenChange={setManifestOpen}
+        onImported={refresh}
+      />
 
-              <Button size="sm" onClick={() => void saveDetail()} disabled={saving}>
-                {saving ? <Loader2Icon className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
-                Save changes
-              </Button>
-
-              <div className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                The canonical id <span className="font-mono">{detail.reference}</span> is read-only. It is minted by
-                the database, never regenerated and never reused.
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                {detail.archived ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={bulkBusy || maintenance}
-                    onClick={() => void afterWrite(() => restoreOperations([detail.id]), 'Restored — same id, no new record')}
-                  >
-                    <ArchiveRestore className="size-4" />
-                    Unarchive
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={bulkBusy || maintenance}
-                    onClick={() => void afterWrite(() => archiveOperations([detail.id]), 'Archived')}
-                  >
-                    <Archive className="size-4" />
-                    Archive
-                  </Button>
-                )}
-              </div>
-
-              <div>
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">History</p>
-                <ul className="mt-2 space-y-1.5">
-                  {(timeline ?? []).map((event) => (
-                    <li key={event.id} className="text-xs text-muted-foreground">
-                      <span className="font-mono">{event.action}</span>
-                      {' · '}
-                      {formatDateTime(event.created_at)}
-                    </li>
-                  ))}
-                  {timeline && timeline.length === 0 && <li className="text-xs text-muted-foreground">No history yet.</li>}
-                  {timeline === null && <li className="text-xs text-muted-foreground">Loading…</li>}
-                </ul>
-              </div>
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
+      <AlertDialog
+        open={deliverTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeliverTarget(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {deliverTarget ? `Mark ${deliverTarget.canonical_id} as delivered?` : 'Mark this order delivered?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This records the arrival time and your name, and changes the order&apos;s colour from the saved state. The
+              order stays in Delivery — nothing is archived.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={Boolean(busyId)}>Back</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={Boolean(busyId)}
+              onClick={(event) => {
+                event.preventDefault()
+                const order = deliverTarget
+                setDeliverTarget(null)
+                if (order) {
+                  void runOn(order, () => deliverOrder(order.project_id, { reason: 'Delivered to recipient' }), 'Marked delivered')
+                }
+              }}
+            >
+              {busyId ? <Loader2Icon className="size-4 animate-spin" /> : null}
+              Confirm delivered
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

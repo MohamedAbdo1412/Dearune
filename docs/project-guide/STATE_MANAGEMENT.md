@@ -237,7 +237,7 @@ export async function fetchXxxById(id) {
 }
 ```
 
-### Pagination (Not Currently Used)
+### Pagination (Operations)
 
 ```typescript
 // Pattern for future pagination
@@ -251,6 +251,25 @@ export async function fetchPaginated({ page = 1, pageSize = 50 } = {}) {
   return { data: (data ?? []).map(mapToUI), count };
 }
 ```
+
+### Operations order screen (server state)
+
+`src/pages/admin/Operations.jsx` keeps **no order data of its own**. Its state is
+only the query (filters, sort key, page, debounced search) plus the last
+response:
+
+- `fetchOrders()` sends the query to `ops_orders`; filtering, sorting and
+  paging happen in Postgres, and the response includes `count` for pagination.
+- Typing is instant; the search value is debounced 300 ms before it becomes a
+  query, so a keystroke does not hit the network.
+- Every mutation calls the `admin-operations` edge function and then re-reads the
+  database (`refreshToken`); there is no optimistic stage change, because the
+  database is the authority on the milestone.
+- Row tint, delivered state and the next action are derived from the fetched
+  row (`rowStateClass`, `isDelivered`, `nextAction`), so a refresh shows the same
+  colour as the click did.
+- Loading, empty and error states are explicit; a failed read shows the error
+  and a retry, never an empty table that looks like "no orders".
 
 ## Mutation Patterns
 

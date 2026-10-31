@@ -301,6 +301,114 @@ under `templates/<public_path>/` keep resolving.
 
 ---
 
+### 16. Operations Sections Are Empty After Deploying the New Admin
+
+**Symptom:** **Admin → Operations** loads, but Making / Shipping / Delivery /
+After-Sale show no rows (or the badges show `0`), while the old unit list still
+has units.
+
+**Cause:** the screen reads the `ops_orders` view, and writes go through the
+`ops_*` functions — all created by
+`supabase/migrations/20261103000001_order_lifecycle.sql`. If that migration has
+not been applied, PostgREST answers `relation "public.ops_orders" does not exist`
+and the page shows its error state instead of rows.
+
+**Fix:** apply the migration, then reload. It is idempotent and non-destructive,
+so re-running it is safe.
+
+**Check:**
+- [ ] `select to_regclass('public.ops_orders');` → not `null`
+- [ ] `select count(*) from ops_milestone_counts;` → returns without error (it
+      groups by milestone, so it only lists stages that currently have orders)
+- [ ] No `order.not_paid` error when moving an order: the order must be paid and
+      physical (a digital `/create` submission has no production milestone)
+- [ ] Orders that predate the migration were backfilled from their stamps; run
+      `select * from ops_identity_report;` to find any order whose identifiers
+      disagree or that has no canonical ID
+
+---
+
+### 17. Bosta Chosen in the Manifest Import Shows "not supported yet"
+
+**Symptom:** the manifest dialog accepts an Egypt Post workbook, but selecting
+**Bosta** refuses with *"Bosta manifests are not supported yet"*.
+
+**Cause:** this is deliberate, not a bug. The Egypt Post adapter was built from
+the real shipment workbook
+(`src/assets/productionDocuments/Egypt Post Manifest.xlsx`, sheet `Sheet1`, 16
+columns). Dearune only has Bosta's **upload template builder**
+(`src/services/bosta.js`, used by the print screen) — no Bosta manifest file was
+ever provided, so no column mapping exists to validate against.
+
+**Fix (when a Bosta manifest is available):** add a
+`readBostaWorkbook()` / `parseBostaRows()` pair in `src/services/carriers.js`,
+make `carrierSupportsManifest()` accept `bosta`, and replace `BOSTA.manifestNote`
+with the real column notes. The matching, preview and commit code in the
+`admin-operations` edge function is carrier-agnostic and does not change.
+
+**Check:**
+- [ ] Do **not** guess Bosta column names from the upload template — the two
+      files are different formats
+- [ ] Until then, ship Bosta parcels from the Shipping section (carrier +
+      tracking) and keep using the existing Bosta CSV export for uploads
+
+---
+
+### 18. A Refund Is Refused (ceiling, duplicate, or missing reason)
+
+**Symptom:** recording a refund fails with `refund.exceeds_sale`,
+`refund.reason_required` or returns the earlier refund instead of creating a new
+one.
+
+**Cause:** `ops_record_refund` enforces four rules in one transaction:
+
+1. amount > 0 and no more than `sale_price − refunds already completed or
+   recorded manually` (pending and failed entries do not consume the ceiling);
+2. a reason of at least three characters;
+3. an idempotency key unique per order, so a double-click cannot record twice;
+4. an administrator session (the same backend check as every Operations write).
+
+The order must also already be delivered (`refund.not_delivered`), so a refund
+cannot be recorded against a parcel still with the carrier.
+
+**Fix:** correct the input. If the total really is higher than the sale price,
+the sale price is wrong — fix it on the sold record rather than bypassing the
+ceiling. There is **no payment-provider integration** in this codebase, so a
+recorded refund never moves money; the ledger says *recorded manually*.
+
+**Check:**
+- [ ] `select amount, status, method, reference, recorded_by, created_at from refunds where project_id = '…' order by created_at;`
+- [ ] `select sale_price, refunded_amount, refund_count from ops_orders where project_id = '…';`
+- [ ] A `pending`/`failed` refund still counts in the history but the UI never
+      claims the customer was paid
+
+---
+
+### 19. "Mark delivered" Looks Unchanged, or the Row Leaves Delivery
+
+**Symptom:** after **Mark delivered** the row looks the same, or it disappears
+from Delivery, or it moves to After-Sale by itself.
+
+**Cause:** delivered is a **state**, not an archive. `ops_deliver` writes
+`projects.milestone = 'delivered'` and the Delivery section queries
+`milestone in ('delivery', 'delivered')` on purpose, so the order stays visible
+with a green tint. Leaving Delivery only happens when someone presses **Move to
+After-Sale** (`ops_after_sale`).
+
+**Fix:** if the tint does not change, the milestone did not persist — the read
+is showing a stale row. Reload; if it still reads `delivery`, check the edge
+function response and `projects.milestone_updated_at` / `milestone_updated_by`
+for that order.
+
+**Check:**
+- [ ] `select milestone, milestone_updated_at, milestone_updated_by from projects where id = '…';`
+- [ ] `select shipment_state, shipped_at, delivered_at, delivered_by from shipping where project_id = '…';`
+- [ ] A refusal reading `order.transition_denied` / `milestone.transition_denied`
+      means the order is already ahead — the guard trigger blocks going back to
+      `delivery`
+
+---
+
 ## Debugging Tools
 
 ### Browser Console

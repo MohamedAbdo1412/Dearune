@@ -84,7 +84,7 @@ Routes:
 ├── /create                    → CreateBook (designer auth)
 ├── /admin/login               → AdminLogin
 ├── /admin/*                   → RequireAdmin → AdminShell → nested routes
-│   ├── overview, designers, sold, operations, qa, templates, wrappers, settings, users, inbox, financial, apps, operations/print
+│   ├── overview, designers, sold, operations (+ /shipping, /delivery, /after-sale), qa, templates, wrappers, settings, users, inbox, financial, apps, operations/print
 ├── /qa/memorial, /qa/catalog  → Visual QA benches (no auth)
 ├── /worker/login              → WorkerLogin
 ├── /worker/*                  → WorkerGate → WorkerShell → WorkerPermissionGate → nested
@@ -128,7 +128,10 @@ Three **scoped PWAs** with separate manifests, service workers, and install prom
 
 | Table | Purpose | Key Columns |
 |---|---|---|
-| `projects` | Dearune records (designer submissions) | `id`, `designer_id`, `template_slug`, `payload`, `status`, `public_id`, `public_token`, `paid_at`, `manufactured_at`, `shipped_at`, `arrived_at`, `archived_at` |
+| `projects` | Dearune records (designer submissions) | `id`, `reference` (canonical `DR-######`), `designer_id`, `template_slug`, `payload`, `status`, `public_id`, `public_token`, `milestone` (`making`→`after_sale`), `paid_at`, `manufactured_at`, `shipped_at`, `arrived_at`, `archived_at` |
+| `order_references` | Every identifier ever used for an order (canonical, unit, Sold, sale, legacy); `value` is unique so any historical ID resolves to one order | `project_id`, `physical_product_id`, `kind`, `value`, `note` |
+| `refunds` | Manual refund ledger (no payment provider) | `project_id`, `amount`, `reason`, `status`, `method`, `reference`, `recorded_by`, `idempotency_key` |
+| `shipment_manifests` | Immutable carrier manifest snapshot | `carrier`, `filename`, `sheet_name`, `row_count`, `snapshot`, `imported_by` |
 | `physical_products` | Physical units (one per unit) | `id`, `project_id`, `unit_index`, `reference` (DR###########), `sold_at`, `manufacturing_completed_at`, `shipped_at`, `delivered_at`, `archived_at` |
 | `physical_product_events` | Append-only unit timeline | `physical_product_id`, `actor_type`, `actor_id`, `action`, `detail`, `created_at` |
 | `sales_log` | Immutable ledger | `sale_reference`, `project_id`, `selling_price`, `estimated_cost`, `estimated_profit`, `status` (`completed`/`voided`) |
@@ -157,9 +160,15 @@ physical_products (1) ───< physical_product_events (N)
 
 - **One active sale per project**: Partial unique index on `sales_log(project_id) WHERE status='completed'`
 - **Sales immutability**: `sales_log_guard` trigger prevents UPDATE/DELETE on money fields
-- **Physical product ID format**: `DR` + 11 digits (`CHECK (reference ~ '^DR\d{11}$')`)
+- **Physical product ID format**: `DR` + 11 digits (`CHECK (reference ~ '^DR\d{11}$')`) — a unit ID, not the canonical order ID
 - **Unique unit per project**: `UNIQUE (project_id, unit_index)`
 - **Milestone order enforced**: `CHECK (manufactured_at IS NULL OR paid_at IS NOT NULL)` etc.
+- **One identity per order**: `order_references.value` is unique; `projects.reference` is the canonical `DR-######`
+- **One authoritative milestone**: `projects.milestone` + `projects_milestone_guard`; only the `ops_*` RPCs move it
+- **Delivered is a state, not an archive**: a delivered order stays in Delivery until moved to After-Sale
+
+See [ORDER_LIFECYCLE.md](./ORDER_LIFECYCLE.md) for the full identity, transition,
+carrier and refund model.
 
 ### Supabase Edge Functions (16 Functions)
 
@@ -168,7 +177,7 @@ All functions in `supabase/functions/` use Deno + TypeScript. Shared utilities i
 | Function | Auth | Purpose |
 |---|---|---|
 | `admin-dearunes` | Admin | CRUD for projects, status transitions, template assignment |
-| `admin-operations` | Admin | Physical product CRUD, milestone transitions, archive/restore |
+| `admin-operations` | Admin | Order lifecycle (`ops_*`): Making, carrier/ship, deliver, After-Sale, manual refunds, carrier manifests; plus unit archive/print hand-off |
 | `admin-designers` | Admin | Designer CRUD, passcode reset, passcode rotation |
 | `admin-workers` | Admin | Worker CRUD, permission assignment |
 | `admin-workers` | Admin | Worker CRUD, permission assignment |
@@ -337,6 +346,7 @@ docs/
 │   ├── ARCHITECTURE.md           # This file - system architecture
 │   ├── DIRECTORY_STRUCTURE.md    # Repository layout
 │   ├── FILE_CATALOG.md           # Every source file cataloged
+│   ├── ORDER_LIFECYCLE.md        # Identity, milestone, carriers, refunds
 │   ├── CODE_REFERENCE.md         # Functions, components, hooks reference
 │   ├── ROUTES_AND_PAGES.md       # Complete route inventory
 │   ├── COMPONENTS.md             # React component inventory

@@ -115,6 +115,8 @@ This document catalogs every first-party source file in the Dearune repository. 
 | `format.js` | Date/money formatting | `formatDate()`, `formatDateTime()`, `formatMoney()` | Intl.DateTimeFormat, Intl.NumberFormat |
 | `media.js` | Media upload/download (Supabase/Drive) | `initMessageUpload()`, `initLabelUpload()`, `uploadResumableFile()`, `downloadMedia()` | @/lib/supabase, @/services/drive (via invoke) |
 | `operations.js` | Admin operations API | `fetchOperations()`, `fetchOperationEvents()`, `toOperation()`, `updateOperation()`, `archiveOperations()`, `statusCounts()` | @/lib/supabase, @/services/constants |
+| `ops-orders.js` | Order read/write layer for the four Operations sections | `fetchOrders()`, `fetchOrder()`, `applyOrderFilters()`, `fetchMilestoneCounts()`, `fetchOrderTimeline()`, `fetchOrderReferences()`, `resolveOrderReference()`, transition callers (`completeMaking`, `shipOrder`, `deliverOrder`, `moveToAfterSale`, `recordRefund`, `previewManifest`, `commitManifest`), `nextAction()`, `rowStateClass()` | @/lib/supabase |
+| `carriers.js` | Carrier registry + manifest adapter (Egypt Post built from the real workbook; Bosta has no parser yet) | `CARRIERS`, `EGYPT_POST`, `BOSTA`, `readManifestFile()`, `readEgyptPostWorkbook()`, `parseEgyptPostRows()`, `summarizeManifest()`, `carrierSupportsManifest()` | exceljs (lazy) |
 | `operationsReview.js` | Print batch validation | `reviewBatch()`, `downloadWorkerOperationsCsv()` | @/services/operations, @/services/qrPaper |
 | `pdf.js` | PDF generators (insert, shipping, receipt) | `buildInsertPdf()`, `buildShippingPdf()`, `buildReceiptPdf()`, `downloadPdf()` | pdf-lib, @/services/qr, @/services/format |
 | `projectPayload.js` | Project payload parsing (letter + external link) | `parseProjectPayload()`, `parseExternalLinkPayload()`, `parseAnyProjectPayload()` | - |
@@ -160,7 +162,7 @@ This document catalogs every first-party source file in the Dearune repository. 
 | `Templates.jsx` | `/admin/templates` | Template management | No |
 | `Wrappers.jsx` | `/admin/wrappers` | Wrapper management | No |
 | `Settings.jsx` | `/admin/settings` | App settings | No |
-| `Operations.jsx` | `/admin/operations` | Operations dashboard | No |
+| `Operations.jsx` | `/admin/operations` (+ `/shipping`, `/delivery`, `/after-sale`) | Operations — four sections of one order record | No |
 | `OperationsPrint.jsx` | `/admin/operations/print` | Print preview + PDF | Yes |
 | `QaScanner.jsx` | `/admin/qa` | QA QR scanner | No |
 | `Users.jsx` | `/admin/users` | Admin user management | No |
@@ -199,6 +201,17 @@ This document catalogs every first-party source file in the Dearune repository. 
 | `Templates.jsx` | Templates table |
 | `Wrappers.jsx` | Wrappers table |
 | `Users.jsx` | Users table |
+
+#### `src/components/operations/` (order lifecycle UI)
+| File | Purpose |
+|---|---|
+| `OperationsSectionNav.jsx` | Four subsection links with live counts from `ops_milestone_counts` |
+| `OperationsFilterBar.jsx` | Server-side search/sort/filter bar, active-filter chips, clear-all |
+| `OrderTable.jsx` | Per-section columns, selection, persisted row tint, next-action buttons (cards on phones, table on desktop) |
+| `OrderDetailSheet.jsx` | One order's identifiers, sale, address, stage actions, refund history and audit timeline |
+| `ShipmentPanel.jsx` | Explicit carrier + tracking, save carrier vs mark shipped |
+| `RefundDialog.jsx` | Manual refund ledger with validation, idempotency key and explicit confirmation |
+| `ManifestImportDialog.jsx` | Carrier manifest: browser parse → preview → manual resolution → commit → per-row results |
 
 #### `src/components/book/`
 | File | Purpose |
@@ -296,7 +309,7 @@ This document catalogs every first-party source file in the Dearune repository. 
 
 ---
 
-### `supabase/migrations/` (39 migrations, chronological)
+### `supabase/migrations/` (44 migrations, chronological)
 
 | File | Purpose |
 |---|---|
@@ -343,6 +356,7 @@ This document catalogs every first-party source file in the Dearune repository. 
 | `20261101000001_template_enhancements.sql` | Template enhancements (preview images, versions) |
 | `20261102000001_external_link_destination.sql` | Replaces `get_public_project_message` (3 args) returning `template_slug` + validated `destination` for `external-link` |
 | `20261102000002_external_link_slug_alignment.sql` | Aligns the `External Link To Dearune` row's `templates.slug` with the pipeline code `external-link` (and carries existing projects over), so the chooser can bind its book |
+| `20261103000001_order_lifecycle.sql` | **Major**: one canonical identity (`order_references`), one authoritative `projects.milestone` + guard, `ops_*` transition/refund/manifest RPCs, `shipment_manifests`, `refunds`, `ops_orders` / `ops_milestone_counts` / `ops_identity_report` views. See `ORDER_LIFECYCLE.md` |
 
 ---
 
@@ -351,7 +365,7 @@ This document catalogs every first-party source file in the Dearune repository. 
 | Function | Auth | Purpose |
 |---|---|---|
 | `admin-dearunes/index.ts` | Admin | Project CRUD, status transitions |
-| `admin-operations/index.ts` | Admin | Physical products CRUD, milestones |
+| `admin-operations/index.ts` | Admin | Order lifecycle actions (`making-start`, `making-complete`, `shipment-save`, `ship`, `deliver`, `after-sale`, `record-refund`, `manifest-preview`, `manifest-commit`) plus unit CRUD/archives |
 | `admin-designers/index.ts` | Admin | Designer CRUD, passcode reset |
 | `admin-workers/index.ts` | Admin | Worker CRUD, permissions |
 | `create-sale/index.ts` | Admin | Sale creation (legacy + new) |
@@ -376,7 +390,7 @@ This document catalogs every first-party source file in the Dearune repository. 
 
 ---
 
-### `tests/` (22 files)
+### `tests/` (24 files)
 
 | File | Purpose |
 |---|---|
@@ -384,12 +398,15 @@ This document catalogs every first-party source file in the Dearune repository. 
 | `batch-review.test.js` | Batch review logic |
 | `book-machine.test.js` | BookMachine state machine |
 | `bosta-export.test.js` | Bosta Excel export |
+| `carriers.test.js` | Egypt Post manifest adapter against the real workbook; carrier registry, row parsing/issues, duplicate flagging |
 | `catalog-state.test.js` | Catalog state management |
 | `dearune-ops.test.js` | Dearune operations |
 | `external-link.test.js` | External-link URL rules, SSRF/framing checks, draft contract |
 | `invoke-sdk.test.js` | SDK invocation |
 | `operations-db.test.js` | Operations DB queries |
 | `operations-list.test.js` | Operations list shaping |
+| `ops-orders.test.js` | Operations query grammar: search sanitisation, filters, sort allowlist + tie-break, presentation helpers |
+| `order-lifecycle-db.test.js` | PGlite tests for identity, milestone guard, transitions, shipping, refunds, manifests, views and RLS |
 | `order-stage.test.js` | Order stage logic |
 | `pdf.test.js` | PDF generation |
 | `pipeline.test.js` | Full pipeline |

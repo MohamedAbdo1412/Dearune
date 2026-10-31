@@ -10,6 +10,7 @@
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | System architecture, data flow, component boundaries |
 | [DIRECTORY_STRUCTURE.md](./DIRECTORY_STRUCTURE.md) | Repository layout with purpose of each directory |
 | [FILE_CATALOG.md](./FILE_CATALOG.md) | Comprehensive catalog of every source file |
+| [ORDER_LIFECYCLE.md](./ORDER_LIFECYCLE.md) | Canonical Dearune ID, authoritative milestone, Making → Shipping → Delivery → After-Sale, carriers and refunds |
 | [CODE_REFERENCE.md](./CODE_REFERENCE.md) | Code-level reference for functions, components, hooks |
 | [ROUTES_AND_PAGES.md](./ROUTES_AND_PAGES.md) | Complete route inventory with authentication requirements |
 | [COMPONENTS.md](./COMPONENTS.md) | React component inventory with props and usage |
@@ -104,6 +105,11 @@ npm run build
 3. **Rate limiting infrastructure** — Token bucket implementation (`20261028000002_rate_limit.sql`)
 4. **Template version persistence** — `current_version` column on `templates` table (`20261028000005_template_current_version.sql`)
 5. **Legacy decommission** — Dropped `orders`/`messages` tables (`20261028000004_decommission_legacy.sql`)
+6. **One order, one identity, one milestone** — `projects.milestone` is the
+   authoritative stage; `order_references` resolves every historical ID to one
+   order; Operations is four views of one record; Egypt Post manifests and
+   manual refunds are audited (`20261103000001_order_lifecycle.sql`,
+   see [ORDER_LIFECYCLE.md](./ORDER_LIFECYCLE.md))
 
 ---
 

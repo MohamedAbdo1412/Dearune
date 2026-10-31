@@ -205,7 +205,12 @@ export default function App() {
         <Route path="designers/:designerId/messages/:projectId" element={<MessageDetail />} />
         <Route path="sold" element={<SoldLogs />} />
         <Route path="sold/:saleId" element={<SaleDetail />} />
-        <Route path="operations" element={<Operations />} />
+        <Route path="operations" element={<Operations section="making" />} />
+        {/* The four Operations subsections. They are four filtered views of the
+            same order record — never four copies of it. */}
+        <Route path="operations/shipping" element={<Operations section="shipping" />} />
+        <Route path="operations/delivery" element={<Operations section="delivery" />} />
+        <Route path="operations/after-sale" element={<Operations section="after-sale" />} />
         {/* The QA desk — the admin-only scanner. The public /qa/* benches above
             are visual pages and stay out of the admin menu. */}
         <Route path="qa" element={<QaScanner />} />

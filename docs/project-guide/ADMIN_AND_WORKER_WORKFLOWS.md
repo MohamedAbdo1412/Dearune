@@ -40,32 +40,45 @@ The Admin dashboard (`/admin/*`) provides full studio management capabilities wi
 
 ### Operations Dashboard (`/admin/operations`)
 
+Operations is **one order record with four subsections**, not four screens with
+their own data. The routes render the same page component with a different
+`section`:
+
+| Section | Route | Shows |
+|---|---|---|
+| Making | `/admin/operations` | Orders being printed, assembled and QC'd |
+| Shipping | `/admin/operations/shipping` | Orders waiting for a carrier hand-off |
+| Delivery | `/admin/operations/delivery` | Parcels with a carrier, plus delivered ones |
+| After-Sale | `/admin/operations/after-sale` | Refunds, complaints, corrections |
+
 **Features:**
-- List all physical product units via `operations_units` view
-- Filters: Search, Sort (newest/oldest/updated/status/id/customer), Milestone filter, Archive toggle
-- Bulk actions: Archive/Restore selected
-- Print papers (opens `/admin/operations/print`)
-- Export CSV (Bosta manifest)
-- Unit detail sheet with timeline
+- One row per order from the `ops_orders` view; the canonical Dearune ID is
+  shown first, with the unit and Sold references beside it.
+- Search by canonical ID, any registered historical reference, unit ID, title,
+  recipient, phone, tracking or carrier reference.
+- Server-side filters (carrier, governorate, city, designer, wrapper, refund,
+  shipment, QR, archive, paid/moved date ranges), sort allowlist and pagination.
+- Subsection badges come from `ops_milestone_counts`; a delivered order stays in
+  Delivery (tinted from the persisted state) until moved to After-Sale.
+- Making keeps the print pipeline: selection hands unit IDs to
+  `/admin/operations/print?ids=…`.
+- The detail sheet shows identifiers, sale, address, shipment, refund history
+  and the unified audit timeline.
 
 **Key Actions:**
-| Action | Permission | RPC/Service |
+| Action | Edge action | RPC |
 |---|---|---|
-| Open units | `operations.create` | `admin_operations_ensure` |
-| Update notes | `operations.edit` | `admin_operations_update` |
-| Archive/Restore | `operations.manage` | `admin_operations_archive` |
-| Change designer | `operations.assign` | `admin_operations_update_designer` |
-| Update contact | `operations.edit` | `admin_operations_update_contact` |
-| Print papers | `operations.print` | `admin_operations_print` |
-| Export CSV | `operations.export` | `admin_operations_export` |
+| Start / open Making | `making-start` | `ops_start_work_order` |
+| Finish Making → Shipping | `making-complete` | `ops_making_complete` |
+| Save carrier | `shipment-save` | `ops_save_shipment` |
+| Mark shipped → Delivery | `ship` | `ops_ship` |
+| Mark delivered (stays in Delivery) | `deliver` | `ops_deliver` |
+| Move to After-Sale | `after-sale` | `ops_after_sale` |
+| Record a refund | `record-refund` | `ops_record_refund` |
+| Import a carrier manifest | `manifest-preview` / `manifest-commit` | `ops_create_manifest` + `ops_ship` |
 
-**Unit Detail Sheet:**
-- Timeline of events (`physical_product_events`)
-- Edit notes
-- Update contact phone
-- Reassign designer
-- Archive/Restore
-- Print individual papers
+Every action records the operator and the time, and the database refuses a move
+that skips a stage. See [ORDER_LIFECYCLE.md](./ORDER_LIFECYCLE.md).
 
 ### Operations Print (`/admin/operations/print`)
 
@@ -337,11 +350,20 @@ LETTER OPENED (first_activated_at set)
 ### Shipped
 - Project manufactured
 - Shipping address complete (recipient_name, address_line1, city, country)
-- Tracking code optional but recommended
+- An explicit carrier (`bosta` or `egypt_post`)
+- A tracking number / carrier reference (required for the Operations `ops_ship`;
+  the legacy worker RPC still treats it as recommended)
 
 ### Delivered
 - Project shipped
-- No additional validation
+- Records arrival time and operator; the order stays in Delivery
+- No archive is implied
+
+### After-Sale
+- Project delivered
+- Refunds are manual ledger entries with amount, reason, method, reference,
+  operator, timestamp and an idempotency key; the total can never exceed the
+  sale price
 
 ## Audit Trail
 

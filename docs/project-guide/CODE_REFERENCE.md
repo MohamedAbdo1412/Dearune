@@ -1175,4 +1175,44 @@ interface TemplateWrapperOption {
 
 ---
 
+### `src/services/ops-orders.js`
+
+The read/write layer for the four Operations sections. Every row is a `projects`
+record seen through `ops_orders`.
+
+| Export | Type | Description |
+|---|---|---|
+| `ORDER_COLUMNS` | `string` | Columns requested from `ops_orders` (one row per order) |
+| `ORDER_SECTIONS` | `Array<{key, milestone, label, path, description}>` | Making / Shipping / Delivery / After-Sale |
+| `DELIVERY_MILESTONES` | `string[]` | `['delivery', 'delivered']` — delivered stays in Delivery |
+| `EMPTY_FILTERS` / `activeFilters()` | object / function | Filter state and the visible active-filter list |
+| `sanitizeSearch()` | `(value) => string` | Strips PostgREST/LIKE syntax before searching |
+| `applyOrderFilters(query, opts)` | function | Builds the server-side predicate, sort and tie-break; exported for tests |
+| `fetchOrders()` / `fetchOrder()` | async | Paginated section reads / one order |
+| `fetchMilestoneCounts()` | async | Counts for the subsection badges |
+| `fetchOrderTimeline()` / `fetchOrderReferences()` | async | Audit events + refunds / registered identifiers |
+| `fetchUnitIdsForProjects()` | async | Hand-off to the existing print pipeline |
+| `fetchDesignerOptions()` | async | Designer filter options |
+| `resolveOrderReference()` | async | Resolve any typed identifier through `order_references` |
+| `startMaking` / `completeMaking` / `saveShipment` / `shipOrder` / `deliverOrder` / `moveToAfterSale` / `recordRefund` | function | Edge-function callers; one transactional RPC each |
+| `previewManifest()` / `commitManifest()` | function | Carrier manifest preview and commit |
+| `isDelivered()` / `rowStateClass()` / `shipmentStateLabel()` / `refundState()` / `nextAction()` | function | Presentation derived from persisted state only |
+
+### `src/services/carriers.js`
+
+Carrier registry and manifest adapters. Egypt Post is built from the real
+workbook `src/assets/productionDocuments/Egypt Post Manifest.xlsx`.
+
+| Export | Description |
+|---|---|
+| `CARRIERS` / `EGYPT_POST` / `BOSTA` | Carrier definitions (label, columns, governorates, manifest support) |
+| `carrierDefinition()` / `carrierLabel()` / `carrierSupportsManifest()` | Lookups; Bosta has no manifest parser and says so |
+| `normalizeHeader()` / `mapHeaders()` | Tolerant header matching (case, spacing, punctuation) |
+| `readEgyptPostWorkbook()` / `readManifestWorkbook()` | Find the upload sheet by its headers and parse rows |
+| `readManifestFile()` | Browser-side file read (lazy `exceljs` import) |
+| `parseEgyptPostRows()` / `egyptPostRowIssues()` | Normalised rows and per-row validation issues |
+| `normalizeReference()` / `referenceCandidate()` | Identifier normalisation (canonical, unit, Sold, sale) |
+| `manifestRowKey()` / `flagDuplicates()` | Duplicate detection by identifier, then tracking |
+| `MANIFEST_STATUS(+LABELS)` / `summarizeManifest()` | Row states (`matched`, `already_shipped`, `unmatched`, `ambiguous`, `duplicate`, `conflict`, `blocked`, `invalid`) and counts |
+
 This code reference covers the most important exported symbols. For implementation details, see the source files directly.
