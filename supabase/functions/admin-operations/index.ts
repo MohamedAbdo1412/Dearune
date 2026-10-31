@@ -696,81 +696,123 @@ Deno.serve(async (req) => {
       .in('project_id', projectIds)
     if (error) return errorResponse('Could not fetch orders', 500)
 
-    // Build the workbook using the carrier adapters
+    // Build the workbook programmatically (no template files needed in Edge runtime)
     const ExcelJS = (await import('npm:exceljs')).default
-    let workbook
+    const workbook = new ExcelJS.Workbook()
     let filename
+    let rowCount = 0
 
     if (carrier === 'egypt_post') {
-      // Load the Egypt Post template
-      const templateUrl = new URL('../assets/productionDocuments/Egypt Post Manifest.xlsx', import.meta.url).href
-      const templateResponse = await fetch(templateUrl)
-      if (!templateResponse.ok) return errorResponse('Could not load Egypt Post template', 500)
-      const templateBytes = await templateResponse.arrayBuffer()
-      workbook = new ExcelJS.Workbook()
-      await workbook.xlsx.load(templateBytes)
+      // Create Egypt Post manifest workbook from scratch
+      const sheet = workbook.addWorksheet('Sheet1')
 
-      const sheet = workbook.getWorksheet('Sheet1')
-      if (!sheet) return errorResponse('Egypt Post template missing Sheet1', 500)
+      // Headers (row 1)
+      const headers = [
+        'Package_Serial', 'Description', 'Total_Weight', 'Package_volume', 'COD_Value',
+        'Item_Special_Notes', 'Customer_Name', 'Mobile_No', 'Street', 'City',
+        'Package_Ref. Number', 'Merchant_Name', 'Warehouse_Name', 'HasPOD',
+        'SellerName', 'Post_Id'
+      ]
+      sheet.addRow(headers)
 
-      // Write orders starting at row 2 (row 1 is headers)
+      // Style header row
+      sheet.getRow(1).font = { bold: true }
+      sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } }
+
+      // Write orders starting at row 2
       let rowNum = 2
       for (const order of orders ?? []) {
-        if (order.is_digital) continue // Digital orders don't ship
-        if (!order.tracking_code && !order.carrier_reference) continue // No tracking = can't export
+        if (order.is_digital) continue
+        if (!order.tracking_code && !order.carrier_reference) continue
 
-        sheet.getCell(rowNum, 1).value = rowNum - 1 // Package_Serial
-        sheet.getCell(rowNum, 2).value = order.title ?? 'Dearune letter' // Description
-        sheet.getCell(rowNum, 3).value = 0.1 // Total_Weight (placeholder)
-        sheet.getCell(rowNum, 4).value = 'Small' // Package_volume
-        sheet.getCell(rowNum, 5).value = Number(order.sale_price ?? 0) // COD_Value
-        sheet.getCell(rowNum, 6).value = order.special_instructions ?? '' // Item_Special_Notes
-        sheet.getCell(rowNum, 7).value = order.recipient_name ?? '' // Customer_Name
-        sheet.getCell(rowNum, 8).value = order.customer_phone ?? '' // Mobile_No
-        sheet.getCell(rowNum, 9).value = order.address_line1 ?? '' // Street
-        sheet.getCell(rowNum, 10).value = order.city ?? '' // City
-        sheet.getCell(rowNum, 11).value = order.canonical_id // Package_Ref. Number
-        sheet.getCell(rowNum, 12).value = 'Dearune Studio' // Merchant_Name
-        sheet.getCell(rowNum, 13).value = 'Main Warehouse' // Warehouse_Name
-        sheet.getCell(rowNum, 14).value = 'yes' // HasPOD
-        sheet.getCell(rowNum, 15).value = 'Dearune Studio' // SellerName
-        sheet.getCell(rowNum, 16).value = order.tracking_code ?? order.carrier_reference ?? '' // Post_Id
+        sheet.getCell(rowNum, 1).value = rowNum - 1
+        sheet.getCell(rowNum, 2).value = order.title ?? 'Dearune letter'
+        sheet.getCell(rowNum, 3).value = 0.1
+        sheet.getCell(rowNum, 4).value = 'Small'
+        sheet.getCell(rowNum, 5).value = Number(order.sale_price ?? 0)
+        sheet.getCell(rowNum, 6).value = order.special_instructions ?? ''
+        sheet.getCell(rowNum, 7).value = order.recipient_name ?? ''
+        sheet.getCell(rowNum, 8).value = order.customer_phone ?? ''
+        sheet.getCell(rowNum, 9).value = order.address_line1 ?? ''
+        sheet.getCell(rowNum, 10).value = order.city ?? ''
+        sheet.getCell(rowNum, 11).value = order.canonical_id
+        sheet.getCell(rowNum, 12).value = 'Dearune Studio'
+        sheet.getCell(rowNum, 13).value = 'Main Warehouse'
+        sheet.getCell(rowNum, 14).value = 'yes'
+        sheet.getCell(rowNum, 15).value = 'Dearune Studio'
+        sheet.getCell(rowNum, 16).value = order.tracking_code ?? order.carrier_reference ?? ''
 
         rowNum++
+        rowCount++
       }
 
       filename = `Egypt-Post-Manifest-Export-${new Date().toISOString().slice(0, 10)}.xlsx`
     } else if (carrier === 'bosta') {
-      // Load the Bosta template
-      const templateUrl = new URL('../assets/productionDocuments/Bosta Upload Template AR V3.5.xlsx', import.meta.url).href
-      const templateResponse = await fetch(templateUrl)
-      if (!templateResponse.ok) return errorResponse('Could not load Bosta template', 500)
-      const templateBytes = await templateResponse.arrayBuffer()
-      workbook = new ExcelJS.Workbook()
-      await workbook.xlsx.load(templateBytes)
+      // Create Bosta upload workbook from scratch (matching the template structure)
+      const sheet = workbook.addWorksheet('Add orders here')
 
-      const sheet = workbook.getWorksheet('Add orders here')
-      if (!sheet) return errorResponse('Bosta template missing "Add orders here" sheet', 500)
+      // Bosta template has headers in row 2, data starts at row 3
+      // Row 1: empty/title row
+      // Row 2: Arabic headers
+      const bostaHeaders = [
+        '* اسم العميل',      // 1: Customer Name
+        '* تليفون',          // 2: Phone
+        'تليفون ثاني',       // 3: Phone 2
+        '* المدينة',         // 4: City
+        'المنطقة',           // 5: Area
+        '* العنوان',         // 6: Address
+        'علامة مميزة',       // 7: Landmark
+        'عنوان عمل؟',         // 8: Is Work Address
+        'رابط المكان',       // 9: Location Link
+        'ملاحظات',           // 10: Notes
+        '',                  // 11: empty
+        'قيمة التحصيل النقدي', // 12: COD Value
+        'عدد القطع',        // 13: Pieces
+        'وصف الشحنة',       // 14: Description
+        'مرجع الطلب',       // 15: Reference
+        'قيمة الشحنة',       // 16: Shipment Value
+        'مبلغ الديبوزيت',    // 17: Deposit
+        'الدفع بواسطة نقاط بوسطة؟', // 18: Bosta Points
+        'تطبيق رسوم Flexship', // 19: Flexship Fees
+        'هل تسمح بفتح الشحنة؟', // 20: Allow Open
+        'العلامة التجارية',  // 21: Brand
+        '', '', '', '',      // 22-25: empty
+        'نوع الشحنة',        // 26: Shipment Type
+        'عدد قطع المرتجع',   // 27: Return Pieces
+        'وصف الشحنة المرتجعة' // 28: Return Description
+      ]
+      // Add a title row (row 1)
+      sheet.getCell(1, 1).value = 'Bosta Upload Template'
+      // Headers in row 2
+      const headerRow = sheet.getRow(2)
+      bostaHeaders.forEach((header, idx) => {
+        headerRow.getCell(idx + 1).value = header
+      })
+      headerRow.font = { bold: true }
+      headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } }
 
-      // Write orders starting at row 3 (row 2 is headers)
+      // Write orders starting at row 3
       let rowNum = 3
       for (const order of orders ?? []) {
-        if (order.is_digital) continue // Digital orders don't ship
+        if (order.is_digital) continue
         if (!order.tracking_code && !order.carrier_reference) continue
 
-        sheet.getCell(rowNum, 1).value = order.recipient_name ?? '' // * اسم العميل
-        sheet.getCell(rowNum, 2).value = order.customer_phone ?? '' // * تليفون
-        sheet.getCell(rowNum, 4).value = order.city ?? '' // * المدينة
-        sheet.getCell(rowNum, 6).value = [order.address_line1, order.address_line2].filter(Boolean).join(', ') // * العنوان
-        sheet.getCell(rowNum, 10).value = order.special_instructions ?? '' // ملاحظات
-        sheet.getCell(rowNum, 12).value = Number(order.sale_price ?? 0) // قيمة التحصيل النقدي
-        sheet.getCell(rowNum, 13).value = 1 // عدد القطع
-        sheet.getCell(rowNum, 14).value = `Dearune letter - ${order.canonical_id}` // وصف الشحنة
-        sheet.getCell(rowNum, 15).value = order.canonical_id // مرجع الطلب
-        sheet.getCell(rowNum, 16).value = Number(order.sale_price ?? 0) // قيمة الشحنة
-        sheet.getCell(rowNum, 26).value = 'normal' // نوع الشحنة
+        const address = [order.address_line1, order.address_line2].filter(Boolean).join(', ')
+
+        sheet.getCell(rowNum, 1).value = order.recipient_name ?? ''
+        sheet.getCell(rowNum, 2).value = order.customer_phone ?? ''
+        sheet.getCell(rowNum, 4).value = order.city ?? ''
+        sheet.getCell(rowNum, 6).value = address
+        sheet.getCell(rowNum, 10).value = order.special_instructions ?? ''
+        sheet.getCell(rowNum, 12).value = Number(order.sale_price ?? 0)
+        sheet.getCell(rowNum, 13).value = 1
+        sheet.getCell(rowNum, 14).value = `Dearune letter - ${order.canonical_id}`
+        sheet.getCell(rowNum, 15).value = order.canonical_id
+        sheet.getCell(rowNum, 16).value = Number(order.sale_price ?? 0)
+        sheet.getCell(rowNum, 26).value = 'normal'
 
         rowNum++
+        rowCount++
       }
 
       filename = `Bosta-Upload-Export-${new Date().toISOString().slice(0, 10)}.xlsx`
@@ -783,7 +825,7 @@ Deno.serve(async (req) => {
       .insert({
         carrier,
         filename,
-        row_count: (orders ?? []).filter((o) => !o.is_digital && (o.tracking_code || o.carrier_reference)).length,
+        row_count: rowCount,
         file_bytes: Array.from(new Uint8Array(buffer)),
         direction: 'export',
         imported_by: admin.id,
@@ -794,7 +836,7 @@ Deno.serve(async (req) => {
 
     // Return the workbook as base64 for the frontend to download
     const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)))
-    return jsonResponse({ ok: true, manifestId: manifest.id, filename, base64, carrier, rowCount: rowNum - (carrier === 'egypt_post' ? 2 : 3) })
+    return jsonResponse({ ok: true, manifestId: manifest.id, filename, base64, carrier, rowCount })
   }
 
   // -- refunds --------------------------------------------------------------
