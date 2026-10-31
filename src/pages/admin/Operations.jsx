@@ -44,6 +44,7 @@ import { OrderTable } from '@/components/operations/OrderTable'
 import { OrderDetailSheet } from '@/components/operations/OrderDetailSheet'
 import { RefundDialog } from '@/components/operations/RefundDialog'
 import { ManifestImportDialog } from '@/components/operations/ManifestImportDialog'
+import { ManifestExportDialog } from '@/components/operations/ManifestExportDialog'
 
 const messageOf = (err) => (err instanceof Error ? err.message : 'Something went wrong')
 
@@ -88,6 +89,8 @@ export function Operations({ section = 'making' }) {
   const [refundFor, setRefundFor] = useState(null)
   const [deliverTarget, setDeliverTarget] = useState(null)
   const [manifestOpen, setManifestOpen] = useState(false)
+  const [manifestExportOpen, setManifestExportOpen] = useState(false)
+  const [manifestExportProjectIds, setManifestExportProjectIds] = useState([])
 
   const refresh = useCallback(() => setRefreshToken((value) => value + 1), [])
 
@@ -267,9 +270,9 @@ export function Operations({ section = 'making' }) {
     try {
       let result
       if (bulkAction.transition === 'manifest-export') {
-        // Manifest export uses a different flow — open the export dialog
-        // For now, we'll handle this in the dialog component
-        toast.info('Opening manifest export…')
+        // Open the manifest export dialog with selected project IDs
+        setManifestExportProjectIds(projectIds)
+        setManifestExportOpen(true)
         setBulkAction(null)
         return
       }
@@ -618,7 +621,13 @@ export function Operations({ section = 'making' }) {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      )}
+        )}
+      <ManifestExportDialog
+        open={manifestExportOpen}
+        onOpenChange={setManifestExportOpen}
+        projectIds={manifestExportProjectIds}
+        onSuccess={refresh}
+      />
     </div>
   )
 }
