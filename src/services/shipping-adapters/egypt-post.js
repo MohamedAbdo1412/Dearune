@@ -41,7 +41,7 @@ export function mapToEgyptPost(internalOrSource, ctx = {}, rowIndex = 0) {
     const description = wrapperName || clean(source.title) || ''
     
     // Package reference - use correct unique package reference
-    const packageRefNumber = clean(source.unit_reference || source.package_reference || source.unitReference) ||
+    const packageRefNumber = clean(source.unit_reference || source.unitReference || source.package_reference || source.packageRefNumber) ||
                              clean(source.reference) ||
                              clean(source.canonical_id) ||
                              clean(source.sold_id) || ''
@@ -114,7 +114,7 @@ export function mapToEgyptPost(internalOrSource, ctx = {}, rowIndex = 0) {
   const description = wrapperName || clean(internal.title) || ''
   
   // Package reference - use correct unique package reference
-  const packageRefNumber = clean(src.unit_reference || src.package_reference || src.unitReference) ||
+  const packageRefNumber = clean(src.unit_reference || src.unitReference || src.package_reference || src.packageRefNumber) ||
                            clean(internal.unitRef) ||
                            clean(internal.canonicalId) ||
                            clean(internal.soldId) || ''
