@@ -45,6 +45,7 @@ import { OrderDetailSheet } from '@/components/operations/OrderDetailSheet'
 import { RefundDialog } from '@/components/operations/RefundDialog'
 import { ManifestImportDialog } from '@/components/operations/ManifestImportDialog'
 import { ManifestExportDialog } from '@/components/operations/ManifestExportDialog'
+import { ManifestExportEditor } from '@/components/operations/ManifestExportEditor'
 import { buildBostaWorkbook } from '@/services/bosta'
 import { buildEgyptPostWorkbook } from '@/services/egyptPost'
 
@@ -94,6 +95,9 @@ export function Operations({ section = 'making' }) {
   const [manifestOpen, setManifestOpen] = useState(false)
   const [manifestExportOpen, setManifestExportOpen] = useState(false)
   const [manifestExportProjectIds, setManifestExportProjectIds] = useState([])
+  const [manifestEditorOpen, setManifestEditorOpen] = useState(false)
+  const [manifestEditorCarrier, setManifestEditorCarrier] = useState('egypt_post')
+  const [manifestEditorOrders, setManifestEditorOrders] = useState([])
 
   const refresh = useCallback(() => setRefreshToken((value) => value + 1), [])
 
@@ -395,6 +399,72 @@ export function Operations({ section = 'making' }) {
     }
   }
 
+  // Handle export from the manifest editor dialog
+  const handleManifestEditorExport = async (editedRows) => {
+    setBusy(true)
+    try {
+      const carrier = manifestEditorCarrier
+      let operations
+      let buildFn
+
+      if (carrier === 'bosta') {
+        buildFn = buildBostaWorkbook
+        operations = editedRows.map((row) => ({
+          ...row,
+          // Ensure all required fields for bostaIssues
+          addressLine1: row.addressLine1 ?? row.address_line1,
+          addressLine2: row.addressLine2 ?? row.address_line2,
+          stateProvince: row.stateProvince ?? row.state_province,
+          postalCode: row.postalCode ?? row.postal_code,
+        }))
+      } else {
+        buildFn = buildEgyptPostWorkbook
+        operations = editedRows.map((row) => ({
+          ...row,
+          // Ensure all required fields for egyptPostIssues
+          addressLine1: row.addressLine1 ?? row.address_line1,
+          addressLine2: row.addressLine2 ?? row.address_line2,
+          stateProvince: row.stateProvince ?? row.state_province,
+          postalCode: row.postalCode ?? row.postal_code,
+        }))
+      }
+
+      const { bytes, filename, issues } = await buildFn(operations)
+
+      // Download the file
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+
+      const issueCount = issues?.length ?? 0
+      const carrierLabel = carrier === 'egypt_post' ? 'Egypt Post' : 'Bosta'
+      toast.success(
+        issueCount > 0
+          ? `${operations.length} order(s) exported — ${issueCount} with missing fields`
+          : `${operations.length} order(s) exported — every required field was on file`
+      )
+
+      if (issueCount > 0) {
+        toast.info('Check console for details on missing fields')
+        console.group(`${carrierLabel} export issues`)
+        issues.forEach((issue) => {
+          console.log(`${issue.reference}: ${issue.issues.join(', ')}`)
+        })
+        console.groupEnd()
+      }
+    } catch (err) {
+      toast.error(messageOf(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const executeBulkAction = async () => {
     if (!bulkAction || selectedRows.length === 0) return
     setBulkConfirm(false)
@@ -405,20 +475,10 @@ export function Operations({ section = 'making' }) {
     try {
       let result
       if (bulkAction.transition === 'manifest-export') {
-        // Handle Bosta export client-side (uses actual template like print page)
-        if (bulkAction.carrier === 'bosta') {
-          await exportBostaManifest(selectedRows)
-          setBulkAction(null)
-          return
-        }
-        // Handle Egypt Post export client-side (uses actual template)
-        if (bulkAction.carrier === 'egypt_post') {
-          await exportEgyptPostManifest(selectedRows)
-          setBulkAction(null)
-          return
-        }
-        setManifestExportProjectIds(projectIds)
-        setManifestExportOpen(true)
+        // Open the manifest editor dialog for editing before export
+        setManifestEditorCarrier(bulkAction.carrier)
+        setManifestEditorOrders(selectedRows)
+        setManifestEditorOpen(true)
         setBulkAction(null)
         return
       }
@@ -773,6 +833,13 @@ export function Operations({ section = 'making' }) {
         onOpenChange={setManifestExportOpen}
         projectIds={manifestExportProjectIds}
         onSuccess={refresh}
+      />
+      <ManifestExportEditor
+        open={manifestEditorOpen}
+        onOpenChange={setManifestEditorOpen}
+        carrier={manifestEditorCarrier}
+        orders={manifestEditorOrders}
+        onExport={handleManifestEditorExport}
       />
     </div>
   )
