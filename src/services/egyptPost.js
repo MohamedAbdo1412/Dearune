@@ -42,10 +42,10 @@ export function egyptPostRowValues(operation) {
 
   return {
     packageSerial: '', // Will be set by row number
-    description: operation.title ?? 'Dearune letter',
+    description: operation.title ?? 'Dearune Product ',
     totalWeight: 0.1,
     packageVolume: 'Small',
-    codValue: Number(operation.sale_price ?? 0),
+    codValue: Number(0),
     itemSpecialNotes: clean(operation.specialInstructions),
     customerName: clean(operation.recipientName),
     mobileNo: clean(operation.customerPhone),
