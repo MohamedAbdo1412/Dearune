@@ -17,6 +17,8 @@ import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
+import { mapToEgyptPost } from '@/services/shipping-adapters/egypt-post'
+import { mapToBosta } from '@/services/shipping-adapters/bosta'
 
 const EGYPT_POST_FIELDS = [
   { key: 'packageSerial', label: 'Package Serial', type: 'number', required: false, editable: false, width: 'full' },
@@ -68,56 +70,35 @@ function getFields(carrier) {
 }
 
 function mapOrderToForm(order, carrier, index) {
-  const address = [order.address_line1, order.address_line2].filter(Boolean).join(', ')
-  const reference = order.canonical_id
-  const phone = order.customer_phone ?? ''
+  const source = {
+    ...order,
+    recipientName: order.recipientName ?? order.recipient_name,
+    customerPhone: order.customerPhone ?? order.customer_phone,
+    addressLine1: order.addressLine1 ?? order.address_line1,
+    addressLine2: order.addressLine2 ?? order.address_line2,
+    stateProvince: order.stateProvince ?? order.state_province ?? order.governorate,
+    specialInstructions: order.specialInstructions ?? order.special_instructions,
+    trackingCode: order.trackingCode ?? order.tracking_code,
+    carrierReference: order.carrierReference ?? order.carrier_reference,
+    wrapper_name: order.wrapper_name ?? order.wrapperName ?? order.wrapper_display_name,
+    unit_reference: order.unit_reference ?? order.unitReference,
+    package_reference: order.package_reference,
+    reference: order.reference ?? order.canonical_id ?? order.sold_id,
+    canonical_id: order.canonical_id,
+    sold_id: order.sold_id,
+  }
 
   if (carrier === 'egypt_post') {
+    const { row } = mapToEgyptPost(source, {}, index)
     return {
-      packageSerial: index + 1,
-      description: order.title ?? 'Dearune letter',
-      totalWeight: 0.1,
-      packageVolume: 'Small',
-      codValue: Number(order.sale_price ?? 0),
-      itemSpecialNotes: order.special_instructions ?? '',
-      customerName: order.recipient_name ?? '',
-      mobileNo: phone,
-      street: address,
-      city: order.city ?? '',
-      packageRefNumber: reference,
-      merchantName: 'Dearune Studio',
-      warehouseName: 'Main Warehouse',
-      hasPOD: 'yes',
-      sellerName: 'Dearune Studio',
-      postId: order.tracking_code ?? order.carrier_reference ?? '',
+      ...row,
       _original: order,
       _index: index,
     }
   } else {
+    const { row } = mapToBosta(source, {})
     return {
-      customerName: order.recipient_name ?? '',
-      phone: phone,
-      phone2: '',
-      city: order.city ?? '',
-      area: order.district ?? order.governorate ?? order.state_province ?? '',
-      address: address,
-      landmark: '',
-      isWorkAddress: '',
-      locationLink: '',
-      notes: order.special_instructions ?? '',
-      codValue: Number(order.sale_price ?? 0),
-      pieces: 1,
-      description: `Dearune letter - ${reference}`,
-      reference: reference,
-      shipmentValue: Number(order.sale_price ?? 0),
-      deposit: 0,
-      bostaPoints: '',
-      flexshipFees: '',
-      allowOpen: '',
-      brand: 'Dearune',
-      shipmentType: 'normal',
-      returnPieces: '',
-      returnDescription: '',
+      ...row,
       _original: order,
       _index: index,
     }
