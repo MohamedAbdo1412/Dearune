@@ -13,6 +13,8 @@
 // future template version shows up here as a failing test instead of a
 // silently mis-aligned upload.
 import bostaTemplateUrl from '@/assets/productionDocuments/Bosta Upload Template AR V3.5.xlsx'
+import { mapToBosta } from './shipping-adapters/bosta'
+import { buildInternalShippingRecord } from './shipping-mapping'
 
 export const BOSTA_TEMPLATE_URL = bostaTemplateUrl
 
@@ -64,15 +66,15 @@ export function phoneWarning(phone) {
   return ''
 }
 
-// One unit → one Bosta row. Pure, so the export can be asserted without
-// building a workbook.
+// One unit → one Bosta row. Uses intelligent mapping.
 export function bostaRowValues(operation, { areas = null } = {}) {
-  const address = [clean(operation.addressLine1), clean(operation.addressLine2)].filter(Boolean).join(', ')
-  const governorate = clean(operation.stateProvince || operation.governorate)
-  const city = clean(operation.city)
+  const { row } = mapToBosta(operation)
+  
+  const governorate = clean(operation.stateProvince || operation.governorate || row.city)
+  const city = clean(row.city)
   const district = clean(operation.district)
-  const area = city || district || governorate
-  const reference = clean(operation.reference)
+  const area = clean(row.area) || city || district || governorate
+  const reference = clean(row.reference || operation.reference)
 
   const allowedArea = () => {
     if (!area) return ''
@@ -96,29 +98,29 @@ export function bostaRowValues(operation, { areas = null } = {}) {
   }
 
   return {
-    customerName: clean(operation.recipientName),
-    phone: clean(operation.customerPhone),
-    phone2: '',
+    customerName: clean(row.customerName || operation.recipientName),
+    phone: clean(row.phone || operation.customerPhone),
+    phone2: clean(row.phone2) || '',
     city: allowedCity(),
     area: allowedArea(),
-    address,
-    landmark: '',
-    isWorkAddress: '',
-    locationLink: '',
-    notes: clean(operation.specialInstructions),
-    codValue: '',
-    pieces: 1,
-    description: reference ? `Dearune letter - ${reference}` : 'Dearune letter',
+    address: clean(row.address),
+    landmark: clean(row.landmark) || '',
+    isWorkAddress: clean(row.isWorkAddress) || '',
+    locationLink: clean(row.locationLink) || '',
+    notes: clean(row.notes || operation.specialInstructions),
+    codValue: row.codValue ?? '',
+    pieces: row.pieces ?? 1,
+    description: row.description || (reference ? `Dearune - ${operation.wrapper_name || 'Letter'} | Order Ref: ${reference}` : 'Dearune'),
     reference,
-    shipmentValue: '',
-    deposit: '',
-    bostaPoints: '',
-    flexshipFees: '',
-    allowOpen: '',
-    brand: '',
-    returnPieces: '',
-    returnDescription: '',
-    shipmentType: '',
+    shipmentValue: row.shipmentValue ?? '',
+    deposit: row.deposit ?? '',
+    bostaPoints: row.bostaPoints ?? '',
+    flexshipFees: row.flexshipFees ?? '',
+    allowOpen: row.allowOpen ?? '',
+    brand: row.brand ?? '',
+    returnPieces: row.returnPieces ?? '',
+    returnDescription: row.returnDescription ?? '',
+    shipmentType: row.shipmentType ?? '',
   }
 }
 

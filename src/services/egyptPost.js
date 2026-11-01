@@ -2,6 +2,7 @@
 // Loads the real template that ships in the repo (`Egypt Post Manifest.xlsx`),
 // writes the selected units into its sheet, and hands back the same workbook.
 import egyptPostTemplateUrl from '@/assets/productionDocuments/Egypt Post Manifest.xlsx'
+import { mapToEgyptPost } from './shipping-adapters/egypt-post'
 
 export const EGYPT_POST_TEMPLATE_URL = egyptPostTemplateUrl
 
@@ -34,29 +35,26 @@ export const EGYPT_POST_REQUIRED_KEYS = EGYPT_POST_COLUMNS.filter((c) => c.requi
 
 const clean = (value) => String(value ?? '').trim()
 
-// One unit → one Egypt Post row. Pure, so the export can be asserted without
-// building a workbook.
-export function egyptPostRowValues(operation) {
-  const address = [clean(operation.addressLine1), clean(operation.addressLine2)].filter(Boolean).join(', ')
-  const reference = clean(operation.reference)
-
+// One unit → one Egypt Post row. Uses intelligent mapping.
+export function egyptPostRowValues(operation, rowIndex = 0) {
+  const { row } = mapToEgyptPost(operation, {}, rowIndex)
   return {
-    packageSerial: '', // Will be set by row number
-    description: operation.title ?? 'Dearune Product ',
-    totalWeight: 0.1,
-    packageVolume: 'Small',
-    codValue: Number(0),
-    itemSpecialNotes: clean(operation.specialInstructions),
-    customerName: clean(operation.recipientName),
-    mobileNo: clean(operation.customerPhone),
-    street: address,
-    city: clean(operation.city),
-    packageRefNumber: reference,
-    merchantName: 'Dearune Studio',
-    warehouseName: 'Main Warehouse',
-    hasPOD: 'yes',
-    sellerName: 'Dearune Studio',
-    postId: clean(operation.trackingCode ?? operation.carrierReference),
+    packageSerial: row.packageSerial ?? '',
+    description: row.description ?? (operation.title ? `Dearune - ${operation.wrapper_name || operation.title}` : 'Dearune'),
+    totalWeight: row.totalWeight ?? 0.1,
+    packageVolume: row.packageVolume ?? 'Small',
+    codValue: Number(row.codValue ?? 0),
+    itemSpecialNotes: row.itemSpecialNotes ?? clean(operation.specialInstructions),
+    customerName: row.customerName ?? clean(operation.recipientName),
+    mobileNo: row.mobileNo ?? clean(operation.customerPhone),
+    street: row.street ?? [clean(operation.addressLine1), clean(operation.addressLine2)].filter(Boolean).join(', '),
+    city: row.city ?? clean(operation.city),
+    packageRefNumber: row.packageRefNumber ?? clean(operation.reference),
+    merchantName: row.merchantName ?? 'Dearune Studio',
+    warehouseName: row.warehouseName ?? 'Main Warehouse',
+    hasPOD: row.hasPOD ?? 'yes',
+    sellerName: row.sellerName ?? 'Dearune Studio',
+    postId: row.postId ?? clean(operation.trackingCode ?? operation.carrierReference),
   }
 }
 
@@ -115,9 +113,10 @@ export async function buildEgyptPostWorkbook(operations, options = {}) {
   const items = []
   const issues = []
   let cursor = EGYPT_POST_FIRST_DATA_ROW
-  for (const operation of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const operation = rows[i]
     const source = operation.addressLine1 !== undefined ? operation : normalise(operation)
-    const values = egyptPostRowValues(source)
+    const values = egyptPostRowValues(source, i)
     values.packageSerial = cursor - EGYPT_POST_FIRST_DATA_ROW + 1
 
     for (const column of EGYPT_POST_COLUMNS) {
