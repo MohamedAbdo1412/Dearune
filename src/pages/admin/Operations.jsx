@@ -45,6 +45,8 @@ import { OrderDetailSheet } from '@/components/operations/OrderDetailSheet'
 import { RefundDialog } from '@/components/operations/RefundDialog'
 import { ManifestImportDialog } from '@/components/operations/ManifestImportDialog'
 import { ManifestExportDialog } from '@/components/operations/ManifestExportDialog'
+import { buildBostaWorkbook } from '@/services/bosta'
+import { buildEgyptPostWorkbook } from '@/services/egyptPost'
 
 const messageOf = (err) => (err instanceof Error ? err.message : 'Something went wrong')
 
@@ -80,6 +82,7 @@ export function Operations({ section = 'making' }) {
   const [designers, setDesigners] = useState([])
   const [selected, setSelected] = useState(() => new Set())
   const [busyId, setBusyId] = useState(null)
+  const [_, setBusy] = useState(false)
   const [bulkAction, setBulkAction] = useState(null)
   const [bulkConfirm, setBulkConfirm] = useState(false)
   const [bulkResults, setBulkResults] = useState(null)
@@ -260,6 +263,138 @@ export function Operations({ section = 'making' }) {
     setBulkConfirm(true)
   }
 
+  // Client-side Bosta manifest export (uses actual template like print page)
+  const exportBostaManifest = async (rows) => {
+    setBusy(true)
+    try {
+      // Convert selected rows to operations format for buildBostaWorkbook
+      const operations = rows.map((order) => ({
+        id: order.project_id,
+        reference: order.canonical_id,
+        recipient_name: order.recipient_name,
+        customer_phone: order.customer_phone,
+        address_line1: order.address_line1,
+        address_line2: order.address_line2,
+        city: order.city,
+        state_province: order.state_province,
+        governorate: order.governorate,
+        district: order.district,
+        postal_code: order.postal_code,
+        country: order.country,
+        special_instructions: order.special_instructions,
+        carrier: order.carrier,
+        carrier_reference: order.carrier_reference,
+        tracking_code: order.tracking_code,
+        sale_price: order.sale_price,
+        is_digital: order.is_digital,
+        // Add required fields for bostaIssues
+        addressLine1: order.address_line1,
+        addressLine2: order.address_line2,
+        stateProvince: order.state_province,
+        postalCode: order.postal_code,
+      }))
+
+      const { bytes, filename, issues } = await buildBostaWorkbook(operations)
+
+      // Download the file
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+
+      const issueCount = issues?.length ?? 0
+      toast.success(
+        issueCount > 0
+          ? `${operations.length} order(s) exported — ${issueCount} with missing fields`
+          : `${operations.length} order(s) exported — every required field was on file`
+      )
+
+      if (issueCount > 0) {
+        toast.info('Check console for details on missing fields')
+        console.group('Bosta export issues')
+        issues.forEach((issue) => {
+          console.log(`${issue.reference}: ${issue.issues.join(', ')}`)
+        })
+        console.groupEnd()
+      }
+    } catch (err) {
+      toast.error(messageOf(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Client-side Egypt Post manifest export (uses actual template like print page)
+  const exportEgyptPostManifest = async (rows) => {
+    setBusy(true)
+    try {
+      // Convert selected rows to operations format for buildEgyptPostWorkbook
+      const operations = rows.map((order) => ({
+        id: order.project_id,
+        reference: order.canonical_id,
+        recipient_name: order.recipient_name,
+        customer_phone: order.customer_phone,
+        address_line1: order.address_line1,
+        address_line2: order.address_line2,
+        city: order.city,
+        state_province: order.state_province,
+        governorate: order.governorate,
+        district: order.district,
+        postal_code: order.postal_code,
+        country: order.country,
+        special_instructions: order.special_instructions,
+        carrier: order.carrier,
+        carrier_reference: order.carrier_reference,
+        tracking_code: order.tracking_code,
+        sale_price: order.sale_price,
+        is_digital: order.is_digital,
+        // Add required fields for egyptPostIssues
+        addressLine1: order.address_line1,
+        addressLine2: order.address_line2,
+        stateProvince: order.state_province,
+        postalCode: order.postal_code,
+      }))
+
+      const { bytes, filename, issues } = await buildEgyptPostWorkbook(operations)
+
+      // Download the file
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+
+      const issueCount = issues?.length ?? 0
+      toast.success(
+        issueCount > 0
+          ? `${operations.length} order(s) exported — ${issueCount} with missing fields`
+          : `${operations.length} order(s) exported — every required field was on file`
+      )
+
+      if (issueCount > 0) {
+        toast.info('Check console for details on missing fields')
+        console.group('Egypt Post export issues')
+        issues.forEach((issue) => {
+          console.log(`${issue.reference}: ${issue.issues.join(', ')}`)
+        })
+        console.groupEnd()
+      }
+    } catch (err) {
+      toast.error(messageOf(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const executeBulkAction = async () => {
     if (!bulkAction || selectedRows.length === 0) return
     setBulkConfirm(false)
@@ -270,7 +405,18 @@ export function Operations({ section = 'making' }) {
     try {
       let result
       if (bulkAction.transition === 'manifest-export') {
-        // Open the manifest export dialog with selected project IDs
+        // Handle Bosta export client-side (uses actual template like print page)
+        if (bulkAction.carrier === 'bosta') {
+          await exportBostaManifest(selectedRows)
+          setBulkAction(null)
+          return
+        }
+        // Handle Egypt Post export client-side (uses actual template)
+        if (bulkAction.carrier === 'egypt_post') {
+          await exportEgyptPostManifest(selectedRows)
+          setBulkAction(null)
+          return
+        }
         setManifestExportProjectIds(projectIds)
         setManifestExportOpen(true)
         setBulkAction(null)
