@@ -179,10 +179,10 @@ function FieldInput({ field, value, onChange, error, disabled }) {
 
 function OrderFormTab({ order, index, carrier, fields, onUpdate, errors, isValid, activeTab, setActiveTab }) {
   return (
-    <TabsContent value={String(index)} className="p-0">
-      <div className="h-[65vh] overflow-auto">
-        <div className="p-4 space-y-4">
-          <div className="flex items-center justify-between border-b pb-2">
+    <TabsContent value={String(index)} className="h-full mt-0">
+      <div className="h-full overflow-auto">
+        <div className="p-6 space-y-5 max-w-[1600px] mx-auto">
+          <div className="flex items-center justify-between border-b pb-3">
             <CardTitle className="text-lg">
               {carrier === 'egypt_post' ? 'Egypt Post' : 'Bosta'} — Order {index + 1}
             </CardTitle>
@@ -202,11 +202,11 @@ function OrderFormTab({ order, index, carrier, fields, onUpdate, errors, isValid
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
             {fields.map((field) => (
               <div
                 key={field.key}
-                className={`flex flex-col gap-1 ${field.width === 'full' ? 'md:col-span-2 lg:col-span-3' : ''}`}
+                className={`flex flex-col gap-1.5 ${field.width === 'full' ? 'sm:col-span-2 md:col-span-3 lg:col-span-4 xl:col-span-5 2xl:col-span-6' : ''}`}
               >
                 <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                   {field.label}
@@ -291,8 +291,8 @@ export function ManifestExportEditor({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={`${expanded ? 'max-w-[98vw]' : 'max-w-6xl'} max-h-[95vh] overflow-hidden`}>
-        <DialogHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+      <DialogContent className={`${expanded ? 'w-[98vw] max-w-[98vw]' : 'w-full max-w-[1600px]'} h-[95vh] max-h-[95vh] flex flex-col overflow-hidden p-0`}>
+        <DialogHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-6 pt-6 pb-4 border-b">
           <div>
             <DialogTitle className="font-heading text-xl">
               {carrier === 'egypt_post' ? 'Egypt Post' : 'Bosta'} Manifest — Edit & Export
@@ -309,17 +309,17 @@ export function ManifestExportEditor({
           </div>
         </DialogHeader>
 
-        <div className="h-[calc(100%-140px)] flex flex-col overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           {/* Tabs for each order */}
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-            <TabsList className="flex-1 overflow-x-auto border-b bg-background p-0">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 min-h-0 flex flex-col">
+            <TabsList className="w-full justify-start overflow-x-auto border-b bg-background rounded-none p-0 h-auto">
               {forms.map((form, i) => (
                 <TabsTrigger
                   key={form._original?.id ?? i}
                   value={String(i)}
-                  className={`relative px-3 py-2 text-xs font-medium min-w-[120px] ${!formValidity[i].isValid && validated ? 'text-red-500' : ''}`}
+                  className={`relative px-4 py-2 text-xs font-medium min-w-[140px] whitespace-nowrap ${!formValidity[i].isValid && validated ? 'text-red-500' : ''}`}
                 >
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1.5">
                     #{i + 1}
                     {form.packageRefNumber || form.reference ? (
                       <span className="font-mono text-muted-foreground">
@@ -337,7 +337,7 @@ export function ManifestExportEditor({
               ))}
             </TabsList>
 
-            <TabsContent value={activeTab} className="flex-1 overflow-hidden">
+            <TabsContent value={activeTab} className="flex-1 min-h-0 overflow-hidden mt-0">
               {forms.map((form, i) => (
                 <OrderFormTab
                   key={form._original?.id ?? i}
@@ -356,8 +356,7 @@ export function ManifestExportEditor({
           </Tabs>
 
           {/* Summary bar */}
-          <Separator />
-          <div className="p-3 bg-muted/30 flex flex-wrap items-center justify-between gap-2 text-sm">
+          <div className="px-6 py-3 bg-muted/30 flex flex-wrap items-center justify-between gap-2 text-sm border-t">
             <div className="flex items-center gap-4">
               <span>{forms.length} order(s)</span>
               <span className="text-muted-foreground">
@@ -379,7 +378,7 @@ export function ManifestExportEditor({
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="px-6 py-4 border-t">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={validated && !allValid}>
             Cancel
           </Button>
