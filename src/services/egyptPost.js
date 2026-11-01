@@ -39,22 +39,22 @@ const clean = (value) => String(value ?? '').trim()
 export function egyptPostRowValues(operation, rowIndex = 0) {
   const { row } = mapToEgyptPost(operation, {}, rowIndex)
   return {
-    packageSerial: row.packageSerial ?? '',
-    description: row.description ?? (operation.title ? `Dearune - ${operation.wrapper_name || operation.title}` : 'Dearune'),
+    packageSerial: row.packageSerial ?? (rowIndex + 1),
+    description: row.description ?? clean(operation.wrapper_name || operation.wrapperName),
     totalWeight: row.totalWeight ?? 0.1,
     packageVolume: row.packageVolume ?? 'Small',
     codValue: Number(row.codValue ?? 0),
     itemSpecialNotes: row.itemSpecialNotes ?? clean(operation.specialInstructions),
-    customerName: row.customerName ?? clean(operation.recipientName),
-    mobileNo: row.mobileNo ?? clean(operation.customerPhone),
-    street: row.street ?? [clean(operation.addressLine1), clean(operation.addressLine2)].filter(Boolean).join(', '),
+    customerName: row.customerName ?? clean(operation.recipientName || operation.recipient_name),
+    mobileNo: row.mobileNo ?? clean(operation.customerPhone || operation.customer_phone),
+    street: row.street ?? [clean(operation.addressLine1 || operation.address_line1), clean(operation.addressLine2 || operation.address_line2)].filter(Boolean).join(', '),
     city: row.city ?? clean(operation.city),
-    packageRefNumber: row.packageRefNumber ?? clean(operation.reference),
+    packageRefNumber: row.packageRefNumber ?? clean(operation.unit_reference || operation.package_reference || operation.reference || operation.canonical_id),
     merchantName: row.merchantName ?? 'Dearune Studio',
     warehouseName: row.warehouseName ?? 'Main Warehouse',
     hasPOD: row.hasPOD ?? 'yes',
     sellerName: row.sellerName ?? 'Dearune Studio',
-    postId: row.postId ?? clean(operation.trackingCode ?? operation.carrierReference),
+    postId: row.postId ?? clean(operation.trackingCode || operation.carrierReference || operation.tracking_code || operation.carrier_reference),
   }
 }
 

@@ -9,23 +9,23 @@ export function mapToBosta(internalOrSource, ctx = {}) {
   const isSimpleShape = source.addressLine1 !== undefined || source.recipientName !== undefined || source.customerPhone !== undefined
   
   if (isSimpleShape && !internalOrSource?.trace) {
-    // Use simple mapping for backward compat, but still apply some intelligence
+    // Use simple mapping for backward compat
     const address = [String(source.addressLine1 || '').trim(), String(source.addressLine2 || '').trim()].filter(Boolean).join(', ')
-    const reference = String(source.reference || '').trim()
+    const reference = String(source.reference || source.canonical_id || source.unit_reference || '').trim()
     const wrapperName = source.wrapper_name || source.wrapperName || ctx.wrapperName
     const description = wrapperName ? `Dearune - ${wrapperName}` : (reference ? `Dearune letter - ${reference}` : 'Dearune letter')
     
     const row = {
-      customerName: String(source.recipientName || '').trim(),
-      phone: String(source.customerPhone || '').trim(),
-      phone2: String(source.phone2 || '').trim(),
-      city: String(source.city || '').trim(),
+      customerName: String(source.recipientName || source.recipient_name || '').trim(),
+      phone: String(source.customerPhone || source.customer_phone || '').trim(),
+      phone2: String(source.phone2 || source.recipient_phone_alt || '').trim(),
+      city: String(source.city || source.governorate || '').trim(),
       area: String(source.district || source.governorate || source.stateProvince || source.area || '').trim(),
       address,
       landmark: String(source.landmark || '').trim(),
       isWorkAddress: String(source.isWorkAddress || '').trim(),
       locationLink: String(source.locationLink || '').trim(),
-      notes: String(source.specialInstructions || source.notes || '').trim(),
+      notes: String(source.specialInstructions || source.special_instructions || source.notes || '').trim(),
       codValue: source.codValue ?? '',
       pieces: source.pieces ?? 1,
       description,
@@ -52,17 +52,19 @@ export function mapToBosta(internalOrSource, ctx = {}) {
   }
   
   const internal = internalOrSource?._original && internalOrSource?.trace ? internalOrSource : buildInternalShippingRecord(internalOrSource, ctx)
+  const src = internal._original || {}
   
-  // Build address - prefer address lines for backward compat, but enrich if missing
+  // Build address - prefer address lines for backward compat
   let address = [internal.addressLine1, internal.addressLine2].filter(Boolean).join(', ')
   if (!address && internal.combinedAddress) address = internal.combinedAddress
   if (!address && internal.fullAddressRaw) address = internal.fullAddressRaw
   
-  // Description must start with Dearune - [Wrapper Name]
-  const description = buildShipmentDescription(internal, { includeRef: true })
+  // Description
+  const wrapperName = internal.wrapperName || src.wrapper_name || src.wrapperName
+  const description = wrapperName ? `Dearune - ${wrapperName}` : buildShipmentDescription(internal, { includeRef: true })
   
-  // References - prefer canonical/sold
-  const reference = internal.canonicalId || internal.soldId || internal.unitRef || ''
+  // References - prefer unit reference, then canonical/sold
+  const reference = src.unit_reference || src.package_reference || internal.unitRef || internal.canonicalId || internal.soldId || ''
   
   const row = {
     customerName: internal.recipientName,
@@ -75,23 +77,22 @@ export function mapToBosta(internalOrSource, ctx = {}) {
     isWorkAddress: '',
     locationLink: '',
     notes: internal.specialInstructions || '',
-    codValue: '',
+    codValue: src.codValue ?? '',
     pieces: 1,
     description,
     reference,
-    shipmentValue: '',
-    deposit: '',
-    bostaPoints: '',
-    flexshipFees: '',
-    allowOpen: '',
-    brand: '',
-    returnPieces: '',
-    returnDescription: '',
-    shipmentType: '',
+    shipmentValue: src.shipmentValue ?? '',
+    deposit: src.deposit ?? '',
+    bostaPoints: src.bostaPoints ?? '',
+    flexshipFees: src.flexshipFees ?? '',
+    allowOpen: src.allowOpen ?? '',
+    brand: src.brand ?? '',
+    returnPieces: src.returnPieces ?? '',
+    returnDescription: src.returnDescription ?? '',
+    shipmentType: src.shipmentType ?? '',
     _internal: internal,
   }
   
-  // Validation
   const issues = []
   if (!row.customerName) issues.push('* اسم العميل: missing')
   if (!row.phone) issues.push('* تليفون: missing')
