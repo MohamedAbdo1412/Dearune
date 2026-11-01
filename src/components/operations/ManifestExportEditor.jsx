@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Save, Loader2Icon, X, Maximize2, Minimize2 } from 'lucide-react'
+import { Save, Loader2Icon, X, Maximize2, Minimize2, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -9,72 +9,65 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Textarea } from '@/components/ui/textarea'
 
-
-// Column definitions for each carrier
-const EGYPT_POST_COLUMNS = [
-  { key: 'packageSerial', label: 'Package Serial', width: '80px', editable: false },
-  { key: 'description', label: 'Description', width: '140px', editable: true },
-  { key: 'totalWeight', label: 'Weight (kg)', width: '90px', editable: true },
-  { key: 'packageVolume', label: 'Volume', width: '90px', editable: true },
-  { key: 'codValue', label: 'COD Value (EGP)', width: '120px', editable: true },
-  { key: 'itemSpecialNotes', label: 'Special Notes', width: '160px', editable: true },
-  { key: 'customerName', label: 'Customer Name', width: '140px', editable: true, required: true },
-  { key: 'mobileNo', label: 'Mobile No', width: '120px', editable: true, required: true },
-  { key: 'street', label: 'Street', width: '160px', editable: true, required: true },
-  { key: 'city', label: 'City', width: '120px', editable: true, required: true },
-  { key: 'packageRefNumber', label: 'Pkg Ref #', width: '110px', editable: false },
-  { key: 'merchantName', label: 'Merchant', width: '120px', editable: true },
-  { key: 'warehouseName', label: 'Warehouse', width: '120px', editable: true },
-  { key: 'hasPOD', label: 'Has POD', width: '80px', editable: true },
-  { key: 'sellerName', label: 'Seller', width: '120px', editable: true },
-  { key: 'postId', label: 'Post ID / Tracking', width: '140px', editable: true, required: true },
+const EGYPT_POST_FIELDS = [
+  { key: 'packageSerial', label: 'Package Serial', type: 'number', required: false, editable: false, width: 'full' },
+  { key: 'description', label: 'Description', type: 'text', required: false, editable: true, width: 'full' },
+  { key: 'totalWeight', label: 'Total Weight (kg)', type: 'number', step: '0.01', required: false, editable: true, width: 'half' },
+  { key: 'packageVolume', label: 'Package Volume', type: 'text', required: false, editable: true, width: 'half' },
+  { key: 'codValue', label: 'COD Value (EGP)', type: 'number', step: '0.01', required: true, editable: true, width: 'half' },
+  { key: 'itemSpecialNotes', label: 'Item Special Notes', type: 'text', required: false, editable: true, width: 'full' },
+  { key: 'customerName', label: 'Customer Name', type: 'text', required: true, editable: true, width: 'half' },
+  { key: 'mobileNo', label: 'Mobile No', type: 'tel', required: true, editable: true, width: 'half' },
+  { key: 'street', label: 'Street', type: 'text', required: true, editable: true, width: 'full' },
+  { key: 'city', label: 'City', type: 'text', required: true, editable: true, width: 'half' },
+  { key: 'packageRefNumber', label: 'Package Ref. Number', type: 'text', required: true, editable: false, width: 'half' },
+  { key: 'merchantName', label: 'Merchant Name', type: 'text', required: false, editable: true, width: 'half' },
+  { key: 'warehouseName', label: 'Warehouse Name', type: 'text', required: false, editable: true, width: 'half' },
+  { key: 'hasPOD', label: 'Has POD', type: 'text', required: false, editable: true, width: 'half' },
+  { key: 'sellerName', label: 'Seller Name', type: 'text', required: false, editable: true, width: 'half' },
+  { key: 'postId', label: 'Post ID / Tracking', type: 'text', required: true, editable: true, width: 'half' },
 ]
 
-const BOSTA_COLUMNS = [
-  { key: 'customerName', label: 'اسم العميل', width: '140px', editable: true, required: true },
-  { key: 'phone', label: 'تليفون', width: '120px', editable: true, required: true },
-  { key: 'phone2', label: 'تليفون ثاني', width: '120px', editable: true },
-  { key: 'city', label: 'المدينة', width: '120px', editable: true, required: true },
-  { key: 'area', label: 'المنطقة', width: '120px', editable: true },
-  { key: 'address', label: 'العنوان', width: '180px', editable: true, required: true },
-  { key: 'landmark', label: 'علامة مميزة', width: '140px', editable: true },
-  { key: 'isWorkAddress', label: 'عنوان عمل؟', width: '100px', editable: true },
-  { key: 'locationLink', label: 'رابط المكان', width: '140px', editable: true },
-  { key: 'notes', label: 'ملاحظات', width: '160px', editable: true },
-  { key: 'codValue', label: 'قيمة التحصيل', width: '120px', editable: true },
-  { key: 'pieces', label: 'عدد القطع', width: '100px', editable: true },
-  { key: 'description', label: 'وصف الشحنة', width: '160px', editable: true },
-  { key: 'reference', label: 'مرجع الطلب', width: '140px', editable: false },
-  { key: 'shipmentValue', label: 'قيمة الشحنة', width: '120px', editable: true },
-  { key: 'deposit', label: 'مبلغ الديبوزيت', width: '120px', editable: true },
-  { key: 'bostaPoints', label: 'نقاط بوسطة', width: '110px', editable: true },
-  { key: 'flexshipFees', label: 'رسوم Flexship', width: '120px', editable: true },
-  { key: 'allowOpen', label: 'تسمح بالفتح', width: '110px', editable: true },
-  { key: 'brand', label: 'العلامة التجارية', width: '140px', editable: true },
-  { key: 'shipmentType', label: 'نوع الشحنة', width: '110px', editable: true },
-  { key: 'returnPieces', label: 'قطع المرتجع', width: '110px', editable: true },
-  { key: 'returnDescription', label: 'وصف المرتجع', width: '140px', editable: true },
+const BOSTA_FIELDS = [
+  { key: 'customerName', label: 'اسم العميل *', type: 'text', required: true, editable: true, width: 'half' },
+  { key: 'phone', label: 'تليفون *', type: 'tel', required: true, editable: true, width: 'half' },
+  { key: 'phone2', label: 'تليفون ثاني', type: 'tel', required: false, editable: true, width: 'half' },
+  { key: 'city', label: 'المدينة *', type: 'text', required: true, editable: true, width: 'half' },
+  { key: 'area', label: 'المنطقة', type: 'text', required: false, editable: true, width: 'half' },
+  { key: 'address', label: 'العنوان *', type: 'textarea', required: true, editable: true, width: 'full' },
+  { key: 'landmark', label: 'علامة مميزة', type: 'text', required: false, editable: true, width: 'half' },
+  { key: 'isWorkAddress', label: 'عنوان عمل؟', type: 'text', required: false, editable: true, width: 'half' },
+  { key: 'locationLink', label: 'رابط المكان', type: 'url', required: false, editable: true, width: 'half' },
+  { key: 'notes', label: 'ملاحظات', type: 'textarea', required: false, editable: true, width: 'full' },
+  { key: 'codValue', label: 'قيمة التحصيل النقدي', type: 'number', step: '0.01', required: false, editable: true, width: 'half' },
+  { key: 'pieces', label: 'عدد القطع', type: 'number', required: false, editable: true, width: 'half' },
+  { key: 'description', label: 'وصف الشحنة', type: 'text', required: false, editable: true, width: 'full' },
+  { key: 'reference', label: 'مرجع الطلب', type: 'text', required: false, editable: false, width: 'half' },
+  { key: 'shipmentValue', label: 'قيمة الشحنة', type: 'number', step: '0.01', required: false, editable: true, width: 'half' },
+  { key: 'deposit', label: 'مبلغ الديبوزيت', type: 'number', step: '0.01', required: false, editable: true, width: 'half' },
+  { key: 'bostaPoints', label: 'الدفع بواسطة نقاط بوسطة؟', type: 'text', required: false, editable: true, width: 'half' },
+  { key: 'flexshipFees', label: 'تطبيق رسوم Flexship', type: 'text', required: false, editable: true, width: 'half' },
+  { key: 'allowOpen', label: 'هل تسمح بفتح الشحنة؟', type: 'text', required: false, editable: true, width: 'half' },
+  { key: 'brand', label: 'العلامة التجارية', type: 'text', required: false, editable: true, width: 'half' },
+  { key: 'shipmentType', label: 'نوع الشحنة', type: 'text', required: false, editable: true, width: 'half' },
+  { key: 'returnPieces', label: 'عدد قطع المرتجع', type: 'number', required: false, editable: true, width: 'half' },
+  { key: 'returnDescription', label: 'وصف الشحنة المرتجعة', type: 'text', required: false, editable: true, width: 'full' },
 ]
 
-function getColumns(carrier) {
-  return carrier === 'egypt_post' ? EGYPT_POST_COLUMNS : BOSTA_COLUMNS
+function getFields(carrier) {
+  return carrier === 'egypt_post' ? EGYPT_POST_FIELDS : BOSTA_FIELDS
 }
 
-function mapOrderToRow(order, carrier, index) {
+function mapOrderToForm(order, carrier, index) {
   const address = [order.address_line1, order.address_line2].filter(Boolean).join(', ')
   const reference = order.canonical_id
   const phone = order.customer_phone ?? ''
@@ -97,8 +90,8 @@ function mapOrderToRow(order, carrier, index) {
       hasPOD: 'yes',
       sellerName: 'Dearune Studio',
       postId: order.tracking_code ?? order.carrier_reference ?? '',
-      // Keep original for validation
       _original: order,
+      _index: index,
     }
   } else {
     return {
@@ -126,8 +119,114 @@ function mapOrderToRow(order, carrier, index) {
       returnPieces: '',
       returnDescription: '',
       _original: order,
+      _index: index,
     }
   }
+}
+
+function validateForm(form, fields) {
+  const errors = {}
+  fields.forEach((field) => {
+    if (field.required && (!form[field.key] || String(form[field.key]).trim() === '')) {
+      errors[field.key] = 'Required'
+    }
+  })
+  return errors
+}
+
+function FieldInput({ field, value, onChange, error, disabled }) {
+  const isRequired = field.required && field.editable
+  const baseClass = 'w-full text-sm transition-colors'
+  const errorClass = error ? 'border-red-400 focus:border-red-400 focus:ring-red-200' : ''
+  const disabledClass = disabled ? 'bg-muted/50 cursor-not-allowed' : ''
+  const requiredMark = isRequired ? <span className="text-red-500 ml-1">*</span> : null
+
+  if (!field.editable) {
+    return (
+      <Input
+        value={value ?? ''}
+        readOnly
+        className={`${baseClass} bg-muted/50 text-muted-foreground ${disabledClass}`}
+      />
+    )
+  }
+
+  if (field.type === 'textarea') {
+    return (
+      <Textarea
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className={`${baseClass} min-h-[70px] resize-y ${errorClass} ${disabledClass}`}
+        placeholder={isRequired ? 'Required' : ''}
+        rows={3}
+      />
+    )
+  }
+
+  return (
+    <Input
+      type={field.type}
+      step={field.step}
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+      className={`${baseClass} ${errorClass} ${disabledClass}`}
+      placeholder={isRequired ? 'Required' : ''}
+    />
+  )
+}
+
+function OrderFormTab({ order, index, carrier, fields, onUpdate, errors, isValid, activeTab, setActiveTab }) {
+  return (
+    <TabsContent value={String(index)} className="p-0">
+      <div className="h-[65vh] overflow-auto">
+        <div className="p-4 space-y-4">
+          <div className="flex items-center justify-between border-b pb-2">
+            <CardTitle className="text-lg">
+              {carrier === 'egypt_post' ? 'Egypt Post' : 'Bosta'} — Order {index + 1}
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              {!isValid && (
+                <Badge variant="destructive" className="gap-1">
+                  <AlertTriangle className="size-3" />
+                  Has Errors
+                </Badge>
+              )}
+              {isValid && (
+                <Badge variant="success" className="gap-1">
+                  <CheckCircle2 className="size-3" />
+                  Valid
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {fields.map((field) => (
+              <div
+                key={field.key}
+                className={`flex flex-col gap-1 ${field.width === 'full' ? 'md:col-span-2 lg:col-span-3' : ''}`}
+              >
+                <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  {field.label}
+                  {field.required && field.editable && <span className="text-red-500">*</span>}
+                  {!field.editable && <Badge variant="secondary" className="text-[10px] ml-1">Fixed</Badge>}
+                </Label>
+                <FieldInput
+                  field={field}
+                  value={order[field.key] ?? ''}
+                  onChange={(val) => onUpdate(index, field.key, val)}
+                  error={errors[field.key]}
+                  disabled={!field.editable}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </TabsContent>
+  )
 }
 
 export function ManifestExportEditor({
@@ -137,70 +236,73 @@ export function ManifestExportEditor({
   orders,
   onExport,
 }) {
-  const [rows, setRows] = useState([])
-  const [expanded, setExpanded] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const columns = useMemo(() => getColumns(carrier), [carrier])
+  const [forms, setForms] = useState([])
+  const [activeTab, setActiveTab] = useState('0')
+  const [expanded, setExpanded] = useState(true)
+  const [validated, setValidated] = useState(false)
+  const fields = useMemo(() => getFields(carrier), [carrier])
 
-  // Initialize rows when orders change
+  // Initialize forms when orders change
   useEffect(() => {
     if (orders?.length) {
-      const mapped = orders.map((order, i) => mapOrderToRow(order, carrier, i))
-      setRows(mapped)
+      const mapped = orders.map((order, i) => mapOrderToForm(order, carrier, i))
+      setForms(mapped)
+      setActiveTab('0')
+      setValidated(false)
     }
   }, [orders, carrier])
 
-  const updateCell = (rowIndex, key, value) => {
-    setRows((prev) => {
+  const updateField = (formIndex, key, value) => {
+    setForms((prev) => {
       const next = [...prev]
-      next[rowIndex] = { ...next[rowIndex], [key]: value }
+      next[formIndex] = { ...next[formIndex], [key]: value }
       return next
     })
+    setValidated(false)
   }
 
-  const validateRows = () => {
-    const errors = []
-    rows.forEach((row, i) => {
-      columns.forEach((col) => {
-        if (col.required && (!row[col.key] || String(row[col.key]).trim() === '')) {
-          errors.push({ row: i + 1, field: col.label, message: 'Required' })
-        }
-      })
-    })
-    return errors
+  const validateAll = () => {
+    const allErrors = forms.map((form) => validateForm(form, fields))
+    const allValid = allErrors.every((e) => Object.keys(e).length === 0)
+    return { allErrors, allValid }
   }
 
   const handleExport = () => {
-    const errors = validateRows()
-    if (errors.length > 0) {
-      toast.error(`${errors.length} required field(s) missing`)
-      console.table(errors)
+    const { allErrors, allValid } = validateAll()
+    if (!allValid) {
+      setValidated(true)
+      toast.error('Please fix errors in the forms before exporting')
+      // Switch to first tab with errors
+      const firstErrorIndex = allErrors.findIndex((e) => Object.keys(e).length > 0)
+      if (firstErrorIndex >= 0) setActiveTab(String(firstErrorIndex))
       return
     }
-    onExport(rows)
+    onExport(forms)
     onOpenChange(false)
   }
+
+  const { allErrors, allValid } = validateAll()
+  const formValidity = forms.map((_, i) => ({
+    isValid: Object.keys(allErrors[i] ?? {}).length === 0,
+    errors: allErrors[i] ?? {},
+  }))
 
   if (!open) return null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={`${expanded ? 'max-w-[98vw]' : 'max-w-6xl'} max-h-[90vh] overflow-hidden`}>
+      <DialogContent className={`${expanded ? 'max-w-[98vw]' : 'max-w-6xl'} max-h-[95vh] overflow-hidden`}>
         <DialogHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div>
             <DialogTitle className="font-heading text-xl">
               {carrier === 'egypt_post' ? 'Egypt Post' : 'Bosta'} Manifest — Edit & Export
             </DialogTitle>
             <DialogDescription>
-              Edit {orders?.length ?? 0} order(s) before exporting. Required fields marked with *
+              Edit {orders?.length ?? 0} order(s) before exporting. Each tab is one order with all manifest fields.
             </DialogDescription>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setExpanded(!expanded)}
-            >
+            <Button variant="outline" size="sm" onClick={() => setExpanded(!expanded)}>
               {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
               {expanded ? 'Collapse' : 'Expand'}
             </Button>
@@ -208,85 +310,91 @@ export function ManifestExportEditor({
         </DialogHeader>
 
         <div className="h-[calc(100%-140px)] flex flex-col overflow-hidden">
-          {/* Column visibility legend */}
-          <div className="px-4 py-2 text-xs text-muted-foreground border-b flex flex-wrap gap-4">
-            <span>Required fields marked with <span className="text-red-500">*</span></span>
-            <span>Non-editable fields shown in muted</span>
-          </div>
+          {/* Tabs for each order */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+            <TabsList className="flex-1 overflow-x-auto border-b bg-background p-0">
+              {forms.map((form, i) => (
+                <TabsTrigger
+                  key={form._original?.id ?? i}
+                  value={String(i)}
+                  className={`relative px-3 py-2 text-xs font-medium min-w-[120px] ${!formValidity[i].isValid && validated ? 'text-red-500' : ''}`}
+                >
+                  <span className="flex items-center gap-1">
+                    #{i + 1}
+                    {form.packageRefNumber || form.reference ? (
+                      <span className="font-mono text-muted-foreground">
+                        {form.packageRefNumber || form.reference}
+                      </span>
+                    ) : null}
+                    {!formValidity[i].isValid && validated && (
+                      <AlertTriangle className="size-3 text-red-500" title="Has validation errors" />
+                    )}
+                    {formValidity[i].isValid && validated && (
+                      <CheckCircle2 className="size-3 text-emerald-500" title="Valid" />
+                    )}
+                  </span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
 
-          {/* Table */}
-          <div className="flex-1 overflow-auto">
-            <Table className="w-full">
-              <TableHeader className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm">
-                <TableRow>
-                  <TableHead className="w-10 text-center">#</TableHead>
-                  {columns.map((col) => (
-                    <TableHead
-                      key={col.key}
-                      className="text-left font-medium"
-                      style={{ width: col.width, minWidth: col.width }}
-                    >
-                      <div className="flex items-center gap-1">
-                        {col.label}
-                        {col.required && <span className="text-red-500">*</span>}
-                        {!col.editable && (
-                          <Badge variant="secondary" className="text-xs ml-1">Fixed</Badge>
-                        )}
-                      </div>
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((row, rowIndex) => (
-                  <TableRow key={row._original?.id ?? rowIndex}>
-                    <TableCell className="text-center text-sm font-mono text-muted-foreground w-10">
-                      {rowIndex + 1}
-                    </TableCell>
-                    {columns.map((col) => (
-                      <TableCell
-                        key={col.key}
-                        style={{ width: col.width, minWidth: col.width }}
-                        className={!col.editable ? 'bg-muted/30' : ''}
-                      >
-                        {col.editable ? (
-                          <Input
-                            value={row[col.key] ?? ''}
-                            onChange={(e) => updateCell(rowIndex, col.key, e.target.value)}
-                            placeholder={col.required ? 'Required' : ''}
-                            className={col.required ? 'border-red-200 focus:border-red-400' : ''}
-                            style={{ fontSize: '12px', padding: '4px 8px' }}
-                          />
-                        ) : (
-                          <span className="text-sm text-muted-foreground font-mono">
-                            {row[col.key] ?? '—'}
-                          </span>
-                        )}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+            <TabsContent value={activeTab} className="flex-1 overflow-hidden">
+              {forms.map((form, i) => (
+                <OrderFormTab
+                  key={form._original?.id ?? i}
+                  order={form}
+                  index={i}
+                  carrier={carrier}
+                  fields={fields}
+                  onUpdate={updateField}
+                  errors={allErrors[i] ?? {}}
+                  isValid={formValidity[i].isValid}
+                  activeTab={activeTab}
+                  setActiveTab={setActiveTab}
+                />
+              ))}
+            </TabsContent>
+          </Tabs>
 
           {/* Summary bar */}
           <Separator />
-          <div className="p-3 bg-muted/30 flex items-center justify-between text-sm">
-            <span>{rows.length} order(s)</span>
-            <span className="text-muted-foreground">
-              Required: {columns.filter((c) => c.required).length} fields per row
-            </span>
+          <div className="p-3 bg-muted/30 flex flex-wrap items-center justify-between gap-2 text-sm">
+            <div className="flex items-center gap-4">
+              <span>{forms.length} order(s)</span>
+              <span className="text-muted-foreground">
+                {fields.filter((f) => f.required).length} required fields per order
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              {validated && allValid && (
+                <span className="flex items-center gap-1 text-emerald-600">
+                  <CheckCircle2 className="size-3" /> All valid
+                </span>
+              )}
+              {validated && !allValid && (
+                <span className="flex items-center gap-1 text-red-600">
+                  <AlertTriangle className="size-3" /> Fix errors to export
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={validated && !allValid}>
             Cancel
           </Button>
-          <Button onClick={handleExport} disabled={saving}>
-            {saving ? <Loader2Icon className="size-4 animate-spin mr-2" /> : <Save className="size-4 mr-2" />}
-            Export {carrier === 'egypt_post' ? 'Egypt Post' : 'Bosta'} Manifest
+          <Button onClick={handleExport} disabled={!allValid && validated}>
+            {validated && !allValid ? (
+              <>
+                <AlertTriangle className="size-4 animate-spin mr-2" />
+                Fix Errors First
+              </>
+            ) : (
+              <>
+                <Save className="size-4 mr-2" />
+                Export {carrier === 'egypt_post' ? 'Egypt Post' : 'Bosta'} Manifest
+              </>
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
