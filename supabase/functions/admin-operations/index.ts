@@ -682,27 +682,34 @@ Deno.serve(async (req) => {
   // orders. The workbook is recorded in shipment_manifests with direction='export'
   // so there is an audit trail, but no order is marked as shipped.
   if (action === 'manifest-export') {
-    const projectIds = Array.isArray(body.projectIds) ? body.projectIds.map((id) => asText(id, 64)).filter(Boolean) : []
-    const carrier = asText(body.carrier, 30)
-    if (!projectIds.length) return errorResponse('Select at least one order', 400)
-    if (!CARRIERS.includes(carrier)) return errorResponse('Choose Bosta or Egypt Post', 400)
+    try {
+      const projectIds = Array.isArray(body.projectIds) ? body.projectIds.map((id) => asText(id, 64)).filter(Boolean) : []
+      const carrier = asText(body.carrier, 30)
+      if (!projectIds.length) return errorResponse('Select at least one order', 400)
+      if (!CARRIERS.includes(carrier)) return errorResponse('Choose Bosta or Egypt Post', 400)
 
-    // Fetch the orders with their shipping details
-    const { data: orders, error } = await sb
-      .from('ops_orders')
-      .select(
-        'project_id, canonical_id, recipient_name, customer_phone, address_line1, address_line2, city, state_province, governorate, district, postal_code, country, special_instructions, carrier, carrier_reference, tracking_code, milestone, sold_id, unit_reference, unit_count, is_digital, title, public_id, public_token, wrapper_type, template_slug, sale_price, currency, paid_at, shipped_at, arrived_at, milestone_updated_at, message_active, recipient_opened_at, recipient_open_count'
-      )
-      .in('project_id', projectIds)
-    if (error) return errorResponse('Could not fetch orders', 500)
+      // Fetch the orders with their shipping details
+      const { data: orders, error } = await sb
+        .from('ops_orders')
+        .select(
+          'project_id, canonical_id, recipient_name, customer_phone, address_line1, address_line2, city, state_province, governorate, district, postal_code, country, special_instructions, carrier, carrier_reference, tracking_code, milestone, sold_id, unit_reference, unit_count, is_digital, title, public_id, public_token, wrapper_type, template_slug, sale_price, currency, paid_at, shipped_at, arrived_at, milestone_updated_at, message_active, recipient_opened_at, recipient_open_count'
+        )
+        .in('project_id', projectIds)
+      if (error) return errorResponse('Could not fetch orders', 500)
 
-    // Build the workbook programmatically (no template files needed in Edge runtime)
-    const ExcelJS = (await import('npm:exceljs')).default
-    const workbook = new ExcelJS.Workbook()
-    let filename
-    let rowCount = 0
+      // Build the workbook programmatically (no template files needed in Edge runtime)
+      let ExcelJS
+      try {
+        ExcelJS = (await import('npm:exceljs')).default
+      } catch (importError) {
+        console.error('ExcelJS import failed:', importError)
+        return errorResponse('Excel generation library unavailable', 500)
+      }
+      const workbook = new ExcelJS.Workbook()
+      let filename
+      let rowCount = 0
 
-    if (carrier === 'egypt_post') {
+      if (carrier === 'egypt_post') {
       // Create Egypt Post manifest workbook from scratch
       const sheet = workbook.addWorksheet('Sheet1')
 
@@ -819,7 +826,13 @@ Deno.serve(async (req) => {
     }
 
     // Save the manifest record with direction='export'
-    const buffer = await workbook.xlsx.writeBuffer()
+    let buffer
+    try {
+      buffer = await workbook.xlsx.writeBuffer()
+    } catch (writeError) {
+      console.error('Workbook write failed:', writeError)
+      return errorResponse('Failed to generate workbook', 500)
+    }
     const { data: manifest, error: manifestError } = await sb
       .from('shipment_manifests')
       .insert({
@@ -837,6 +850,10 @@ Deno.serve(async (req) => {
     // Return the workbook as base64 for the frontend to download
     const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)))
     return jsonResponse({ ok: true, manifestId: manifest.id, filename, base64, carrier, rowCount })
+    } catch (actionError) {
+      console.error('Manifest export failed:', actionError)
+      return errorResponse('Manifest export failed', 500)
+    }
   }
 
   // -- refunds --------------------------------------------------------------

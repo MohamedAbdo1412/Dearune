@@ -45,7 +45,7 @@ export function DearuneList({ projects, catalog, maintenance, onChanged, basePat
               {project.paid_at ? formatMoney(project.sale_price, project.currency ?? 'EGP') : 'not sold'}
             </span>
             <ProjectBadge project={project} />
-            <DearuneActions project={project} maintenance={maintenance} onChanged={onChanged} />
+            <DearuneActions project={project} catalog={catalog} maintenance={maintenance} onChanged={onChanged} />
           </div>
         </div>
       ))}
