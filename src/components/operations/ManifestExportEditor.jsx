@@ -181,7 +181,7 @@ function OrderFormTab({ order, index, carrier, fields, onUpdate, errors, isValid
   return (
     <TabsContent value={String(index)} className="h-full mt-0">
       <div className="h-full overflow-auto">
-        <div className="p-6 space-y-5 max-w-[1600px] mx-auto">
+        <div className="p-6 space-y-5 max-w-[1900px] mx-auto w-full">
           <div className="flex items-center justify-between border-b pb-3">
             <CardTitle className="text-lg">
               {carrier === 'egypt_post' ? 'Egypt Post' : 'Bosta'} — Order {index + 1}
@@ -202,11 +202,11 @@ function OrderFormTab({ order, index, carrier, fields, onUpdate, errors, isValid
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7 gap-4">
             {fields.map((field) => (
               <div
                 key={field.key}
-                className={`flex flex-col gap-1.5 ${field.width === 'full' ? 'sm:col-span-2 md:col-span-3 lg:col-span-4 xl:col-span-5 2xl:col-span-6' : ''}`}
+                className={`flex flex-col gap-1.5 ${field.width === 'full' ? 'sm:col-span-2 md:col-span-3 lg:col-span-4 xl:col-span-5 2xl:col-span-7' : ''}`}
               >
                 <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                   {field.label}
@@ -291,7 +291,7 @@ export function ManifestExportEditor({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={`${expanded ? 'w-[98vw] max-w-[98vw]' : 'w-full max-w-[1600px]'} h-[95vh] max-h-[95vh] flex flex-col overflow-hidden p-0`}>
+      <DialogContent className={`${expanded ? 'w-[99vw] max-w-[99vw]' : 'w-[98vw] max-w-[1800px]'} h-[96vh] max-h-[96vh] flex flex-col overflow-hidden p-0`}>
         <DialogHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-6 pt-6 pb-4 border-b">
           <div>
             <DialogTitle className="font-heading text-xl">
